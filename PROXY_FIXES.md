@@ -35,3 +35,30 @@
 - `src/gui/app.py` — 子进程管道修复 + 日志清理
 - `src/proxy/proxy_server.py` — StreamConsumed 修复 + 连接泄漏修复 + SSE 规整
 - `src/proxy/api_client.py` — reasoning_effort 处理（对照 9router）
+
+## 安全审计（43a05cf）
+
+### `_stream_with_failover` 全部 8 条退出路径
+
+| 路径 | resp 状态 | 关闭 |
+|------|----------|------|
+| 无可用账号 (break) | 未创建 | 不需要 |
+| ConnectError (break) | 未创建 | 不需要 |
+| TimeoutException 发送阶段 | 未创建 | 不需要 |
+| 非200错误 | aread+aclose | ✓ |
+| 内联错误 | aclose | ✓ |
+| 成功 | try/finally aclose | ✓ |
+| 流式超时 | aclose+continue | ✓ |
+| 其他异常 | aclose+raise | ✓ |
+
+### 客户端中断
+- 流式：Starlette 检测断开 → `generator.aclose()` → 触发 `finally: resp.aclose()`
+- 非流式：`_non_stream_chat` 的 `finally: gen.aclose()` → 同上
+
+### 事件循环阻塞
+- `token_rotator` RLock：锁内零 I/O，微秒释放
+- SQLite `list_accounts`：仅在启动/reload 触发，<1ms
+- 超时等待：async，不阻塞事件循环
+- 子进程管道：DEVNULL + 文件，不阻塞
+
+**结论：无残留的卡死/阻塞/泄漏风险。**

@@ -6,6 +6,14 @@ import ctypes
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Windows 任务栏图标：设置 AppUserModelID 让系统识别为独立应用，
+# 否则任务栏显示 python.exe 默认图标。必须在创建窗口前调用。
+if sys.platform == "win32":
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("cbcn2api.gateway")
+    except Exception:
+        pass
+
 import webview
 from src.gui.app import GuiApi
 _GUI_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "gui", "index.html")
@@ -13,7 +21,14 @@ with open(_GUI_HTML, encoding="utf-8") as _f:
     HTML = _f.read()
 
 APP_TITLE = "AI Gateway"
-_ICO_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "gateway.ico")
+
+def _resource(name):
+    """获取资源路径，兼容打包环境。"""
+    if getattr(sys, 'frozen', False):
+        return os.path.join(sys._MEIPASS, name)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+
+_ICO_PATH = _resource("gateway.ico")
 
 
 def _set_window_icon():
