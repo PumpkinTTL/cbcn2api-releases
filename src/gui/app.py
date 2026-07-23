@@ -545,28 +545,35 @@ class GuiApi:
         env["CBCN_PROXY_PLATFORM"] = "workbuddy"
 
         root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        import tempfile
+        log_path = os.path.join(tempfile.gettempdir(), f"cbcn_proxy_{port_num}.log")
+        log_fh = open(log_path, "w")
         proc = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "src.proxy.proxy_server:app",
              "--host", "127.0.0.1", "--port", str(port_num),
              "--log-level", "error"],
             cwd=root, env=env,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=log_fh,
         )
         time.sleep(1.0)
 
         if proc.poll() is not None:
-            err = b""
+            log_fh.close()
+            err_text = ""
             try:
-                err = proc.stderr.read() or b""
+                with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                    err_text = f.read().strip()
             except Exception:
                 pass
-            err_text = err.decode("utf-8", errors="ignore").strip()
             if "address already in use" in err_text.lower():
                 return json.dumps({"error": f"端口 {port_num} 已被占用，请换一个端口"})
             return json.dumps({"error": f"代理启动失败: {err_text[:200]}"})
 
+        log_fh.close()
         self._proxy_proc = proc
         self._proxy_port = port_num
+        self._proxy_log_path = log_path
         return json.dumps({"success": True, "port": port_num})
 
     def proxy_stop(self) -> str:
@@ -578,6 +585,12 @@ class GuiApi:
             except Exception:
                 proc.kill()
             self._proxy_proc = None
+            log_path = getattr(self, "_proxy_log_path", "")
+            if log_path:
+                try:
+                    os.remove(log_path)
+                except Exception:
+                    pass
             return json.dumps({"success": True})
         return json.dumps({"error": "代理未运行"})
 

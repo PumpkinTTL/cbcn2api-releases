@@ -37,7 +37,7 @@ def _get_http_client() -> httpx.AsyncClient:
         _http_client = httpx.AsyncClient(
             verify=False,
             trust_env=False,
-            timeout=httpx.Timeout(300.0, connect=30.0, read=300.0),
+            timeout=httpx.Timeout(60.0, connect=10.0, read=60.0),
             limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
         )
     return _http_client
@@ -119,9 +119,12 @@ def _first_event_kind(text: str):
 
 
 async def _normalize_text_stream(aiter: AsyncIterator[str]) -> AsyncGenerator[str, None]:
-    """规整上游 SSE：剥离空 tool_calls[]、修正 finish_reason、补 [DONE]。"""
+    """规整上游 SSE，对照 9router passthrough 模式：
+    - 只删空 tool_calls: []（CodeBuddy CN 每块都带，AI SDK 误判）
+    - 补 object/created 若缺失
+    - 丢弃无实质内容的空块（hasValuableContent）
+    - 其余字段原样透传"""
     buffer = ""
-    saw_tool_calls = False
     async for chunk in aiter:
         if not chunk:
             continue
@@ -138,15 +141,33 @@ async def _normalize_text_stream(aiter: AsyncIterator[str]) -> AsyncGenerator[st
                 payload_str = stripped[5:].strip()
                 try:
                     obj = json.loads(payload_str)
+
+                    # 补 object/created
+                    if "choices" in obj:
+                        obj.setdefault("object", "chat.completion.chunk")
+                        obj.setdefault("created", int(time.time()))
+
                     for choice in obj.get("choices", []):
                         delta = choice.get("delta", {})
+                        # 删空 tool_calls: []（9router 专门为 CodeBuddy CN 加的修复）
                         tc = delta.get("tool_calls")
                         if isinstance(tc, list) and len(tc) == 0:
                             del delta["tool_calls"]
-                        elif isinstance(tc, list) and tc:
-                            saw_tool_calls = True
-                        if saw_tool_calls and choice.get("finish_reason") not in ("tool_calls", None):
-                            choice["finish_reason"] = "tool_calls"
+
+                    # hasValuableContent：丢弃无实质内容的块
+                    choices = obj.get("choices", [])
+                    if choices:
+                        delta = choices[0].get("delta", {})
+                        has_content = (
+                            (delta.get("content") is not None and delta["content"] != "")
+                            or (delta.get("reasoning_content") is not None and delta["reasoning_content"] != "")
+                            or (delta.get("tool_calls") and len(delta["tool_calls"]) > 0)
+                            or choices[0].get("finish_reason")
+                            or delta.get("role")
+                        )
+                        if not has_content:
+                            continue
+
                     yield f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
                     continue
                 except (json.JSONDecodeError, IndexError):
@@ -206,10 +227,12 @@ async def _stream_with_failover(
                 return
 
             # 200：peek 首个事件，检测内联错误，确认无误后再向客户端输出
+            # 只创建一个迭代器，peek 和后续共用（httpx 不允许重复 aiter_text）
+            text_iter = resp.aiter_text(chunk_size=8192)
             buffered = []
             decision = "none"
             inline_err = None
-            async for chunk in resp.aiter_text(chunk_size=8192):
+            async for chunk in text_iter:
                 buffered.append(chunk)
                 kind, err = _first_event_kind(chunk)
                 if kind == "error":
@@ -240,15 +263,18 @@ async def _stream_with_failover(
                 yield "data: [DONE]\n\n"
                 return
 
-            # 成功：重放已缓冲内容 + 剩余流，并规整 SSE
+            # 成功：重放已缓冲内容 + 剩余流（用同一个迭代器）
             async def _combined():
                 for c in buffered:
                     yield c
-                async for c in resp.aiter_text(chunk_size=8192):
+                async for c in text_iter:
                     yield c
 
-            async for piece in _normalize_text_stream(_combined()):
-                yield piece
+            try:
+                async for piece in _normalize_text_stream(_combined()):
+                    yield piece
+            finally:
+                await resp.aclose()
             return
         except httpx.TimeoutException as e:
             await resp.aclose()
@@ -278,76 +304,80 @@ async def _non_stream_chat(
     resp_model = None
     usage_info = None
 
-    async for raw in _stream_with_failover(payload, conversation_id, platform):
-        obj = parse_sse_line(raw)
-        if not obj:
-            continue
-        if isinstance(obj.get("error"), dict):
-            return {"error": obj["error"]}
+    gen = _stream_with_failover(payload, conversation_id, platform)
+    try:
+        async for raw in gen:
+            obj = parse_sse_line(raw)
+            if not obj:
+                continue
+            if isinstance(obj.get("error"), dict):
+                return {"error": obj["error"]}
 
-        resp_id = resp_id or obj.get("id")
-        resp_model = resp_model or obj.get("model")
-        if obj.get("usage"):
-            usage_info = obj["usage"]
+            resp_id = resp_id or obj.get("id")
+            resp_model = resp_model or obj.get("model")
+            if obj.get("usage"):
+                usage_info = obj["usage"]
 
-        choices = obj.get("choices", [])
-        if not choices:
-            continue
-        choice = choices[0]
-        if choice.get("finish_reason"):
-            finish_reason = choice["finish_reason"]
-        delta = choice.get("delta", {})
+            choices = obj.get("choices", [])
+            if not choices:
+                continue
+            choice = choices[0]
+            if choice.get("finish_reason"):
+                finish_reason = choice["finish_reason"]
+            delta = choice.get("delta", {})
 
-        if delta.get("content"):
-            content_parts.append(delta["content"])
+            if delta.get("content"):
+                content_parts.append(delta["content"])
 
-        tool_calls = delta.get("tool_calls", [])
-        for tc in tool_calls:
-            tool_index = tc.get("index")
-            tid = tc.get("id")
-            if tool_index is None:
-                tool_index = current_tool_index
-            if tool_index is None:
-                tool_index = len(tool_call_map)
+            tool_calls = delta.get("tool_calls", [])
+            for tc in tool_calls:
+                tool_index = tc.get("index")
+                tid = tc.get("id")
+                if tool_index is None:
+                    tool_index = current_tool_index
+                if tool_index is None:
+                    tool_index = len(tool_call_map)
 
-            if tool_index not in tool_call_map:
-                tool_call_map[tool_index] = {
-                    "id": tid or "",
-                    "type": tc.get("type", "function"),
-                    "function": {"name": "", "arguments": ""},
-                }
-                tool_call_order.append(tool_index)
+                if tool_index not in tool_call_map:
+                    tool_call_map[tool_index] = {
+                        "id": tid or "",
+                        "type": tc.get("type", "function"),
+                        "function": {"name": "", "arguments": ""},
+                    }
+                    tool_call_order.append(tool_index)
 
-            current_tool_index = tool_index
-            current = tool_call_map[tool_index]
-            if tid:
-                current["id"] = tid
-            if tc.get("type"):
-                current["type"] = tc["type"]
-            func = tc.get("function", {})
-            if func.get("name"):
-                current["function"]["name"] = func["name"]
-            if func.get("arguments"):
-                current["function"]["arguments"] += func["arguments"]
+                current_tool_index = tool_index
+                current = tool_call_map[tool_index]
+                if tid:
+                    current["id"] = tid
+                if tc.get("type"):
+                    current["type"] = tc["type"]
+                func = tc.get("function", {})
+                if func.get("name"):
+                    current["function"]["name"] = func["name"]
+                if func.get("arguments"):
+                    current["function"]["arguments"] += func["arguments"]
 
-    content = "".join(content_parts)
-    final_tool_calls = [tool_call_map[index] for index in tool_call_order] if tool_call_order else None
-    final_finish = "tool_calls" if final_tool_calls else (finish_reason or "stop")
+        content = "".join(content_parts)
+        final_tool_calls = [tool_call_map[index] for index in tool_call_order] if tool_call_order else None
+        final_finish = "tool_calls" if final_tool_calls else (finish_reason or "stop")
 
-    message = {"role": "assistant", "content": content if content else (None if final_tool_calls else "")}
-    if final_tool_calls:
-        message["tool_calls"] = final_tool_calls
+        message = {"role": "assistant", "content": content if content else (None if final_tool_calls else "")}
+        if final_tool_calls:
+            message["tool_calls"] = final_tool_calls
 
-    result = {
-        "id": resp_id or str(uuid.uuid4()),
-        "object": "chat.completion",
-        "created": int(time.time()),
-        "model": resp_model or payload.get("model", "auto"),
-        "choices": [{"index": 0, "message": message, "finish_reason": final_finish}],
-    }
-    if usage_info:
-        result["usage"] = usage_info
-    return result
+        result = {
+            "id": resp_id or str(uuid.uuid4()),
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": resp_model or payload.get("model", "auto"),
+            "choices": [{"index": 0, "message": message, "finish_reason": final_finish}],
+        }
+        if usage_info:
+            result["usage"] = usage_info
+        return result
+    finally:
+        await gen.aclose()
 
 
 router = APIRouter()

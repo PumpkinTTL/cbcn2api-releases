@@ -97,6 +97,7 @@ def build_chat_payload(openai_body: dict) -> dict:
     payload["messages"] = convert_messages(payload.get("messages", []))
     payload["stream"] = True
 
+    # 对照 9router CodeBuddyExecutor.transformRequest
     effort = payload.get("reasoning_effort")
     if effort in ("none", "off"):
         payload.pop("reasoning_effort", None)
