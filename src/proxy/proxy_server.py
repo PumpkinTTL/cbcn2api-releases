@@ -205,11 +205,13 @@ async def _stream_with_failover(
                 stream=True,
             )
         except httpx.ConnectError as e:
+            logger.warning("[调度] 账号=%s 连接失败: %s", acc.nickname, e)
             last_msg = f"无法连接上游: {e}"
             break
         except httpx.TimeoutException as e:
-            last_msg = f"上游超时: {e}"
+            logger.warning("[调度] 账号=%s 超时, 标记transient: %s", acc.nickname, e)
             token_rotator.mark_disabled(acc.id, "transient")
+            last_msg = f"上游超时: {e}"
             continue
 
         try:
@@ -218,6 +220,7 @@ async def _stream_with_failover(
                 body = (await resp.aread()).decode("utf-8", errors="ignore")
                 await resp.aclose()
                 kind = _classify_upstream_error(resp.status_code, body)
+                logger.warning("[调度] 账号=%s 上游返回 %d, kind=%s, body=%s", acc.nickname, resp.status_code, kind, body[:200])
                 if kind:
                     token_rotator.mark_disabled(acc.id, kind)
                     last_msg = body[:300]
@@ -249,6 +252,7 @@ async def _stream_with_failover(
             if decision == "error" and inline_err:
                 await resp.aclose()
                 kind = _classify_upstream_error(200, inline_err)
+                logger.warning("[调度] 账号=%s 200内联错误, kind=%s, err=%s", acc.nickname, kind, inline_err[:200])
                 if kind:
                     token_rotator.mark_disabled(acc.id, kind)
                     last_msg = inline_err[:300]
@@ -270,6 +274,7 @@ async def _stream_with_failover(
                 async for c in text_iter:
                     yield c
 
+            logger.info("[调度] 账号=%s 请求成功", acc.nickname)
             try:
                 async for piece in _normalize_text_stream(_combined()):
                     yield piece
@@ -286,6 +291,7 @@ async def _stream_with_failover(
             raise
 
     # 全部账号耗尽
+    logger.warning("[调度] 所有账号不可用, last_msg=%s", last_msg)
     yield f"data: {json.dumps({'error': {'message': last_msg, 'type': 'no_account'}}, ensure_ascii=False)}\n\n"
     yield "data: [DONE]\n\n"
 
@@ -448,6 +454,7 @@ async def proxy_info():
         "accounts_total": st["total"],
         "accounts_usable": st["usable"],
         "accounts_disabled": st["disabled"],
+        "current_account": st["current"],
         "models": AVAILABLE_MODELS,
     }
 

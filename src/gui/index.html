@@ -756,7 +756,7 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
           </div>
           <button class="btn btn-primary btn-sm" onclick="toggleProxy()" id="proxyToggleBtn">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
-            启动代理
+            启动网关
           </button>
         </div>
       </div>
@@ -784,7 +784,7 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
         </div>
         <div class="chat-body">
           <div class="chat-messages" id="chatMessages">
-            <div class="chat-empty">启动代理后即可测试对话</div>
+            <div class="chat-empty">启动网关后即可测试对话</div>
           </div>
           <div class="chat-input-area">
             <div class="model-selector" id="modelSelector">
@@ -1558,7 +1558,7 @@ async function toggleProxy() {
   if (r.success) {
     proxyRunning = true;
     btn.className = 'btn btn-ghost btn-sm btn-proxy-on';
-    btn.innerHTML = `${PROXY_GATEWAY_SVG} <span class="proxy-btn-dot on"></span> 停止代理`;
+    btn.innerHTML = `${PROXY_GATEWAY_SVG} <span class="proxy-btn-dot on"></span> 关闭网关`;
     panel.classList.add('online');
     panel.dataset.port = r.port;
     statusText.textContent = '运行中';
@@ -1581,7 +1581,7 @@ async function refreshProxyStatus() {
   const statusText = document.getElementById('proxyStatusText');
   if (r.running) {
     btn.className = 'btn btn-ghost btn-sm btn-proxy-on';
-    btn.innerHTML = `${PROXY_GATEWAY_SVG} <span class="proxy-btn-dot on"></span> 停止代理`;
+    btn.innerHTML = `${PROXY_GATEWAY_SVG} <span class="proxy-btn-dot on"></span> 关闭网关`;
     panel.classList.add('online');
     panel.dataset.port = r.port;
     statusText.textContent = '运行中';
@@ -1813,7 +1813,7 @@ async function sendTestChat() {
   const model = document.getElementById('modelCurrentId').textContent;
   const msg = input.value.trim();
   if (!msg) return;
-  if (!proxyRunning) { showToast('请先启动代理网关', 'warning'); return; }
+  if (!proxyRunning) { showToast('请先启动网关', 'warning'); return; }
 
   chatBusy = true;
   btn.disabled = true;
