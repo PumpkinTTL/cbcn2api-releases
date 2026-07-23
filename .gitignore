@@ -1,10 +1,6 @@
+build/
+dist/
+*.spec
 __pycache__/
 *.pyc
-*.pyo
-.DS_Store
-*.db
-theme.txt
 .venv/
-.venv/**
-test_*.py
-test_out.txt
