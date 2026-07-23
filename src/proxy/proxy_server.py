@@ -22,6 +22,14 @@ _proxy_password: str = os.environ.get("CBCN_PROXY_PASSWORD", "")
 _platform: str = os.environ.get("CBCN_PROXY_PLATFORM", "workbuddy")
 _port: int = int(os.environ.get("CBCN_PROXY_PORT", "8001"))
 
+
+def update_config(port: int, password: str, platform: str):
+    """更新网关配置（进程内模式：每次启动时调用，覆盖 import 时的值）。"""
+    global _proxy_password, _platform, _port
+    _proxy_password = password
+    _platform = platform
+    _port = port
+
 security = HTTPBearer(auto_error=False)
 
 # 上游错误分类

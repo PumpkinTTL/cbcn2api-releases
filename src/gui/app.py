@@ -544,9 +544,10 @@ class GuiApi:
         os.environ["CBCN_PROXY_PLATFORM"] = "workbuddy"
 
         try:
-            from src.proxy.proxy_server import app as proxy_app, token_rotator
+            from src.proxy.proxy_server import app as proxy_app, token_rotator, update_config
             import uvicorn
 
+            update_config(port_num, password, "workbuddy")
             token_rotator.reload("workbuddy")
 
             config = uvicorn.Config(
