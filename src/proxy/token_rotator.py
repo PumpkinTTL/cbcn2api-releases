@@ -5,49 +5,118 @@ from typing import Optional
 from src.storage import store
 from src.models.account import Account
 
+# 冷却时长（秒）；None = 永久（直到进程重启）
+QUOTA_COOLDOWN = 3600   # 额度耗尽：1 小时后重试
+AUTH_COOLDOWN = 600     # 鉴权失败（403）：10 分钟后重试
+TRANSIENT_COOLDOWN = 60  # 临时错误：1 分钟后重试
+
+_COOLDOWNS = {
+    "quota": QUOTA_COOLDOWN,
+    "auth": AUTH_COOLDOWN,
+    "transient": TRANSIENT_COOLDOWN,
+    "banned": None,  # 401 封禁：本进程内永久不可用
+}
+
 
 class TokenRotator:
+    """粘性优先账号池：锁定一个主账号持续使用，直到它额度耗尽/被封，
+    再切到下一个。未被选中的账号保持干净（不轮询消耗）。
+
+    账号状态：
+      - quota     额度耗尽（14018），冷却 1h
+      - auth      鉴权失败（403），冷却 10min
+      - banned    封禁（401），本进程永久不可用
+      - transient 临时错误（429/超时），冷却 1min
+    """
+
     def __init__(self):
         self._lock = threading.RLock()
         self._accounts: list[Account] = []
         self._index = 0
+        self._current_id: Optional[str] = None  # 当前粘性锁定的账号
+        # id -> {"reason": str, "until": float|None}
+        self._disabled: dict[str, dict] = {}
 
     def reload(self, platform: str):
         with self._lock:
             all_accs = store.list_accounts(platform)
-            valid = [a for a in all_accs if self._is_token_valid(a)]
-            self._accounts = valid
+            self._accounts = [a for a in all_accs if a.access_token]
             if self._index >= len(self._accounts):
                 self._index = 0
 
+    def _is_usable(self, acc: Account) -> bool:
+        if not acc.access_token:
+            return False
+        if acc.expires_at and acc.expires_at < int(time.time()) + 60:
+            return False
+        st = self._disabled.get(acc.id)
+        if st:
+            until = st.get("until")
+            if until is None or until > time.time():
+                return False
+            # 冷却到期，清除
+            self._disabled.pop(acc.id, None)
+        return True
+
     def get_next(self, platform: str) -> Optional[Account]:
+        """粘性优先：优先返回当前锁定账号；不可用时才找下一个可用账号。"""
         with self._lock:
             if not self._accounts:
                 self.reload(platform)
             if not self._accounts:
                 return None
-            if self._index >= len(self._accounts):
-                self._index = 0
-            acc = self._accounts[self._index]
-            self._index = (self._index + 1) % len(self._accounts)
-            if not self._is_token_valid(acc):
-                self.reload(platform)
-                if not self._accounts:
-                    return None
-                self._index = self._index % len(self._accounts)
-                return self._accounts[self._index]
-            return acc
+
+            # 1. 当前锁定的账号仍可用 → 继续用它
+            if self._current_id:
+                cur = next((a for a in self._accounts if a.id == self._current_id), None)
+                if cur and self._is_usable(cur):
+                    return cur
+
+            # 2. 找下一个可用账号
+            n = len(self._accounts)
+            for _ in range(n):
+                if self._index >= n:
+                    self._index = 0
+                acc = self._accounts[self._index]
+                self._index = (self._index + 1) % n
+                if self._is_usable(acc):
+                    self._current_id = acc.id
+                    return acc
+            return None
+
+    def mark_disabled(self, account_id: str, reason: str):
+        """标记账号不可用。banned/None 冷却 = 本进程永久。"""
+        with self._lock:
+            cd = _COOLDOWNS.get(reason, TRANSIENT_COOLDOWN)
+            self._disabled[account_id] = {
+                "reason": reason,
+                "until": (time.time() + cd) if cd is not None else None,
+            }
+            # 当前主账号失效 → 清除锁定，下次 get_next 自动切下一个
+            if account_id == self._current_id:
+                self._current_id = None
 
     def count(self) -> int:
         with self._lock:
             return len(self._accounts)
 
-    def _is_token_valid(self, acc: Account) -> bool:
-        if not acc.access_token:
-            return False
-        if acc.expires_at and acc.expires_at < int(time.time()) + 60:
-            return False
-        return True
+    def count_usable(self) -> int:
+        with self._lock:
+            return sum(1 for a in self._accounts if self._is_usable(a))
+
+    def status(self) -> dict:
+        with self._lock:
+            now = time.time()
+            return {
+                "total": len(self._accounts),
+                "usable": sum(1 for a in self._accounts if self._is_usable(a)),
+                "current": self._current_id,
+                "disabled": [
+                    {"id": aid, "reason": s.get("reason"), "until": s.get("until")}
+                    for aid, s in self._disabled.items()
+                    if s.get("until") is None or s.get("until") > now
+                ],
+            }
 
 
 token_rotator = TokenRotator()

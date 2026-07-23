@@ -1,0 +1,1869 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI大模型网关</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #0a0e1a;
+  --surface: rgba(255,255,255,0.04);
+  --surface-hover: rgba(255,255,255,0.08);
+  --surface-active: rgba(255,255,255,0.12);
+  --border: rgba(255,255,255,0.08);
+  --border-hover: rgba(255,255,255,0.15);
+  --text: #e8edf5;
+  --text-secondary: rgba(232,237,245,0.55);
+  --text-muted: rgba(232,237,245,0.35);
+  --primary: #3b82f6;
+  --primary-hover: #2563eb;
+  --primary-glow: rgba(59,130,246,0.25);
+  --accent: #f97316;
+  --accent-glow: rgba(249,115,22,0.25);
+  --success: #22c55e;
+  --success-glow: rgba(34,197,94,0.2);
+  --warning: #eab308;
+  --danger: #ef4444;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+  --shadow: 0 8px 32px rgba(0,0,0,0.4);
+  --transition: 0.2s cubic-bezier(0.4,0,0.2,1);
+}
+[data-theme="light"] {
+  --bg: #f0f2f5;
+  --surface: rgba(255,255,255,0.9);
+  --surface-hover: #fff;
+  --surface-active: #e8ebf0;
+  --border: rgba(0,0,0,0.12);
+  --border-hover: rgba(0,0,0,0.2);
+  --text: #111318;
+  --text-secondary: rgba(17,19,24,0.7);
+  --text-muted: rgba(17,19,24,0.5);
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --primary-glow: rgba(37,99,235,0.2);
+  --accent: #ea580c;
+  --accent-glow: rgba(234,88,12,0.2);
+  --success: #16a34a;
+  --success-glow: rgba(22,163,74,0.15);
+  --warning: #ca8a04;
+  --danger: #dc2626;
+  --shadow: 0 8px 32px rgba(0,0,0,0.08);
+  --modal-overlay: rgba(0,0,0,0.3);
+}
+[data-theme="light"] .modal { background: #fff; }
+[data-theme="light"] .modal-overlay { background: var(--modal-overlay); }
+[data-theme="light"] input[type="date"] { color-scheme: light; }
+[data-theme="light"] .quota-bar { background: rgba(0,0,0,0.06); }
+[data-theme="light"] .spinner-sm { border-color: rgba(0,0,0,0.15); border-top-color: var(--primary); }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: row;
+}
+
+/* ===== Scrollbar ===== */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+
+/* ===== Sidebar ===== */
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.sidebar-logo {
+  font-size: 16px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 28px;
+  padding: 0 8px;
+}
+.sidebar-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.sidebar-nav .nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+  font-family: inherit;
+  text-align: left;
+}
+.sidebar-nav .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
+.sidebar-nav .nav-item:hover { color: var(--text); background: var(--surface-hover); }
+.sidebar-nav .nav-item.active {
+  color: var(--primary);
+  background: var(--primary-glow);
+  font-weight: 600;
+}
+.sidebar-footer { margin-top: auto; padding-top: 16px; border-top: 1px solid var(--border); }
+
+/* ===== Content ===== */
+.content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 28px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+/* ===== Buttons ===== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+.btn-primary:hover { background: var(--primary-hover); box-shadow: 0 0 20px var(--primary-glow); }
+.btn-accent { background: var(--accent); color: #fff; }
+.btn-accent:hover { box-shadow: 0 0 20px var(--accent-glow); }
+.btn-ghost { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.btn-ghost:hover { background: var(--surface-hover); border-color: var(--border-hover); }
+.btn-danger { background: rgba(239,68,68,0.15); color: var(--danger); }
+.btn-danger:hover { background: rgba(239,68,68,0.25); }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn-icon { padding: 8px; min-width: 36px; justify-content: center; }
+.btn:disabled { opacity: 0.5; pointer-events: none; }
+.btn-loading { pointer-events: none; }
+.spinner-sm { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.25); border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; }
+
+/* ===== Main Content ===== */
+.main {
+  flex: 1;
+  padding: 16px 28px 28px;
+  overflow-y: auto;
+}
+
+/* ===== Stats Bar ===== */
+.stats {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.stat-card {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 18px; flex: 1;
+  backdrop-filter: blur(12px); transition: var(--transition);
+}
+.stat-card:hover { border-color: var(--border-hover); transform: translateY(-1px); }
+.stat-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+}
+.stat-icon svg { width: 20px; height: 20px; }
+.stat-icon.blue { background: rgba(59,130,246,0.15); color: #60a5fa; }
+.stat-icon.purple { background: rgba(139,92,246,0.15); color: #a78bfa; }
+.stat-icon.green { background: rgba(34,197,94,0.15); color: #4ade80; }
+[data-theme="light"] .stat-icon.blue { background: rgba(37,99,235,0.12); color: #2563eb; }
+[data-theme="light"] .stat-icon.purple { background: rgba(124,58,237,0.12); color: #7c3aed; }
+[data-theme="light"] .stat-icon.green { background: rgba(22,163,74,0.12); color: #16a34a; }
+.stat-text { min-width: 0; }
+.stat-label { font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
+.stat-value { font-size: 22px; font-weight: 700; line-height: 1.2; }
+
+/* ===== Account Grid ===== */
+.account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+}
+
+/* ===== Account Card ===== */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  backdrop-filter: blur(12px);
+  transition: var(--transition);
+}
+.card:hover { border-color: var(--border-hover); background: var(--surface-hover); box-shadow: var(--shadow); transform: translateY(-1px); }
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.card-avatar {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary), #8b5cf6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  flex-shrink: 0;
+}
+.card-info { flex: 1; min-width: 0; padding-left: 12px; }
+.card-name { font-size: 14px; font-weight: 600; }
+.card-email { font-size: 12px; color: var(--text-secondary); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-meta { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.badge-pro { background: linear-gradient(135deg, rgba(59,130,246,0.2), rgba(139,92,246,0.2)); color: #93c5fd; border: 1px solid rgba(59,130,246,0.2); }
+.badge-free { background: rgba(148,163,184,0.15); color: var(--text-secondary); border: 1px solid var(--border); }
+.badge-enterprise { background: rgba(249,115,22,0.15); color: #fdba74; border: 1px solid rgba(249,115,22,0.2); }
+.badge-trial { background: rgba(34,197,94,0.15); color: #86efac; border: 1px solid rgba(34,197,94,0.2); }
+[data-theme="light"] .badge-pro { background: linear-gradient(135deg, rgba(37,99,235,0.12), rgba(124,58,237,0.12)); color: #2563eb; border-color: rgba(37,99,235,0.25); }
+[data-theme="light"] .badge-enterprise { background: rgba(234,88,12,0.1); color: #c2410c; border-color: rgba(234,88,12,0.25); }
+[data-theme="light"] .badge-trial { background: rgba(22,163,74,0.1); color: #15803d; border-color: rgba(22,163,74,0.25); }
+
+.card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); gap: 8px; flex-wrap: wrap; }
+
+/* ===== Quota ===== */
+.quota-section { margin-top: 10px; }
+.quota-header { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+.quota-header span:last-child { font-weight: 600; color: var(--text); }
+.quota-bar { height: 4px; background: rgba(255,255,255,0.06); border-radius: 4px; overflow: hidden; margin-top: 4px; }
+.quota-fill { height: 100%; border-radius: 4px; transition: width 0.6s cubic-bezier(0.4,0,0.2,1); background: linear-gradient(90deg, var(--primary), #8b5cf6); }
+.quota-fill.warning { background: linear-gradient(90deg, var(--warning), var(--accent)); }
+.quota-fill.danger { background: linear-gradient(90deg, var(--danger), #f43f5e); }
+
+/* ===== Check-in ===== */
+.checkin-status { margin-top: 10px; display: flex; align-items: center; gap: 8px; }
+.checkin-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.checkin-badge.done { background: rgba(34,197,94,0.25); color: #86efac; border: 1px solid rgba(34,197,94,0.3); }
+.checkin-badge.pending { background: rgba(234,179,8,0.25); color: #fde047; border: 1px solid rgba(234,179,8,0.3); }
+.checkin-badge.inactive { background: rgba(148,163,184,0.2); color: var(--text-secondary); border: 1px solid var(--border); }
+[data-theme="light"] .checkin-badge.done { background: rgba(34,197,94,0.15); color: #15803d; border-color: rgba(34,197,94,0.3); }
+[data-theme="light"] .checkin-badge.pending { background: rgba(234,179,8,0.15); color: #a16207; border-color: rgba(234,179,8,0.3); }
+[data-theme="light"] .checkin-badge.inactive { background: rgba(0,0,0,0.06); color: var(--text-muted); border-color: var(--border); }
+.streak-badge { font-size: 11px; color: var(--text-secondary); }
+
+/* ===== Empty State ===== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+  grid-column: 1 / -1;
+}
+.empty-state svg { width: 64px; height: 64px; margin-bottom: 16px; opacity: 0.3; }
+.empty-state h3 { font-size: 16px; font-weight: 600; margin-bottom: 8px; color: var(--text-secondary); }
+.empty-state p { font-size: 13px; }
+
+/* ===== Grid Loading ===== */
+.grid-loading {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 80px 20px; grid-column: 1 / -1;
+}
+.grid-loading .spinner-sm { width: 24px; height: 24px; border-width: 3px; }
+
+/* ===== Modal ===== */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(8px);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.show { display: flex; }
+.modal {
+  background: #131827;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 0;
+  width: 100%;
+  max-width: 520px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.modal-header { padding: 24px 28px 0; flex-shrink: 0; }
+.modal-body { padding: 8px 28px 20px; overflow-y: auto; flex: 1; }
+.modal-actions { padding: 16px 28px; border-top: 1px solid var(--border); flex-shrink: 0; }
+.modal h2 { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+.modal p { font-size: 13px; color: var(--text-secondary); margin-bottom: 0; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 0; }
+
+/* ===== Form Elements ===== */
+textarea, input[type="text"], input[type="url"], select {
+  width: 100%;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  transition: var(--transition);
+  outline: none;
+}
+textarea:focus, input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+textarea { resize: vertical; min-height: 120px; font-family: 'SF Mono', 'Fira Code', monospace; }
+label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--text-secondary); }
+.form-group { margin-bottom: 16px; }
+
+/* ===== OAuth Modal ===== */
+.oauth-url-box {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  word-break: break-all;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+.oauth-loading {
+  text-align: center;
+  padding: 40px 0;
+}
+.spinner {
+  width: 36px; height: 36px;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== Toast ===== */
+.toast {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  padding: 10px 24px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 9999;
+  opacity: 0;
+  transition: all 0.25s cubic-bezier(0.4,0,0.2,1);
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.error { background: #ef4444; color: #fff; }
+.toast.success { background: #22c55e; color: #fff; }
+.toast.info { background: #3b82f6; color: #fff; }
+.toast.warning { background: #eab308; color: #000; }
+
+/* ===== License Activation ===== */
+.license-overlay {
+  position: fixed; inset: 0; z-index: 5000;
+  display: none; align-items: center; justify-content: center;
+  background: var(--bg); backdrop-filter: blur(6px);
+}
+.license-overlay.show { display: flex; }
+.license-card {
+  width: 100%; max-width: 400px; padding: 36px 32px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow);
+  text-align: center;
+}
+.license-icon {
+  width: 56px; height: 56px; margin: 0 auto 18px;
+  border-radius: 16px; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--primary), #8b5cf6); color: #fff;
+}
+.license-icon svg { width: 28px; height: 28px; }
+.license-card h2 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+.license-card .license-sub { font-size: 13px; color: var(--text-secondary); margin-bottom: 22px; }
+.license-card input {
+  width: 100%; padding: 11px 14px; background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text); font-size: 13px; font-family: 'SF Mono', ui-monospace, monospace;
+  outline: none; transition: var(--transition); text-align: center;
+}
+[data-theme="light"] .license-card input { background: #fff; }
+.license-card input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+.license-card .btn { width: 100%; margin-top: 14px; justify-content: center; padding: 11px; }
+.license-error { color: var(--danger); font-size: 12px; margin-top: 10px; min-height: 16px; }
+.license-info { font-size: 11px; color: var(--text-muted); margin-top: 18px; }
+
+/* ===== Quota Detail ===== */
+.quota-list { margin-top: 10px; }
+.quota-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.quota-item:last-child { border-bottom: none; }
+.quota-item .label { color: var(--text-secondary); }
+.quota-item .value { font-weight: 600; }
+
+/* ===== Proxy Panel ===== */
+.proxy-btn-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; transition: var(--transition); }
+.proxy-btn-dot.off { background: var(--text-muted); }
+.proxy-btn-dot.on { background: var(--success); box-shadow: 0 0 6px var(--success-glow); }
+#proxyBtn.online { border-color: rgba(34,197,94,0.4); color: var(--success); }
+[data-theme="light"] #proxyBtn.online { border-color: rgba(22,163,74,0.4); color: #16a34a; }
+.proxy-panel {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 14px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); font-size: 12px; transition: border-color var(--transition);
+}
+.proxy-panel.online { border-color: rgba(34,197,94,0.35); }
+[data-theme="light"] .proxy-panel.online { border-color: rgba(22,163,74,0.35); }
+
+.proxy-status { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.proxy-status-pill {
+  display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
+  padding: 5px 13px 5px 11px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; border: 1px solid transparent;
+  transition: var(--transition);
+}
+.proxy-status-pill.offline { background: var(--surface-active); color: var(--text-muted); border-color: var(--border); }
+.proxy-panel.online .proxy-status-pill { background: rgba(34,197,94,0.15); color: #4ade80; border-color: rgba(34,197,94,0.4); }
+[data-theme="light"] .proxy-panel.online .proxy-status-pill { background: rgba(22,163,74,0.12); color: #15803d; border-color: rgba(22,163,74,0.35); }
+
+.ping-dot { position: relative; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: currentColor; }
+.proxy-panel.online .ping-dot::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; background: currentColor;
+  animation: proxy-ping 1.8s cubic-bezier(0,0,0.2,1) infinite;
+}
+@keyframes proxy-ping { 75%,100% { transform: scale(2.4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .proxy-panel.online .ping-dot::before { animation: none; } }
+
+.proxy-endpoint { display: none; align-items: center; gap: 6px; min-width: 0; }
+.proxy-panel.online .proxy-endpoint { display: inline-flex; }
+.proxy-endpoint code {
+  font-family: 'SF Mono', ui-monospace, monospace; font-size: 11.5px; color: var(--text);
+  background: var(--surface-active); padding: 3px 9px; border-radius: 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px;
+}
+.copy-btn {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 26px; height: 26px; border: none; background: transparent;
+  color: var(--text-muted); border-radius: 6px; cursor: pointer; transition: var(--transition);
+}
+.copy-btn:hover { color: var(--text); background: var(--surface-active); }
+.copy-btn svg { width: 14px; height: 14px; }
+
+.proxy-input-group { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.proxy-input-group input { width: 78px; padding: 5px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 12px; font-family: inherit; outline: none; transition: var(--transition); }
+.proxy-input-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+.proxy-input-group input[type="password"] { width: 118px; }
+
+/* ===== Proxy Chat Card ===== */
+.proxy-chat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  overflow: hidden;
+  transition: var(--transition);
+}
+.proxy-chat-card.collapsed .chat-body { display: none; }
+.chat-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; cursor: pointer; user-select: none;
+  border-bottom: 1px solid var(--border);
+}
+.chat-header:hover { background: var(--surface-hover); }
+.chat-header-left { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.chat-header-left svg { width: 16px; height: 16px; opacity: 0.7; }
+.chat-header-actions { display: flex; gap: 6px; align-items: center; }
+.chat-body { padding: 0; }
+.chat-messages {
+  max-height: 280px; overflow-y: auto; padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+  min-height: 60px;
+}
+.chat-msg {
+  padding: 8px 12px; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.5;
+  max-width: 85%; word-break: break-word; white-space: pre-wrap;
+}
+.chat-msg.user {
+  align-self: flex-end;
+  background: var(--primary); color: #fff;
+}
+.chat-msg.assistant {
+  align-self: flex-start;
+  background: var(--surface-active); color: var(--text);
+}
+.chat-msg.error {
+  align-self: center; background: rgba(239,68,68,0.15); color: var(--danger);
+  font-size: 12px; text-align: center;
+}
+.chat-empty {
+  text-align: center; color: var(--text-muted); font-size: 12px; padding: 20px 0;
+}
+.chat-input-area {
+  display: flex; gap: 8px; padding: 10px 14px;
+  border-top: 1px solid var(--border);
+}
+.chat-input-area select {
+  padding: 6px 10px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text); font-size: 12px;
+  font-family: inherit; outline: none; cursor: pointer; max-width: 160px;
+}
+.chat-input-area select:focus { border-color: var(--primary); }
+.chat-input-area input {
+  flex: 1; padding: 6px 12px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text); font-size: 13px;
+  font-family: inherit; outline: none;
+}
+.chat-input-area input:focus { border-color: var(--primary); }
+.chat-input-area input:disabled { opacity: 0.5; }
+.model-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 20px; font-size: 11px;
+  background: var(--surface-active); color: var(--text-secondary);
+}
+.model-icon-sm { width: 14px; height: 14px; flex-shrink: 0; border-radius: 3px; }
+.model-selector { position: relative; flex-shrink: 0; }
+.model-selector-trigger {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 6px 10px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); font-size: 12px; color: var(--text);
+  white-space: nowrap; max-width: 180px; transition: var(--transition);
+}
+.model-selector-trigger:hover { border-color: var(--primary); }
+.model-current-icon { display: flex; align-items: center; }
+.model-current-icon svg { width: 16px; height: 16px; border-radius: 3px; }
+.model-current-name { overflow: hidden; text-overflow: ellipsis; }
+.model-arrow { font-size: 10px; color: var(--text-muted); margin-left: auto; }
+.model-dropdown {
+  display: none; position: absolute; bottom: 100%; left: 0; right: auto;
+  min-width: 200px; max-height: 240px; overflow-y: auto;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow);
+  z-index: 100; margin-bottom: 4px;
+}
+.model-dropdown.open { display: block; }
+.model-option {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  cursor: pointer; font-size: 12px; color: var(--text); transition: var(--transition);
+}
+.model-option:hover { background: var(--surface-hover); }
+.model-option.active { background: var(--surface-active); color: var(--primary); }
+.model-option svg { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; }
+.sync-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; font-size: 11.5px; font-weight: 500;
+  border-radius: var(--radius-sm); font-family: inherit;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-secondary); cursor: pointer; transition: var(--transition);
+}
+.sync-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+.sync-btn:hover { color: var(--primary); border-color: var(--primary); background: var(--surface-hover); }
+.sync-btn.export:hover { color: var(--success); border-color: var(--success); }
+.sync-btn:disabled { opacity: 0.5; cursor: wait; }
+.chat-send-btn {
+  padding: 6px 16px; font-size: 12px; font-weight: 600; border-radius: var(--radius-sm);
+  border: none; cursor: pointer; transition: var(--transition);
+  background: var(--primary); color: #fff;
+}
+.chat-send-btn:hover { background: var(--primary-hover); }
+.chat-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.typing-indicator span {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-muted); margin: 0 1px;
+  animation: bounce 0.6s infinite alternate;
+}
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce { to { opacity: 0.3; transform: translateY(-4px); } }
+
+/* ===== Filter Bar ===== */
+.filter-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+.filter-label { font-size: 12px; color: var(--text-muted); font-weight: 500; display: inline-flex; align-items: center; gap: 5px; }
+.filter-label svg { width: 14px; height: 14px; }
+.filter-bar select, .filter-bar input[type="date"] { padding: 6px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 12px; font-family: inherit; outline: none; cursor: pointer; }
+.filter-bar select:focus, .filter-bar input[type="date"]:focus { border-color: var(--primary); }
+.filter-bar input[type="date"] { color-scheme: dark; }
+[data-theme="light"] .filter-bar input[type="date"] { color-scheme: light; }
+.filter-chip {
+  display: none; align-items: center; gap: 7px; padding: 4px 8px 4px 12px;
+  border-radius: 999px; font-size: 12px; font-weight: 500;
+  background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.35);
+}
+[data-theme="light"] .filter-chip { background: rgba(37,99,235,0.1); color: #2563eb; border-color: rgba(37,99,235,0.3); }
+.filter-chip.show { display: inline-flex; }
+.filter-chip .x { cursor: pointer; opacity: 0.55; display: inline-flex; }
+.filter-chip .x:hover { opacity: 1; }
+.filter-chip .x svg { width: 14px; height: 14px; }
+
+/* ===== Responsive ===== */
+@media (max-width: 720px) {
+  .sidebar { display: none; }
+  .main { padding: 12px 16px; }
+  .header-top { flex-wrap: wrap; gap: 6px; }
+  .account-grid { grid-template-columns: 1fr; }
+  .stats { flex-direction: column; }
+}
+</style>
+</head>
+<body>
+
+<!-- License Activation Gate -->
+<div class="license-overlay" id="licenseOverlay">
+  <div class="license-card">
+    <div class="license-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></div>
+    <h2>激活授权</h2>
+    <div class="license-sub" id="licenseSub">请输入激活码以继续使用</div>
+    <input id="licenseInput" placeholder="粘贴激活码" onkeydown="if(event.key==='Enter')doActivate()">
+    <button class="btn btn-primary" onclick="doActivate()">激活</button>
+    <div class="license-error" id="licenseError"></div>
+    <div class="license-info">激活码由算法签发，无需联网验证</div>
+  </div>
+</div>
+
+<aside class="sidebar">
+  <div class="sidebar-logo">AI大模型网关</div>
+  <nav class="sidebar-nav">
+    <button class="nav-item active" data-platform="workbuddy" onclick="switchPlatform('workbuddy')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      WorkBuddy
+    </button>
+    <button class="nav-item" data-platform="codebuddy_cn" onclick="switchPlatform('codebuddy_cn')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>
+      CodeBuddy CN
+    </button>
+  </nav>
+  <div class="sidebar-footer">
+    <button class="btn btn-ghost btn-sm" onclick="toggleTheme()" id="themeBtn" title="切换主题" style="width:100%;justify-content:center"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>主题切换</button>
+  </div>
+</aside>
+
+<div class="content">
+  <div class="header-top">
+    <button class="btn btn-ghost btn-sm" onclick="showImportModal()">粘贴token</button>
+    <button class="btn btn-ghost btn-sm" onclick="document.getElementById('fileInput').click()">选择文件</button>
+    <input type="file" id="fileInput" accept=".json" style="display:none" onchange="handleFileImport(event)">
+    <button class="btn btn-ghost btn-sm" onclick="showOAuthModal()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>OAuth登录</button>
+    <button class="btn btn-accent btn-sm" onclick="checkinAll()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4"/></svg>一键签到</button>
+    <button class="btn btn-primary btn-sm" onclick="refreshAll()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>全部刷新</button>
+    <button class="btn btn-ghost btn-sm" onclick="toggleProxy()" id="proxyBtn" title="代理网关"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg><span class="proxy-btn-dot off" id="proxyBtnDot"></span>代理网关</button>
+  </div>
+
+<div class="main" id="main">
+  <div class="stats" id="stats"></div>
+  <div class="proxy-panel" id="proxyPanel" data-port="8001" style="margin-bottom:12px">
+    <div class="proxy-status">
+      <span class="proxy-status-pill offline" id="proxyStatusPill">
+        <span class="ping-dot"></span>
+        <span id="proxyStatusText">离线</span>
+      </span>
+      <span class="proxy-endpoint" id="proxyEndpoint">
+        <code id="proxyEndpointUrl">http://127.0.0.1:8001/v1</code>
+        <button class="copy-btn" onclick="copyEndpoint()" title="复制地址">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        </button>
+      </span>
+    </div>
+    <div class="proxy-input-group">
+      <input type="number" id="proxyPortInput" value="8001" min="1024" max="65535" placeholder="端口">
+      <input type="password" id="proxyPassInput" placeholder="密码(可选)">
+      <button class="btn btn-primary btn-sm" onclick="toggleProxy()" id="proxyToggleBtn">启动</button>
+    </div>
+  </div>
+  <div class="proxy-chat-card collapsed" id="proxyChatCard" style="display:none">
+    <div class="chat-header" onclick="toggleChatCard()">
+      <div class="chat-header-left">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        <span>测试对话</span>
+      </div>
+      <div class="chat-header-actions">
+        <button class="sync-btn" onclick="event.stopPropagation();syncModels()" id="syncModelsBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg><span class="sync-label">同步官方模型</span>
+        </button>
+        <button class="sync-btn export" onclick="event.stopPropagation();exportToWorkBuddy()" id="exportBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg><span class="sync-label">导入 WorkBuddy</span>
+        </button>
+        <span id="chatCollapseIcon" style="font-size:12px;color:var(--text-muted)">▼</span>
+      </div>
+    </div>
+    <div class="chat-body">
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-empty">启动代理后即可测试对话</div>
+      </div>
+      <div class="chat-input-area">
+        <div class="model-selector" id="modelSelector">
+          <div class="model-selector-trigger" onclick="event.stopPropagation();toggleModelDropdown()">
+            <span class="model-current-icon" id="modelCurrentIcon"></span>
+            <span class="model-current-name" id="modelCurrentName"></span>
+            <span class="model-current-id" id="modelCurrentId" style="display:none"></span>
+            <span class="model-arrow">▾</span>
+          </div>
+          <div class="model-dropdown" id="modelDropdown"></div>
+        </div>
+        <input type="text" id="chatInput" placeholder="输入消息..." onkeydown="if(event.key==='Enter')sendTestChat()" disabled>
+        <button class="chat-send-btn" id="chatSendBtn" onclick="sendTestChat()" disabled>发送</button>
+      </div>
+    </div>
+  </div>
+  <div class="filter-bar" id="filterBar" style="display:none">
+    <span class="filter-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>添加日期</span>
+    <button class="btn btn-ghost btn-sm" onclick="setFilterDate(-2)">前天</button>
+    <button class="btn btn-ghost btn-sm" onclick="setFilterDate(-1)">昨天</button>
+    <button class="btn btn-ghost btn-sm" onclick="setFilterDate(0)">今天</button>
+    <input type="date" id="filterDate" onchange="applyFilter()" title="选择日期">
+    <span class="filter-chip" id="filterChip"><span id="filterChipText"></span><span class="x" onclick="clearFilter()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></span></span>
+  </div>
+  <div class="account-grid" id="accountGrid"></div>
+</div>
+</div><!-- /.content -->
+
+<!-- OAuth Modal -->
+<div class="modal-overlay" id="oauthModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>OAuth 登录</h2>
+      <p>请在浏览器中打开以下链接完成授权</p>
+    </div>
+    <div class="modal-body">
+      <div class="oauth-url-box" id="oauthUrl">加载中...</div>
+      <div id="oauthStatus">
+        <div class="oauth-loading">
+          <div class="spinner"></div>
+          <div style="color:var(--text-secondary);font-size:13px;">等待授权完成...</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="cancelOAuth();closeModal('oauthModal')">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal-overlay" id="importModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>粘贴 Token 导入</h2>
+      <p>粘贴 access_token（或 JSON / 账号数组）即可导入</p>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Token / JSON</label>
+        <textarea id="importJson" placeholder='粘贴 access_token，例如：&#10;123456+eyJhbGciOi...&#10;&#10;也支持 JSON：&#10;{ "access_token": "...", "email": "..." }&#10;[{ "access_token": "..." }]'></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('importModal')">取消</button>
+      <button class="btn btn-primary" onclick="doImport()">导入</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Modal -->
+<div class="modal-overlay" id="confirmModal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <h2 id="confirmTitle">确认</h2>
+      <p id="confirmMessage" style="white-space:pre-line"></p>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="confirmCancelBtn">取消</button>
+      <button class="btn btn-danger" id="confirmOkBtn">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- Quota Detail Modal -->
+<div class="modal-overlay" id="quotaModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>额度详情</h2>
+      <p id="quotaAccountName"></p>
+    </div>
+    <div class="modal-body" id="quotaContent"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('quotaModal')">关闭</button>
+      <button class="btn btn-accent" onclick="refreshQuota()">刷新</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+let currentPlatform = 'workbuddy';
+let currentAccounts = [];
+let oauthTimer = null;
+let quotaAccountId = null;
+
+// ===== Platform Switch =====
+function switchPlatform(platform) {
+  currentPlatform = platform;
+  document.querySelectorAll('.nav-item').forEach(t => t.classList.toggle('active', t.dataset.platform === platform));
+  loadAccounts();
+}
+
+// ===== Toast =====
+function showToast(msg, type = 'info') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast ${type === 'warning' ? 'warning' : type === 'error' ? 'error' : type === 'success' ? 'success' : 'info'} show`;
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ===== Button Loading =====
+function btnLoading(btn) {
+  if (!btn || btn.tagName !== 'BUTTON') return;
+  btn._origHTML = btn.innerHTML;
+  btn.disabled = true;
+  btn.classList.add('btn-loading');
+  btn.innerHTML = '<span class="spinner-sm"></span>';
+}
+function btnDone(btn) {
+  if (!btn || btn.tagName !== 'BUTTON') return;
+  btn.disabled = false;
+  btn.classList.remove('btn-loading');
+  if (btn._origHTML) btn.innerHTML = btn._origHTML;
+}
+
+// ===== Modal Helpers =====
+function showModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) {
+  document.getElementById(id).classList.remove('show');
+  if (id === 'oauthModal') cancelOAuth();
+}
+function showConfirm(msg, title) {
+  title = title || '确认';
+  var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  return new Promise(function(resolve) {
+    var ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:99999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)';
+    var box = document.createElement('div');
+    var bg = isLight ? '#fff' : '#1a1f2e';
+    var fg = isLight ? '#111318' : '#e8edf5';
+    var sub = isLight ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)';
+    var bd = isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.1)';
+    box.style.cssText = 'background:' + bg + ';color:' + fg + ';border:1px solid ' + bd + ';padding:24px;border-radius:12px;max-width:380px;min-width:280px;box-shadow:0 8px 32px rgba(0,0,0,0.3)';
+    var h = document.createElement('div');
+    h.textContent = title;
+    h.style.cssText = 'font-size:16px;font-weight:700;margin-bottom:12px;color:' + fg;
+    var p = document.createElement('div');
+    p.textContent = msg;
+    p.style.cssText = 'white-space:pre-line;margin-bottom:20px;font-size:13px;line-height:1.6;color:' + sub;
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
+    var bNo = document.createElement('button');
+    bNo.textContent = '取消';
+    bNo.style.cssText = 'padding:8px 18px;background:transparent;color:' + sub + ';border:1px solid ' + bd + ';border-radius:8px;cursor:pointer;font-size:13px';
+    var bYes = document.createElement('button');
+    bYes.textContent = '确定';
+    bYes.style.cssText = 'padding:8px 18px;background:#ef4444;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px';
+    row.appendChild(bNo); row.appendChild(bYes);
+    box.appendChild(h); box.appendChild(p); box.appendChild(row);
+    ov.appendChild(box);
+    document.body.appendChild(ov);
+    function done(v) { document.body.removeChild(ov); resolve(v); }
+    bYes.onclick = function() { done(true); };
+    bNo.onclick = function() { done(false); };
+  });
+}
+
+// ===== Load Accounts =====
+async function loadAccountsLight() {
+  try {
+    const raw = await pywebview.api.list_accounts(currentPlatform);
+    const fresh = JSON.parse(raw);
+    const freshMap = {};
+    fresh.forEach(a => freshMap[a.id] = a);
+    currentAccounts = currentAccounts.map(a => freshMap[a.id] || a).filter(a => freshMap[a.id]);
+    fresh.forEach(a => { if (!currentAccounts.find(x => x.id === a.id)) currentAccounts.push(a); });
+    renderStats();
+    buildFilter();
+    renderAccounts();
+  } catch (e) {}
+}
+
+async function loadAccounts() {
+  try {
+    const raw = await pywebview.api.list_accounts(currentPlatform);
+    currentAccounts = JSON.parse(raw);
+    renderStats();
+    buildFilter();
+    renderAccounts();
+    if (currentAccounts.length > 0) {
+      pywebview.api.batch_checkin_status(currentPlatform).then(() => loadAccountsLight()).catch(() => {});
+    }
+  } catch (e) {
+    currentAccounts = [];
+    renderStats();
+    buildFilter();
+    renderAccounts();
+  }
+}
+
+function renderStats() {
+  const el = document.getElementById('stats');
+  el.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div>
+      <div class="stat-text"><div class="stat-label">总账号</div><div class="stat-value" id="statTotal">-</div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg></div>
+      <div class="stat-text"><div class="stat-label">已用 / 总量</div><div class="stat-value" id="statQuota">-</div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></div>
+      <div class="stat-text"><div class="stat-label">今日签到</div><div class="stat-value" id="statCheckin">-</div></div>
+    </div>
+  `;
+  pywebview.api.get_stats(currentPlatform).then(raw => {
+    const d = JSON.parse(raw);
+    document.getElementById('statTotal').textContent = d.total_accounts;
+    document.getElementById('statQuota').textContent = `${fmt(d.total_used)} / ${fmt(d.total_quota)}`;
+    document.getElementById('statCheckin').textContent = d.checked_in_today;
+  }).catch(() => {});
+}
+
+function dateStr(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function friendlyDate(val) {
+  if (!val) return '';
+  const p = val.split('-');
+  if (p.length !== 3) return val;
+  return `${p[0]}年${parseInt(p[1],10)}月${parseInt(p[2],10)}日`;
+}
+
+function updateFilterChip() {
+  const val = document.getElementById('filterDate').value;
+  const chip = document.getElementById('filterChip');
+  if (val) {
+    document.getElementById('filterChipText').textContent = friendlyDate(val);
+    chip.classList.add('show');
+  } else {
+    chip.classList.remove('show');
+  }
+}
+
+function buildFilter() {
+  for (const a of currentAccounts) {
+    if (a.created_at) {
+      document.getElementById('filterBar').style.display = 'flex';
+      return;
+    }
+  }
+  document.getElementById('filterBar').style.display = 'none';
+}
+
+function setFilterDate(offset) {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  document.getElementById('filterDate').value = dateStr(d);
+  applyFilter();
+}
+
+function applyFilter() {
+  updateFilterChip();
+  renderAccounts();
+}
+
+function clearFilter() {
+  document.getElementById('filterDate').value = '';
+  updateFilterChip();
+  renderAccounts();
+}
+
+function getFilteredAccounts() {
+  const val = document.getElementById('filterDate').value;
+  if (!val) return currentAccounts;
+  return currentAccounts.filter(a => {
+    if (!a.created_at) return false;
+    const d = new Date(a.created_at * 1000);
+    return dateStr(d) === val;
+  });
+}
+
+function renderAccounts() {
+  const filtered = getFilteredAccounts();
+  const el = document.getElementById('accountGrid');
+  if (!filtered.length) {
+    if (currentAccounts.length) {
+      el.innerHTML = `
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+          <h3>无匹配账号</h3>
+          <p>尝试调整筛选条件</p>
+        </div>
+      `;
+    } else {
+      el.innerHTML = `
+        <div class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/></svg>
+          <h3>暂无账号</h3>
+          <p>使用 OAuth 登录或导入 JSON 来添加账号</p>
+        </div>
+      `;
+    }
+    return;
+  }
+
+  el.innerHTML = filtered.map(a => {
+    const avatarChar = (a.nickname || a.email || '?')[0].toUpperCase();
+    const planBadge = getPlanBadge(a);
+    const quotaData = parseQuota(a);
+    const checkinData = parseCheckin(a);
+
+    return `
+      <div class="card">
+        <div class="card-header">
+          <div style="display:flex;align-items:center;flex:1;min-width:0">
+            <div class="card-avatar">${avatarChar}</div>
+            <div class="card-info">
+              <div class="card-name">${escapeHtml(a.nickname || a.email || '未命名')}</div>
+              <div class="card-email">${escapeHtml(a.email)}</div>
+              <div class="card-meta">
+                ${planBadge}
+                ${a.enterprise_name ? `<span style="font-size:11px;color:var(--text-muted)"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 6h2M13 6h2M9 10h2M13 10h2M9 14h2M13 14h2"/></svg> ${escapeHtml(a.enterprise_name)}</span>` : ''}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        ${quotaData ? `
+        <div class="quota-section">
+          <div class="quota-header">
+            <span>已用 ${fmt(quotaData.used)} / 剩余 ${fmt(quotaData.total - quotaData.used)}</span>
+            <span>${fmt(quotaData.total)}</span>
+          </div>
+          <div class="quota-bar"><div class="quota-fill ${quotaData.pct >= 80 ? 'danger' : quotaData.pct >= 50 ? 'warning' : ''}" style="width:${Math.min(quotaData.pct, 100)}%"></div></div>
+        </div>` : ''}
+
+        <div class="card-footer">
+          <div class="checkin-status">
+            ${checkinData !== null ? `
+              <span class="checkin-badge ${checkinData.done ? 'done' : 'pending'}">
+                ${checkinData.done
+                  ? '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-1px"><path d="M5 13l4 4L19 7"/></svg> 已签到'
+                  : '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> 未签到'}
+              </span>
+              ${checkinData.streak > 0 ? `<span class="streak-badge"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><path d="M8 2c0 4-3 6-3 9 0 4 3 7 7 7s7-3 7-7c0-3-2-5-3-7 0 3-2 5-4 5s-4-3-4-7z"/><path d="M12 22v-4"/></svg> 连续 ${checkinData.streak} 天</span>` : ''}
+            ` : `<span class="checkin-badge inactive">签到不可用</span>`}
+          </div>
+          <div class="card-actions">
+            <button class="btn btn-ghost btn-sm" onclick="showQuotaDetail('${a.id}')" title="额度详情"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M4 16l4-8 4 4 4-6 4 8"/></svg>详情</button>
+            <button class="btn btn-ghost btn-sm" onclick="doCheckin('${a.id}')" title="签到"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg>签到</button>
+            <button class="btn btn-ghost btn-sm" onclick="refreshOne('${a.id}')" title="刷新"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>刷新</button>
+            <button class="btn btn-danger btn-sm btn-icon" onclick="deleteOne('${a.id}')" title="删除"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ===== Helpers =====
+function escapeHtml(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function getPlanBadge(a) {
+  const code = a.dosage_notify_code || a.plan_type || '';
+  const pkg = a.quota_raw?.userResource?.data?.Resources;
+  let isPro = false, isEnterprise = false, isTrial = false;
+  if (pkg) {
+    for (const r of pkg) {
+      const pc = r.PackageCode || '';
+      if (['TCACA_code_002_AkiJS3ZHF5', 'TCACA_code_003_FAnt7lcmRT'].includes(pc)) isPro = true;
+      if (pc === 'TCACA_code_007_nzdH5h4Nl0') isTrial = true;
+    }
+  }
+  if (a.enterprise_id || a.enterprise_name) isEnterprise = true;
+
+  if (isEnterprise) return '<span class="badge badge-enterprise">企业版</span>';
+  if (isPro) return '<span class="badge badge-pro">Pro</span>';
+  if (isTrial) return '<span class="badge badge-trial">试用</span>';
+  return '<span class="badge badge-free">Free</span>';
+}
+
+function _n(v) {
+  if (v == null) return 0;
+  if (typeof v === 'number') return v;
+  const n = Number(v);
+  return isNaN(n) ? 0 : n;
+}
+function fmt(n) {
+  return _n(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+function parseQuota(a) {
+  try {
+    const qr = a.quota_raw;
+    if (!qr) return null;
+    const ur = qr.userResource || a.usage_raw;
+    if (!ur) return null;
+    const accts = ur.data?.Response?.Data?.Accounts || ur.data?.Resources || [];
+    if (!accts.length) return null;
+    let total = 0, used = 0;
+    for (const r of accts) {
+      const t = _n(r.CycleCapacitySizePrecise) || _n(r.CycleCapacitySize) || _n(r.CapacitySizePrecise) || _n(r.CapacitySize) || 0;
+      const remain = _n(r.CycleCapacityRemainPrecise) || _n(r.CycleCapacityRemain) || _n(r.CapacityRemainPrecise) || _n(r.CapacityRemain) || 0;
+      const u = _n(r.CapacityUsedPrecise) || _n(r.CapacityUsed) || (t - remain);
+      total += t;
+      used += u;
+    }
+    if (total === 0) return null;
+    return { total, used, pct: Math.round((used / total) * 100) };
+  } catch { return null; }
+}
+
+function parseCheckin(a) {
+  const today = Math.floor(Date.now() / 1000);
+  const dayStart = today - (today % 86400);
+  const lt = a.last_checkin_time;
+  const done = lt ? lt >= dayStart : false;
+  return { done, streak: a.checkin_streak || 0 };
+}
+
+// ===== Actions =====
+async function refreshAll() {
+  const btn = event?.currentTarget;
+  btnLoading(btn);
+  try {
+    const raw = await pywebview.api.refresh_all(currentPlatform);
+    const r = JSON.parse(raw);
+    showToast(`刷新完成: ${r.success}/${r.total}`, r.success > 0 ? 'success' : 'info');
+    await loadAccounts();
+  } catch (e) { showToast('刷新失败: ' + e, 'error'); }
+  finally { btnDone(btn); }
+}
+
+async function refreshOne(id) {
+  const btn = event?.currentTarget;
+  btnLoading(btn);
+  try {
+    const raw = await pywebview.api.refresh_token(currentPlatform, id);
+    const r = JSON.parse(raw);
+    if (r.error) { showToast(r.error, 'error'); return; }
+    showToast('刷新成功', 'success');
+    await loadAccountsLight();
+  } catch (e) { showToast('刷新失败: ' + e, 'error'); }
+  finally { btnDone(btn); }
+}
+
+async function deleteOne(id) {
+  if (!await showConfirm('确认删除该账号？', '删除账号')) return;
+  const btn = event?.currentTarget;
+  btnLoading(btn);
+  try {
+    await pywebview.api.delete_account(currentPlatform, id);
+    showToast('已删除', 'success');
+    await loadAccountsLight();
+  } catch (e) { showToast('删除失败: ' + e, 'error'); }
+  finally { btnDone(btn); }
+}
+
+// ===== OAuth =====
+async function showOAuthModal() {
+  showModal('oauthModal');
+  document.getElementById('oauthUrl').textContent = '正在获取登录链接...';
+  document.getElementById('oauthStatus').innerHTML = `
+    <div class="oauth-loading"><div class="spinner"></div><div style="color:var(--text-secondary);font-size:13px;">等待授权完成...</div></div>
+  `;
+
+  try {
+    const raw = await pywebview.api.oauth_start(currentPlatform);
+    const r = JSON.parse(raw);
+    if (r.error) { showToast(r.error, 'error'); closeModal('oauthModal'); return; }
+
+    document.getElementById('oauthUrl').textContent = r.verification_uri;
+
+    document.getElementById('oauthStatus').innerHTML = `
+      <div style="margin-bottom:12px;">
+        <button class="btn btn-primary btn-sm" onclick="window.open('${r.verification_uri}', '_blank')">打开链接</button>
+        <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${r.verification_uri}')">复制链接</button>
+      </div>
+      <div class="oauth-loading">
+        <div class="spinner"></div>
+        <div style="color:var(--text-secondary);font-size:13px;">等待授权完成...</div>
+      </div>
+    `;
+
+    startOAuthPolling(r.login_id);
+  } catch (e) {
+    showToast('启动 OAuth 失败: ' + e, 'error');
+    closeModal('oauthModal');
+  }
+}
+
+function startOAuthPolling(loginId) {
+  if (oauthTimer) clearInterval(oauthTimer);
+  oauthTimer = setInterval(async () => {
+    try {
+      const raw = await pywebview.api.oauth_poll(loginId);
+      const r = JSON.parse(raw);
+      if (r.status === 'completed') {
+        clearInterval(oauthTimer);
+        oauthTimer = null;
+        await completeOAuth(r.data);
+      } else if (r.error) {
+        clearInterval(oauthTimer);
+        oauthTimer = null;
+        showToast(r.error, 'error');
+        closeModal('oauthModal');
+      }
+    } catch (e) {}
+  }, 1500);
+}
+
+async function completeOAuth(data) {
+  try {
+    const raw = await pywebview.api.complete_oauth_and_save(currentPlatform, JSON.stringify(data));
+    const r = JSON.parse(raw);
+    if (r.error) { showToast(r.error, 'error'); return; }
+    showToast(`登录成功: ${r.email}`, 'success');
+    closeModal('oauthModal');
+    await loadAccounts();
+  } catch (e) {
+    showToast('保存账号失败: ' + e, 'error');
+  }
+}
+
+function cancelOAuth() {
+  if (oauthTimer) { clearInterval(oauthTimer); oauthTimer = null; }
+  try { pywebview.api.oauth_cancel(); } catch(e) {}
+}
+
+// ===== Import =====
+function showImportModal() {
+  document.getElementById('importJson').value = '';
+  showModal('importModal');
+}
+
+function doImport() {
+  var json = document.getElementById('importJson').value.trim();
+  if (!json) { showToast('请粘贴 Token 或 JSON', 'error'); return; }
+  var btn = event && event.currentTarget;
+  btnLoading(btn);
+  pywebview.api.import_from_json(currentPlatform, json).then(function(raw) {
+    var r = JSON.parse(raw);
+    if (r.error) { showToast(r.error, 'error'); return; }
+    showToast('导入成功: ' + (r.accounts ? r.accounts.length : 0) + ' 个账号', 'success');
+    closeModal('importModal');
+    loadAccounts();
+  }).catch(function(e) { showToast('导入失败: ' + e, 'error'); }).finally(function() { btnDone(btn); });
+}
+
+// ===== File Import =====
+function handleFileImport(event) {
+  var file = event.target.files && event.target.files[0];
+  if (!file) return;
+  showToast('正在读取文件...', 'info');
+  file.text().then(function(text) {
+    return pywebview.api.import_from_json(currentPlatform, text).then(function(raw) {
+      var r = JSON.parse(raw);
+      if (r.error) { showToast(r.error, 'error'); return; }
+      showToast('文件导入成功: ' + (r.accounts ? r.accounts.length : 0) + ' 个账号', 'success');
+      loadAccounts();
+    });
+  }).catch(function(e) { showToast('文件导入失败: ' + e, 'error'); });
+  event.target.value = '';
+}
+
+// ===== Check-in =====
+async function checkinAll() {
+  const btn = event?.currentTarget;
+  btnLoading(btn);
+  try {
+    const raw = await pywebview.api.checkin_all(currentPlatform);
+    const r = JSON.parse(raw);
+    showToast(`签到完成: ${r.success}成功 / ${r.already}已签 / ${r.failed}失败`, r.failed > 0 ? 'warning' : 'success');
+    await loadAccountsLight();
+  } catch (e) { showToast('批量签到失败: ' + e, 'error'); }
+  finally { btnDone(btn); }
+}
+
+async function doCheckin(id) {
+  const btn = event?.currentTarget;
+  btnLoading(btn);
+  try {
+    const raw = await pywebview.api.checkin(currentPlatform, id);
+    const r = JSON.parse(raw);
+    if (r.error) { showToast(r.error, 'error'); return; }
+    if (r.success) {
+      showToast(`签到成功! ${r.credit ? '+'+r.credit+' 积分' : ''}`, 'success');
+    } else {
+      showToast(r.message || '签到失败(可能已签到)', 'info');
+    }
+    await loadAccountsLight();
+  } catch (e) { showToast('签到失败: ' + e, 'error'); }
+  finally { btnDone(btn); }
+}
+
+// ===== Quota Detail =====
+async function showQuotaDetail(id) {
+  quotaAccountId = id;
+  const account = currentAccounts.find(a => a.id === id);
+  document.getElementById('quotaAccountName').textContent = account?.email || '额度详情';
+  document.getElementById('quotaContent').innerHTML = '<div style="text-align:center;padding:30px 0"><div class="spinner-sm"></div><div style="color:var(--text-muted);font-size:13px;margin-top:8px">加载中...</div></div>';
+  showModal('quotaModal');
+
+  try {
+    const raw = await pywebview.api.get_quota(currentPlatform, id);
+    const r = JSON.parse(raw);
+    if (r.error) {
+      document.getElementById('quotaContent').innerHTML = `<p style="color:var(--danger)">${r.error}</p>`;
+    } else {
+      renderQuotaContent(r);
+    }
+  } catch (e) {
+    document.getElementById('quotaContent').innerHTML = `<p style="color:var(--danger)">查询失败: ${e}</p>`;
+  }
+}
+
+function renderQuotaContent(data) {
+  let html = '';
+
+  if (data.dosage_notify_zh || data.dosage_notify_en) {
+    html += `<div style="background:rgba(234,179,8,0.1);border:1px solid rgba(234,179,8,0.2);border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#fde047;">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M12 9v4M12 17h.01M10.3 3.86l-8.1 14c-.6 1.1.1 2.5 1.3 2.5h16.8c1.2 0 1.9-1.4 1.3-2.5l-8.1-14c-.6-1.1-2.1-1.1-2.7 0z"/></svg> ${data.dosage_notify_zh || data.dosage_notify_en || ''}
+    </div>`;
+  }
+
+  if (data.payment_type) {
+    html += `<div class="quota-item"><span class="label">付费方式</span><span class="value">${data.payment_type}</span></div>`;
+  }
+
+  if (data.resources?.length) {
+    let allTotal = 0, allUsed = 0, allRemain = 0;
+    for (const r of data.resources) {
+      allTotal += _n(r.total);
+      allUsed += _n(r.used);
+      allRemain += _n(r.remain);
+    }
+    const allPct = allTotal > 0 ? Math.round((allUsed / allTotal) * 100) : 0;
+    const allCls = allPct >= 80 ? 'danger' : allPct >= 50 ? 'warning' : '';
+    html += `<div style="margin-bottom:12px;">
+      <div class="quota-item" style="border-bottom:none;padding-bottom:4px;">
+        <span class="label">总计</span>
+        <span class="value">已用 ${fmt(allUsed)} / 剩余 ${fmt(allRemain)}</span>
+      </div>
+      <div class="quota-bar"><div class="quota-fill ${allCls}" style="width:${Math.min(allPct, 100)}%"></div></div>
+    </div>`;
+
+    html += '<div class="quota-list">';
+    for (const r of data.resources) {
+      const total = _n(r.total);
+      const used = _n(r.used);
+      const remain = _n(r.remain);
+      const pct = total > 0 ? Math.round((used / total) * 100) : 0;
+      const cls = pct >= 80 ? 'danger' : pct >= 50 ? 'warning' : '';
+      const isBase = r.packageCode === 'TCACA_code_009_0XmEQc2xOf';
+      html += `
+        <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px;">
+            <span style="color:var(--text-secondary)">${r.packageName || r.packageCode || '资源包'}${isBase ? ' (基础包)' : ''}</span>
+            <span style="font-weight:600">${fmt(remain)}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:2px;">
+            <span>已用 ${fmt(used)}</span>
+            <span>${fmt(total)}</span>
+          </div>
+          <div class="quota-bar"><div class="quota-fill ${cls}" style="width:${Math.min(pct, 100)}%"></div></div>
+        </div>`;
+    }
+    html += '</div>';
+  }
+
+  if (!html) {
+    html = '<p style="color:var(--text-muted);text-align:center;padding:20px 0;">暂无配额数据</p>';
+  }
+
+  document.getElementById('quotaContent').innerHTML = html;
+}
+
+async function refreshQuota() {
+  if (quotaAccountId) await showQuotaDetail(quotaAccountId);
+}
+
+// ===== Proxy =====
+let proxyRunning = false;
+
+function setProxyBtnState(running) {
+  const dot = document.getElementById('proxyBtnDot');
+  const btn = document.getElementById('proxyBtn');
+  if (!dot || !btn) return;
+  dot.className = 'proxy-btn-dot ' + (running ? 'on' : 'off');
+  btn.classList.toggle('online', running);
+}
+
+async function toggleProxy() {
+  const btn = document.getElementById('proxyToggleBtn');
+  const panel = document.getElementById('proxyPanel');
+  const statusText = document.getElementById('proxyStatusText');
+
+  if (proxyRunning) {
+    const raw = await pywebview.api.proxy_stop();
+    const r = JSON.parse(raw);
+    if (r.success) {
+      proxyRunning = false;
+      btn.textContent = '启动';
+      panel.classList.remove('online');
+      panel.dataset.port = document.getElementById('proxyPortInput').value || '8001';
+      statusText.textContent = '离线';
+      setProxyBtnState(false);
+      hideChatCard();
+    }
+    return;
+  }
+
+  const port = document.getElementById('proxyPortInput').value || '8001';
+  const pass = document.getElementById('proxyPassInput').value || '';
+  btn.textContent = '启动中...';
+
+  const raw = await pywebview.api.proxy_start(port, pass);
+  const r = JSON.parse(raw);
+  if (r.success) {
+    proxyRunning = true;
+    btn.textContent = '停止';
+    panel.classList.add('online');
+    panel.dataset.port = r.port;
+    statusText.textContent = '在线';
+    document.getElementById('proxyEndpointUrl').textContent = `http://127.0.0.1:${r.port}/v1`;
+    setProxyBtnState(true);
+    showChatCard();
+  } else {
+    btn.textContent = '启动';
+    showToast(r.error || '启动失败', 'warning');
+  }
+}
+
+async function refreshProxyStatus() {
+  const raw = await pywebview.api.proxy_status();
+  const r = JSON.parse(raw);
+  proxyRunning = r.running;
+  const btn = document.getElementById('proxyToggleBtn');
+  const panel = document.getElementById('proxyPanel');
+  const statusText = document.getElementById('proxyStatusText');
+  if (r.running) {
+    btn.textContent = '停止';
+    panel.classList.add('online');
+    panel.dataset.port = r.port;
+    statusText.textContent = '在线';
+    document.getElementById('proxyEndpointUrl').textContent = `http://127.0.0.1:${r.port}/v1`;
+    setProxyBtnState(true);
+    showChatCard();
+  }
+}
+
+// ===== Proxy Chat Card =====
+
+const MODEL_ICONS = {
+  deepseek: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#4D6BFE"/><path d="M12 5c-3.9 0-7 2.8-7 6.5 0 2 .9 3.7 2.4 4.9-.1.8-.5 1.8-1.2 2.7-.2.3 0 .7.4.6 1.8-.3 3.2-1 4.2-1.7.4.1.8.1 1.2.1 3.9 0 7-2.8 7-6.5S15.9 5 12 5z" fill="#fff"/><circle cx="9.5" cy="11.5" r="1" fill="#4D6BFE"/><circle cx="14.5" cy="11.5" r="1" fill="#4D6BFE"/></svg>',
+  kimi: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#7C5CFC"/><path d="M16 8a5 5 0 00-5 5v6c0 .6.4 1 1 1h2c.6 0 1-.4 1-1v-6a1 1 0 012 0v3c0 .6.4 1 1 1h1c.6 0 1-.4 1-1v-3a5 5 0 00-5-5z" fill="#fff" transform="translate(-3,-1)"/></svg>',
+  glm: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#00B894"/><path d="M8 7v10M8 7c0-1 1-2 2-2M8 12h4M16 7v10M16 7c0-1-1-2-2-2M16 12h-4" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>',
+  hunyuan: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#0053E0"/><path d="M7 12c0-2.8 2.2-5 5-5s5 2.2 5 5-2.2 5-5 5M17 12c0 2.8-2.2 5-5 5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" transform="rotate(45 12 12)"/><path d="M7 12c0-2.8 2.2-5 5-5s5 2.2 5 5-2.2 5-5 5M17 12c0 2.8-2.2 5-5 5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.5" transform="rotate(-45 12 12)"/></svg>',
+  minimax: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#FF6B35"/><path d="M6 16V8l3 4 3-4v8M15 16V8l3 4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>',
+  qwen: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#615CED"/><circle cx="12" cy="10" r="4" stroke="#fff" stroke-width="2" fill="none"/><path d="M12 14v5M9 19h6" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>',
+  auto: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="url(#autoGrad)"/><defs><linearGradient id="autoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs><path d="M12 5l1.8 4.5L18 11l-4.2 1.5L12 17l-1.8-4.5L6 11l4.2-1.5z" fill="#fff"/></svg>',
+};
+
+const PRESET_MODELS = [
+  { id: 'auto', provider: 'auto', name: 'Auto' },
+  { id: 'hy3', provider: 'hunyuan', name: 'Hy3' },
+  { id: 'glm-5.2', provider: 'glm', name: 'GLM-5.2' },
+  { id: 'glm-5.1', provider: 'glm', name: 'GLM-5.1' },
+  { id: 'glm-5v-turbo', provider: 'glm', name: 'GLM-5v-Turbo' },
+  { id: 'minimax-m3', provider: 'minimax', name: 'MiniMax-M3' },
+  { id: 'kimi-k3-1', provider: 'kimi', name: 'Kimi-K3' },
+  { id: 'kimi-k2.7', provider: 'kimi', name: 'Kimi-K2.7-Code' },
+  { id: 'kimi-k2.6', provider: 'kimi', name: 'Kimi-K2.6' },
+  { id: 'deepseek-v4-flash', provider: 'deepseek', name: 'Deepseek-V4-Flash' },
+  { id: 'deepseek-v4-pro', provider: 'deepseek', name: 'Deepseek-V4-Pro' },
+];
+
+function getProxyBaseUrl() {
+  const port = document.getElementById('proxyPanel').dataset.port || document.getElementById('proxyPortInput').value || '8001';
+  return `http://127.0.0.1:${port}`;
+}
+
+function getProxyPassword() {
+  return document.getElementById('proxyPassInput').value || '';
+}
+
+function copyEndpoint() {
+  const url = document.getElementById('proxyEndpointUrl').textContent;
+  navigator.clipboard.writeText(url).then(() => showToast('已复制 ' + url, 'success')).catch(() => {});
+}
+
+function renderModelSelect(models) {
+  const dropdown = document.getElementById('modelDropdown');
+  dropdown.innerHTML = '';
+  let firstModel = models[0];
+  for (const m of models) {
+    const icon = MODEL_ICONS[m.provider] || MODEL_ICONS.auto;
+    const div = document.createElement('div');
+    div.className = 'model-option';
+    div.setAttribute('data-model', m.id);
+    div.innerHTML = `${icon}<span>${m.name}</span>`;
+    div.onclick = (e) => { e.stopPropagation(); selectModel(m.id, m.name, icon); };
+    dropdown.appendChild(div);
+  }
+  if (firstModel) {
+    const icon = MODEL_ICONS[firstModel.provider] || MODEL_ICONS.auto;
+    selectModel(firstModel.id, firstModel.name, icon);
+  }
+}
+
+function selectModel(id, name, icon) {
+  document.getElementById('modelCurrentId').textContent = id;
+  document.getElementById('modelCurrentName').textContent = name;
+  document.getElementById('modelCurrentIcon').innerHTML = icon;
+  document.getElementById('modelDropdown').classList.remove('open');
+  document.querySelectorAll('.model-option').forEach(o => {
+    o.classList.toggle('active', o.getAttribute('data-model') === id);
+  });
+}
+
+function toggleModelDropdown() {
+  document.getElementById('modelDropdown').classList.toggle('open');
+}
+
+document.addEventListener('click', () => {
+  document.getElementById('modelDropdown')?.classList.remove('open');
+});
+
+function toggleChatCard() {
+  const card = document.getElementById('proxyChatCard');
+  const icon = document.getElementById('chatCollapseIcon');
+  card.classList.toggle('collapsed');
+  icon.textContent = card.classList.contains('collapsed') ? '▼' : '▲';
+}
+
+function showChatCard() {
+  document.getElementById('proxyChatCard').style.display = '';
+  renderModelSelect(PRESET_MODELS);
+  document.getElementById('chatInput').disabled = false;
+  document.getElementById('chatSendBtn').disabled = false;
+}
+
+function hideChatCard() {
+  document.getElementById('proxyChatCard').style.display = 'none';
+}
+
+function exportToWorkBuddy() {
+  showConfirm('确定导入配置吗？\n\n这将会覆盖您自己已经配置的模型。\n请导入前进行重要备份。', '导入确认').then(function(ok) {
+    if (!ok) return;
+    _exportToWorkBuddyActual();
+  });
+}
+
+function _exportToWorkBuddyActual() {
+  const btn = document.getElementById('exportBtn');
+  const label = btn.querySelector('.sync-label');
+  const port = document.getElementById('proxyPanel').dataset.port || document.getElementById('proxyPortInput').value || '8001';
+  const pass = document.getElementById('proxyPassInput').value || '';
+  btn.disabled = true;
+  label.textContent = '导入中...';
+  pywebview.api.export_to_workbuddy(port, pass).then(function(raw) {
+    const r = JSON.parse(raw);
+    if (r.success) {
+      label.textContent = `已导入 ${r.count} 个模型`;
+      let msg = `已写入 ${r.path}`;
+      if (r.backup) msg += `\n备份: ${r.backup}`;
+      showToast(msg, 'success');
+    } else {
+      throw new Error(r.error);
+    }
+  }).catch(function(e) {
+    label.textContent = '导入失败';
+    showToast('导入失败: ' + e.message, 'error');
+  }).finally(function() {
+    setTimeout(function() { label.textContent = '导入 WorkBuddy'; btn.disabled = false; }, 2500);
+  });
+}
+
+async function syncModels() {
+  const btn = document.getElementById('syncModelsBtn');
+  const label = btn.querySelector('.sync-label');
+  btn.disabled = true;
+  label.textContent = '同步中...';
+  try {
+    const resp = await fetch(`${getProxyBaseUrl()}/v1/models`, {
+      headers: { 'Authorization': `Bearer ${getProxyPassword()}` }
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const ids = (data.data || []).map(m => m.id);
+    const synced = ids.map(id => {
+      let provider = 'auto';
+      const lower = id.toLowerCase();
+      if (lower.includes('deepseek')) provider = 'deepseek';
+      else if (lower.includes('kimi')) provider = 'kimi';
+      else if (lower.includes('glm')) provider = 'glm';
+      else if (lower.includes('hy') || lower.includes('hunyuan')) provider = 'hunyuan';
+      else if (lower.includes('minimax')) provider = 'minimax';
+      else if (lower.includes('qwen')) provider = 'qwen';
+      return { id, provider, name: id };
+    });
+    renderModelSelect(synced);
+    label.textContent = `已同步 ${synced.length} 个`;
+    setTimeout(() => { label.textContent = '同步官方模型'; btn.disabled = false; }, 2000);
+  } catch (e) {
+    label.textContent = '同步失败';
+    showToast('同步模型失败: ' + e.message, 'error');
+    setTimeout(() => { label.textContent = '同步官方模型'; btn.disabled = false; }, 2000);
+  }
+}
+
+let chatBusy = false;
+
+async function sendTestChat() {
+  if (chatBusy) return;
+  const input = document.getElementById('chatInput');
+  const btn = document.getElementById('chatSendBtn');
+  const model = document.getElementById('modelCurrentId').textContent;
+  const msg = input.value.trim();
+  if (!msg) return;
+  if (!proxyRunning) { showToast('请先启动代理网关', 'warning'); return; }
+
+  chatBusy = true;
+  btn.disabled = true;
+  btn.textContent = '...';
+  input.value = '';
+  input.disabled = true;
+
+  const container = document.getElementById('chatMessages');
+  const empty = container.querySelector('.chat-empty');
+  if (empty) empty.remove();
+
+  const userDiv = document.createElement('div');
+  userDiv.className = 'chat-msg user';
+  userDiv.textContent = msg;
+  container.appendChild(userDiv);
+
+  const assistantDiv = document.createElement('div');
+  assistantDiv.className = 'chat-msg assistant';
+  assistantDiv.innerHTML = '<span class="typing-indicator"><span></span><span></span><span></span></span>';
+  container.appendChild(assistantDiv);
+  container.scrollTop = container.scrollHeight;
+
+  try {
+    const resp = await fetch(`${getProxyBaseUrl()}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getProxyPassword()}`,
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [{ role: 'user', content: msg }],
+        stream: true,
+      }),
+    });
+
+    if (!resp.ok) throw new Error((await resp.text()).slice(0, 200));
+
+    assistantDiv.textContent = '';
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullText = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const event = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        for (const line of event.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') continue;
+          try {
+            const obj = JSON.parse(data);
+            const delta = obj.choices && obj.choices[0] && obj.choices[0].delta;
+            if (delta && delta.content) {
+              fullText += delta.content;
+              assistantDiv.textContent = fullText;
+              container.scrollTop = container.scrollHeight;
+            }
+          } catch {}
+        }
+      }
+    }
+
+    if (!fullText) assistantDiv.textContent = '(空响应)';
+  } catch (e) {
+    assistantDiv.className = 'chat-msg error';
+    assistantDiv.textContent = '错误: ' + e.message;
+  } finally {
+    chatBusy = false;
+    btn.disabled = false;
+    btn.textContent = '发送';
+    input.disabled = false;
+    input.focus();
+  }
+}
+
+// ===== Theme =====
+function setThemeUI(theme) {
+  const html = document.documentElement;
+  const isLight = theme === 'light';
+  html.setAttribute('data-theme', isLight ? 'light' : '');
+  const btn = document.getElementById('themeBtn');
+  btn.innerHTML = isLight
+    ? '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>';
+}
+
+async function toggleTheme() {
+  const html = document.documentElement;
+  const isDark = html.getAttribute('data-theme') !== 'light';
+  const theme = isDark ? 'light' : 'dark';
+  setThemeUI(theme);
+  await pywebview.api.set_theme(theme);
+}
+
+// ===== Init =====
+// ===== License =====
+let appStarted = false;
+const _LICENSE_ENABLED = false;
+function showLicenseOverlay(msg) {
+  document.getElementById('licenseSub').textContent = msg || '请输入激活码以继续使用';
+  document.getElementById('licenseError').textContent = '';
+  document.getElementById('licenseOverlay').classList.add('show');
+  const inp = document.getElementById('licenseInput');
+  inp.value = '';
+  setTimeout(() => inp.focus(), 100);
+}
+function hideLicenseOverlay() {
+  document.getElementById('licenseOverlay').classList.remove('show');
+}
+async function doActivate() {
+  const code = document.getElementById('licenseInput').value.trim();
+  if (!code) { document.getElementById('licenseError').textContent = '请输入激活码'; return; }
+  try {
+    const raw = await pywebview.api.activate(code);
+    const r = JSON.parse(raw);
+    if (r.success) {
+      hideLicenseOverlay();
+      showToast('激活成功，有效期至 ' + (r.expiry_str || ''), 'success');
+      if (!appStarted) startApp();
+    } else {
+      document.getElementById('licenseError').textContent = r.message || '激活失败';
+    }
+  } catch (e) { document.getElementById('licenseError').textContent = '激活失败: ' + e; }
+}
+function startApp() {
+  if (appStarted) return;
+  appStarted = true;
+  const tryLoad = (attempt = 0) => {
+    try {
+      loadAccounts().catch(() => { if (attempt < 10) setTimeout(() => tryLoad(attempt + 1), 500); });
+    } catch(e) { if (attempt < 10) setTimeout(() => tryLoad(attempt + 1), 500); }
+  };
+  tryLoad();
+  refreshProxyStatus();
+  if (_LICENSE_ENABLED) {
+    setInterval(() => {
+      pywebview.api.check_license().then(raw => {
+        const r = JSON.parse(raw);
+        if (!r.licensed) {
+          appStarted = false;
+          showLicenseOverlay(r.message);
+        }
+      }).catch(() => {});
+    }, 10000);
+  }
+}
+
+function init() {
+  const tryTheme = () => {
+    try {
+      pywebview.api.get_theme().then(raw => { setThemeUI(raw === 'dark' ? 'dark' : 'light'); }).catch(() => {});
+    } catch(e) { setTimeout(tryTheme, 200); }
+  };
+  tryTheme();
+  if (_LICENSE_ENABLED) {
+    const tryLicense = (attempt = 0) => {
+      try {
+        pywebview.api.check_license().then(raw => {
+          const r = JSON.parse(raw);
+          if (r.licensed) { hideLicenseOverlay(); startApp(); }
+          else { showLicenseOverlay(r.message); }
+        }).catch(() => { if (attempt < 10) setTimeout(() => tryLicense(attempt + 1), 300); });
+      } catch(e) { if (attempt < 10) setTimeout(() => tryLicense(attempt + 1), 300); }
+    };
+    tryLicense();
+  } else {
+    hideLicenseOverlay();
+    startApp();
+  }
+}
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

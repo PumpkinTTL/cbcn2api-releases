@@ -13,6 +13,8 @@ from src.api import checkin as checkin_api
 from src.api import quota as quota_api
 from src.api.account_api import refresh_full_payload
 
+_LICENSE_ENABLED = False
+
 
 def _num(v):
     if v is None:
@@ -56,10 +58,16 @@ class GuiApi:
         return json.dumps({"success": True})
 
     def import_from_json(self, platform: str, json_content: str) -> str:
+        content = (json_content or "").strip()
+        raw = None
         try:
-            raw = json.loads(json_content)
-        except json.JSONDecodeError as e:
-            return json.dumps({"error": f"JSON 解析失败: {e}"})
+            raw = json.loads(content)
+        except json.JSONDecodeError:
+            # 不是合法 JSON — 当作裸 access_token 处理
+            if content and content[0] not in "{[":
+                raw = {"access_token": content}
+            else:
+                return json.dumps({"error": "无法解析：请粘贴有效的 Token 或 JSON"})
 
         items = []
         if isinstance(raw, dict):
@@ -101,6 +109,17 @@ class GuiApi:
         email = data.get("email") or ""
         uid = data.get("uid")
         nickname = data.get("nickname")
+
+        if not uid and not nickname and not email:
+            try:
+                fetched = account_api.build_payload_from_token(access_token)
+                uid = fetched.get("uid") or uid
+                nickname = fetched.get("nickname") or nickname
+                email = fetched.get("email") or email
+                data = {**data, **fetched}
+            except Exception:
+                pass
+
         enterprise_id = data.get("enterprise_id") or data.get("enterpriseId")
         enterprise_name = data.get("enterprise_name") or data.get("enterpriseName")
         refresh_token = data.get("refresh_token") or data.get("refreshToken")
@@ -440,107 +459,6 @@ class GuiApi:
 
     # ========== Import from Local (read VS Code state.vscdb) ==========
 
-    def import_from_local(self, platform: str) -> str:
-        try:
-            data_dir = self._get_local_data_dir(platform)
-            if not data_dir or not data_dir.exists():
-                return json.dumps({"error": f"未找到 {platform} 客户端数据目录"})
-
-            state_db = data_dir / "User" / "globalStorage" / "state.vscdb"
-            if not state_db.exists():
-                return json.dumps({"error": f"state.vscdb 不存在: {state_db}"})
-
-            import sqlite3
-            conn = sqlite3.connect(str(state_db))
-            cursor = conn.cursor()
-
-            secret_key = 'secret://{"extensionId":"tencent-cloud.coding-copilot","key":"planning-genie.new.accessTokencn"}'
-            cursor.execute("SELECT value FROM ItemTable WHERE key = ?", (secret_key,))
-            row = cursor.fetchone()
-            conn.close()
-
-            if not row:
-                return json.dumps({"error": "未在本地客户端找到登录信息"})
-
-            raw_value = row[0]
-
-            try:
-                parsed = json.loads(raw_value)
-                token = self._extract_token(parsed)
-            except json.JSONDecodeError:
-                token = raw_value.strip()
-
-            if not token:
-                return json.dumps({"error": "无法解析 access token"})
-
-            parts = token.split("+", 1)
-            uid_from_token = parts[0].strip() if len(parts) > 1 else None
-            access_token = parts[-1].strip()
-
-            if not access_token:
-                return json.dumps({"error": "access token 为空"})
-
-            try:
-                payload = account_api.build_payload_from_token(access_token)
-            except Exception as e:
-                payload = {
-                    "access_token": access_token,
-                    "email": "unknown",
-                    "uid": uid_from_token,
-                    "status": "normal",
-                }
-
-            if uid_from_token and not payload.get("uid"):
-                payload["uid"] = uid_from_token
-
-            identity_seed = payload.get("uid") or payload.get("email") or "unknown"
-            account_id = Account.generate_id(identity_seed)
-
-            now = Account.now_ts()
-            account = Account(
-                id=account_id,
-                email=payload.get("email", "unknown"),
-                uid=payload.get("uid"),
-                nickname=payload.get("nickname"),
-                enterprise_id=payload.get("enterprise_id"),
-                enterprise_name=payload.get("enterprise_name"),
-                access_token=access_token,
-                refresh_token=payload.get("refresh_token"),
-                token_type="Bearer",
-                domain=payload.get("domain"),
-                dosage_notify_code=payload.get("dosage_notify_code"),
-                payment_type=payload.get("payment_type"),
-                quota_raw=payload.get("quota_raw"),
-                auth_raw=parsed if isinstance(raw_value, str) and self._is_json(raw_value) else None,
-                usage_raw=payload.get("usage_raw"),
-                status="normal",
-                created_at=now,
-                last_used=now,
-            )
-
-            saved = store.upsert_account(platform, account)
-            return json.dumps(saved.to_dict())
-
-        except Exception as e:
-            return json.dumps({"error": str(e)})
-
-    def _get_local_data_dir(self, platform: str) -> Optional[Path]:
-        import sys
-        if sys.platform == "win32":
-            appdata = Path(os.environ.get("APPDATA", ""))
-            if platform == "codebuddy_cn":
-                return appdata / "CodeBuddy CN"
-            else:
-                return appdata / "WorkBuddy"
-        elif sys.platform == "darwin":
-            home = Path.home()
-            name = "CodeBuddy CN" if platform == "codebuddy_cn" else "WorkBuddy"
-            return home / "Library" / "Application Support" / name
-        else:
-            home = Path.home()
-            name = "CodeBuddy CN" if platform == "codebuddy_cn" else "WorkBuddy"
-            return home / ".config" / name
-
     def _extract_token(self, obj) -> Optional[str]:
         if isinstance(obj, str):
             return obj.strip() or None
@@ -565,6 +483,26 @@ class GuiApi:
                 return self._extract_token(session)
         return None
 
+    # ========== License ==========
+
+    def check_license(self) -> str:
+        if not _LICENSE_ENABLED:
+            return json.dumps({"licensed": True, "expiry": None, "message": "OK"}, ensure_ascii=False)
+        from src import license as lic
+        st = lic.status()
+        if st["expiry"]:
+            st["expiry_str"] = time.strftime("%Y-%m-%d %H:%M", time.localtime(st["expiry"]))
+        return json.dumps(st, ensure_ascii=False)
+
+    def activate(self, code: str) -> str:
+        from src import license as lic
+        ok, exp, msg = lic.verify(code)
+        if ok:
+            lic.save_code(code)
+            expiry_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(exp)) if exp else ""
+            return json.dumps({"success": True, "expiry": exp, "expiry_str": expiry_str, "message": msg}, ensure_ascii=False)
+        return json.dumps({"success": False, "message": msg}, ensure_ascii=False)
+
     # ========== Settings ==========
 
     def get_theme(self) -> str:
@@ -581,6 +519,12 @@ class GuiApi:
         import sys
         import time
         import socket
+
+        if _LICENSE_ENABLED:
+            from src import license as lic
+            st = lic.status()
+            if not st.get("licensed"):
+                return json.dumps({"error": st.get("message") or "授权无效，请先激活"})
 
         existing = json.loads(self.proxy_status())
         if existing.get("running"):

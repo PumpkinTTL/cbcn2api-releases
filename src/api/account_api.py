@@ -1,6 +1,7 @@
 from typing import Optional
 
 from src.api.client import BASE_URL, build_headers, get_session
+from src.api.quota import _fetch_dosage_notify, _fetch_payment_type, _fetch_user_resource
 from src.models.account import Account
 
 
@@ -84,68 +85,6 @@ def build_payload_from_token(access_token: str, domain: Optional[str] = None) ->
     }
 
 
-def _fetch_dosage_notify(access_token: str, uid: Optional[str],
-                         enterprise_id: Optional[str],
-                         domain: Optional[str]) -> Optional[dict]:
-    try:
-        session = get_session()
-        url = f"{BASE_URL}/v2/billing/meter/get-dosage-notify"
-        headers = build_headers(access_token, uid, enterprise_id, domain)
-        resp = session.post(url, headers=headers, timeout=15)
-        resp.raise_for_status()
-        return resp.json()
-    except Exception:
-        return None
-
-
-def _fetch_payment_type(access_token: str, uid: Optional[str],
-                        enterprise_id: Optional[str],
-                        domain: Optional[str]) -> Optional[dict]:
-    try:
-        session = get_session()
-        url = f"{BASE_URL}/v2/billing/meter/get-payment-type"
-        headers = build_headers(access_token, uid, enterprise_id, domain)
-        resp = session.post(url, headers=headers, timeout=15)
-        resp.raise_for_status()
-        return resp.json()
-    except Exception:
-        return None
-
-
-def _fetch_user_resource(access_token: str, uid: Optional[str],
-                         enterprise_id: Optional[str],
-                         domain: Optional[str]) -> Optional[dict]:
-    try:
-        session = get_session()
-        url = f"{BASE_URL}/v2/billing/meter/get-user-resource"
-        headers = build_headers(access_token, uid, enterprise_id, domain)
-        headers["Accept-Language"] = "zh-CN,zh;q=0.9"
-
-        body = {
-            "PageNumber": 1,
-            "PageSize": 100,
-            "ProductCode": "p_tcaca",
-            "Status": [0, 3],
-            "PackageEndTimeRangeBegin": _time_range_begin(),
-            "PackageEndTimeRangeEnd": _time_range_end(),
-        }
-
-        resp = session.post(url, headers=headers, json=body, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
-    except Exception:
-        return None
-
-
-def _time_range_begin() -> str:
-    import datetime
-    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-
-def _time_range_end() -> str:
-    import datetime
-    future = datetime.datetime.now() + datetime.timedelta(days=365 * 101)
-    return future.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def refresh_token(access_token: str, refresh_token: str,

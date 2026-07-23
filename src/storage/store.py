@@ -201,7 +201,7 @@ def load_theme() -> str:
     try:
         return THEME_FILE.read_text(encoding="utf-8").strip()
     except (FileNotFoundError, OSError):
-        return "dark"
+        return "light"
 
 
 def get_stats(platform: str) -> dict:

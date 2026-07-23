@@ -123,18 +123,13 @@ def _fetch_user_resource(access_token: str, uid: Optional[str],
         headers = build_headers(access_token, uid, enterprise_id, domain)
         headers["Accept-Language"] = "zh-CN,zh;q=0.9"
 
-        import datetime
-        now = datetime.datetime.now()
-        begin = now.strftime("%Y-%m-%d %H:%M:%S")
-        end = (now + datetime.timedelta(days=365 * 101)).strftime("%Y-%m-%d %H:%M:%S")
-
         body = {
             "PageNumber": 1,
             "PageSize": 100,
             "ProductCode": "p_tcaca",
             "Status": [0, 3],
-            "PackageEndTimeRangeBegin": begin,
-            "PackageEndTimeRangeEnd": end,
+            "PackageEndTimeRangeBegin": _time_range_begin(),
+            "PackageEndTimeRangeEnd": _time_range_end(),
         }
 
         resp = session.post(url, headers=headers, json=body, timeout=30)
@@ -142,3 +137,14 @@ def _fetch_user_resource(access_token: str, uid: Optional[str],
         return resp.json()
     except Exception:
         return None
+
+
+def _time_range_begin() -> str:
+    import datetime
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _time_range_end() -> str:
+    import datetime
+    future = datetime.datetime.now() + datetime.timedelta(days=365 * 101)
+    return future.strftime("%Y-%m-%d %H:%M:%S")
