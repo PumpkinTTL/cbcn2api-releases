@@ -515,8 +515,7 @@ class GuiApi:
     # ========== Proxy Gateway ==========
 
     def proxy_start(self, port: str, password: str) -> str:
-        import subprocess
-        import sys
+        import threading
         import time
         import socket
 
@@ -528,7 +527,7 @@ class GuiApi:
 
         existing = json.loads(self.proxy_status())
         if existing.get("running"):
-            return json.dumps({"error": "代理已在运行"})
+            return json.dumps({"error": "网关已在运行"})
 
         port_num = int(port) if port.strip() else 8001
 
@@ -539,77 +538,60 @@ class GuiApi:
         except OSError:
             return json.dumps({"error": f"端口 {port_num} 已被占用，请换一个端口"})
 
-        env = os.environ.copy()
-        env["CBCN_PROXY_PORT"] = str(port_num)
-        env["CBCN_PROXY_PASSWORD"] = password
-        env["CBCN_PROXY_PLATFORM"] = "workbuddy"
+        # 设置环境变量（proxy_server 模块在 import 时读取）
+        os.environ["CBCN_PROXY_PORT"] = str(port_num)
+        os.environ["CBCN_PROXY_PASSWORD"] = password
+        os.environ["CBCN_PROXY_PLATFORM"] = "workbuddy"
 
-        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        import tempfile
-        log_path = os.path.join(tempfile.gettempdir(), f"cbcn_proxy_{port_num}.log")
-        log_fh = open(log_path, "w")
-        proc = subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "src.proxy.proxy_server:app",
-             "--host", "127.0.0.1", "--port", str(port_num),
-             "--log-level", "error"],
-            cwd=root, env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=log_fh,
-        )
-        time.sleep(1.0)
+        try:
+            from src.proxy.proxy_server import app as proxy_app, token_rotator
+            import uvicorn
 
-        if proc.poll() is not None:
-            log_fh.close()
-            err_text = ""
-            try:
-                with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
-                    err_text = f.read().strip()
-            except Exception:
-                pass
-            if "address already in use" in err_text.lower():
-                return json.dumps({"error": f"端口 {port_num} 已被占用，请换一个端口"})
-            return json.dumps({"error": f"代理启动失败: {err_text[:200]}"})
+            token_rotator.reload("workbuddy")
 
-        log_fh.close()
-        self._proxy_proc = proc
-        self._proxy_port = port_num
-        self._proxy_log_path = log_path
-        return json.dumps({"success": True, "port": port_num})
+            config = uvicorn.Config(
+                app=proxy_app,
+                host="127.0.0.1",
+                port=port_num,
+                log_level="error",
+                log_config=None,
+            )
+            server = uvicorn.Server(config)
+            server.config.load()
+
+            t = threading.Thread(target=server.run, daemon=True)
+            t.start()
+            time.sleep(1.0)
+
+            if not server.started:
+                return json.dumps({"error": "网关启动失败"})
+
+            self._proxy_server = server
+            self._proxy_port = port_num
+            return json.dumps({"success": True, "port": port_num})
+        except Exception as e:
+            return json.dumps({"error": f"网关启动失败: {str(e)[:200]}"})
 
     def proxy_stop(self) -> str:
-        proc = getattr(self, "_proxy_proc", None)
-        if proc and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except Exception:
-                proc.kill()
-            self._proxy_proc = None
-            log_path = getattr(self, "_proxy_log_path", "")
-            if log_path:
-                try:
-                    os.remove(log_path)
-                except Exception:
-                    pass
+        server = getattr(self, "_proxy_server", None)
+        if server:
+            server.should_exit = True
+            self._proxy_server = None
             return json.dumps({"success": True})
-        return json.dumps({"error": "代理未运行"})
+        return json.dumps({"error": "网关未运行"})
 
     def proxy_status(self) -> str:
-        proc = getattr(self, "_proxy_proc", None)
-        running = proc is not None and proc.poll() is None
+        server = getattr(self, "_proxy_server", None)
+        running = server is not None and not server.should_exit
         return json.dumps({
             "running": running,
             "port": getattr(self, "_proxy_port", 8001),
         })
 
     def cleanup(self):
-        proc = getattr(self, "_proxy_proc", None)
-        if proc and proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=3)
-            except Exception:
-                proc.kill()
+        server = getattr(self, "_proxy_server", None)
+        if server:
+            server.should_exit = True
 
     def export_to_workbuddy(self, port: str = "", password: str = "") -> str:
         import pathlib
