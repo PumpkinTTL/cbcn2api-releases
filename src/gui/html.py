@@ -76,6 +76,8 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); }
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
 
 /* ===== Header ===== */
 .header {
@@ -174,15 +176,26 @@ body {
   margin-bottom: 20px;
 }
 .stat-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px 20px;
-  flex: 1;
-  backdrop-filter: blur(12px);
+  display: flex; align-items: center; gap: 14px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 18px; flex: 1;
+  backdrop-filter: blur(12px); transition: var(--transition);
 }
-.stat-label { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
-.stat-value { font-size: 24px; font-weight: 700; }
+.stat-card:hover { border-color: var(--border-hover); transform: translateY(-1px); }
+.stat-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+}
+.stat-icon svg { width: 20px; height: 20px; }
+.stat-icon.blue { background: rgba(59,130,246,0.15); color: #60a5fa; }
+.stat-icon.purple { background: rgba(139,92,246,0.15); color: #a78bfa; }
+.stat-icon.green { background: rgba(34,197,94,0.15); color: #4ade80; }
+[data-theme="light"] .stat-icon.blue { background: rgba(37,99,235,0.12); color: #2563eb; }
+[data-theme="light"] .stat-icon.purple { background: rgba(124,58,237,0.12); color: #7c3aed; }
+[data-theme="light"] .stat-icon.green { background: rgba(22,163,74,0.12); color: #16a34a; }
+.stat-text { min-width: 0; }
+.stat-label { font-size: 12px; color: var(--text-muted); margin-bottom: 2px; }
+.stat-value { font-size: 22px; font-weight: 700; line-height: 1.2; }
 
 /* ===== Account Grid ===== */
 .account-grid {
@@ -200,7 +213,7 @@ body {
   backdrop-filter: blur(12px);
   transition: var(--transition);
 }
-.card:hover { border-color: var(--border-hover); background: var(--surface-hover); }
+.card:hover { border-color: var(--border-hover); background: var(--surface-hover); box-shadow: var(--shadow); transform: translateY(-1px); }
 .card-header {
   display: flex;
   align-items: flex-start;
@@ -235,6 +248,9 @@ body {
 .badge-free { background: rgba(148,163,184,0.15); color: var(--text-secondary); border: 1px solid var(--border); }
 .badge-enterprise { background: rgba(249,115,22,0.15); color: #fdba74; border: 1px solid rgba(249,115,22,0.2); }
 .badge-trial { background: rgba(34,197,94,0.15); color: #86efac; border: 1px solid rgba(34,197,94,0.2); }
+[data-theme="light"] .badge-pro { background: linear-gradient(135deg, rgba(37,99,235,0.12), rgba(124,58,237,0.12)); color: #2563eb; border-color: rgba(37,99,235,0.25); }
+[data-theme="light"] .badge-enterprise { background: rgba(234,88,12,0.1); color: #c2410c; border-color: rgba(234,88,12,0.25); }
+[data-theme="light"] .badge-trial { background: rgba(22,163,74,0.1); color: #15803d; border-color: rgba(22,163,74,0.25); }
 
 .card-actions { display: flex; gap: 4px; flex-shrink: 0; }
 
@@ -394,6 +410,175 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
 .quota-item .label { color: var(--text-secondary); }
 .quota-item .value { font-weight: 600; }
 
+/* ===== Proxy Panel ===== */
+.proxy-panel {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 14px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); font-size: 12px; transition: border-color var(--transition);
+}
+.proxy-panel.online { border-color: rgba(34,197,94,0.35); }
+[data-theme="light"] .proxy-panel.online { border-color: rgba(22,163,74,0.35); }
+
+.proxy-status { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.proxy-status-pill {
+  display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
+  padding: 5px 13px 5px 11px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; border: 1px solid transparent;
+  transition: var(--transition);
+}
+.proxy-status-pill.offline { background: var(--surface-active); color: var(--text-muted); border-color: var(--border); }
+.proxy-panel.online .proxy-status-pill { background: rgba(34,197,94,0.15); color: #4ade80; border-color: rgba(34,197,94,0.4); }
+[data-theme="light"] .proxy-panel.online .proxy-status-pill { background: rgba(22,163,74,0.12); color: #15803d; border-color: rgba(22,163,74,0.35); }
+
+.ping-dot { position: relative; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: currentColor; }
+.proxy-panel.online .ping-dot::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; background: currentColor;
+  animation: proxy-ping 1.8s cubic-bezier(0,0,0.2,1) infinite;
+}
+@keyframes proxy-ping { 75%,100% { transform: scale(2.4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .proxy-panel.online .ping-dot::before { animation: none; } }
+
+.proxy-endpoint { display: none; align-items: center; gap: 6px; min-width: 0; }
+.proxy-panel.online .proxy-endpoint { display: inline-flex; }
+.proxy-endpoint code {
+  font-family: 'SF Mono', ui-monospace, monospace; font-size: 11.5px; color: var(--text);
+  background: var(--surface-active); padding: 3px 9px; border-radius: 6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px;
+}
+.copy-btn {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 26px; height: 26px; border: none; background: transparent;
+  color: var(--text-muted); border-radius: 6px; cursor: pointer; transition: var(--transition);
+}
+.copy-btn:hover { color: var(--text); background: var(--surface-active); }
+.copy-btn svg { width: 14px; height: 14px; }
+
+.proxy-input-group { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.proxy-input-group input { width: 78px; padding: 5px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 12px; font-family: inherit; outline: none; transition: var(--transition); }
+.proxy-input-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-glow); }
+.proxy-input-group input[type="password"] { width: 118px; }
+
+/* ===== Proxy Chat Card ===== */
+.proxy-chat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  overflow: hidden;
+  transition: var(--transition);
+}
+.proxy-chat-card.collapsed .chat-body { display: none; }
+.chat-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 14px; cursor: pointer; user-select: none;
+  border-bottom: 1px solid var(--border);
+}
+.chat-header:hover { background: var(--surface-hover); }
+.chat-header-left { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.chat-header-left svg { width: 16px; height: 16px; opacity: 0.7; }
+.chat-header-actions { display: flex; gap: 6px; align-items: center; }
+.chat-body { padding: 0; }
+.chat-messages {
+  max-height: 280px; overflow-y: auto; padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+  min-height: 60px;
+}
+.chat-msg {
+  padding: 8px 12px; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.5;
+  max-width: 85%; word-break: break-word; white-space: pre-wrap;
+}
+.chat-msg.user {
+  align-self: flex-end;
+  background: var(--primary); color: #fff;
+}
+.chat-msg.assistant {
+  align-self: flex-start;
+  background: var(--surface-active); color: var(--text);
+}
+.chat-msg.error {
+  align-self: center; background: rgba(239,68,68,0.15); color: var(--danger);
+  font-size: 12px; text-align: center;
+}
+.chat-empty {
+  text-align: center; color: var(--text-muted); font-size: 12px; padding: 20px 0;
+}
+.chat-input-area {
+  display: flex; gap: 8px; padding: 10px 14px;
+  border-top: 1px solid var(--border);
+}
+.chat-input-area select {
+  padding: 6px 10px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text); font-size: 12px;
+  font-family: inherit; outline: none; cursor: pointer; max-width: 160px;
+}
+.chat-input-area select:focus { border-color: var(--primary); }
+.chat-input-area input {
+  flex: 1; padding: 6px 12px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text); font-size: 13px;
+  font-family: inherit; outline: none;
+}
+.chat-input-area input:focus { border-color: var(--primary); }
+.chat-input-area input:disabled { opacity: 0.5; }
+.model-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 20px; font-size: 11px;
+  background: var(--surface-active); color: var(--text-secondary);
+}
+.model-icon-sm { width: 14px; height: 14px; flex-shrink: 0; border-radius: 3px; }
+.model-selector { position: relative; flex-shrink: 0; }
+.model-selector-trigger {
+  display: flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 6px 10px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); font-size: 12px; color: var(--text);
+  white-space: nowrap; max-width: 180px; transition: var(--transition);
+}
+.model-selector-trigger:hover { border-color: var(--primary); }
+.model-current-icon { display: flex; align-items: center; }
+.model-current-icon svg { width: 16px; height: 16px; border-radius: 3px; }
+.model-current-name { overflow: hidden; text-overflow: ellipsis; }
+.model-arrow { font-size: 10px; color: var(--text-muted); margin-left: auto; }
+.model-dropdown {
+  display: none; position: absolute; bottom: 100%; left: 0; right: auto;
+  min-width: 200px; max-height: 240px; overflow-y: auto;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow);
+  z-index: 100; margin-bottom: 4px;
+}
+.model-dropdown.open { display: block; }
+.model-option {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  cursor: pointer; font-size: 12px; color: var(--text); transition: var(--transition);
+}
+.model-option:hover { background: var(--surface-hover); }
+.model-option.active { background: var(--surface-active); color: var(--primary); }
+.model-option svg { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; }
+.sync-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; font-size: 11.5px; font-weight: 500;
+  border-radius: var(--radius-sm); font-family: inherit;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--text-secondary); cursor: pointer; transition: var(--transition);
+}
+.sync-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+.sync-btn:hover { color: var(--primary); border-color: var(--primary); background: var(--surface-hover); }
+.sync-btn.export:hover { color: var(--success); border-color: var(--success); }
+.sync-btn:disabled { opacity: 0.5; cursor: wait; }
+.chat-send-btn {
+  padding: 6px 16px; font-size: 12px; font-weight: 600; border-radius: var(--radius-sm);
+  border: none; cursor: pointer; transition: var(--transition);
+  background: var(--primary); color: #fff;
+}
+.chat-send-btn:hover { background: var(--primary-hover); }
+.chat-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.typing-indicator span {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-muted); margin: 0 1px;
+  animation: bounce 0.6s infinite alternate;
+}
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes bounce { to { opacity: 0.3; transform: translateY(-4px); } }
+
 /* ===== Filter Bar ===== */
 .filter-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
 .filter-bar select, .filter-bar input[type="date"] { padding: 6px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 12px; font-family: inherit; outline: none; cursor: pointer; }
@@ -421,9 +606,10 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
       <button class="btn btn-ghost btn-sm" onclick="showImportModal()">JSON粘贴</button>
       <button class="btn btn-ghost btn-sm" onclick="document.getElementById('fileInput').click()">选择文件</button>
       <input type="file" id="fileInput" accept=".json" style="display:none" onchange="handleFileImport(event)">
-      <button class="btn btn-ghost btn-sm" onclick="showOAuthModal()">OAuth登录</button>
-      <button class="btn btn-accent btn-sm" onclick="checkinAll()">一键签到</button>
-      <button class="btn btn-primary btn-sm" onclick="refreshAll()">全部刷新</button>
+      <button class="btn btn-ghost btn-sm" onclick="showOAuthModal()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>OAuth登录</button>
+      <button class="btn btn-accent btn-sm" onclick="checkinAll()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4"/></svg>一键签到</button>
+      <button class="btn btn-primary btn-sm" onclick="refreshAll()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>全部刷新</button>
+      <button class="btn btn-ghost btn-sm" onclick="toggleProxy()" id="proxyBtn" title="代理网关"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>代理网关</button>
       <button class="btn btn-ghost btn-sm btn-icon" onclick="toggleTheme()" id="themeBtn" title="切换主题"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg></button>
     </div>
   </div>
@@ -435,6 +621,60 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
 
 <div class="main" id="main">
   <div class="stats" id="stats"></div>
+  <div class="proxy-panel" id="proxyPanel" data-port="8001" style="margin-bottom:12px">
+    <div class="proxy-status">
+      <span class="proxy-status-pill offline" id="proxyStatusPill">
+        <span class="ping-dot"></span>
+        <span id="proxyStatusText">离线</span>
+      </span>
+      <span class="proxy-endpoint" id="proxyEndpoint">
+        <code id="proxyEndpointUrl">http://127.0.0.1:8001/v1</code>
+        <button class="copy-btn" onclick="copyEndpoint()" title="复制地址">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        </button>
+      </span>
+    </div>
+    <div class="proxy-input-group">
+      <input type="number" id="proxyPortInput" value="8001" min="1024" max="65535" placeholder="端口">
+      <input type="password" id="proxyPassInput" placeholder="密码(可选)">
+      <button class="btn btn-primary btn-sm" onclick="toggleProxy()" id="proxyToggleBtn">启动</button>
+    </div>
+  </div>
+  <div class="proxy-chat-card collapsed" id="proxyChatCard" style="display:none">
+    <div class="chat-header" onclick="toggleChatCard()">
+      <div class="chat-header-left">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        <span>测试对话</span>
+      </div>
+      <div class="chat-header-actions">
+        <button class="sync-btn" onclick="event.stopPropagation();syncModels()" id="syncModelsBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg><span class="sync-label">同步官方模型</span>
+        </button>
+        <button class="sync-btn export" onclick="event.stopPropagation();exportToWorkBuddy()" id="exportBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg><span class="sync-label">导入 WorkBuddy</span>
+        </button>
+        <span id="chatCollapseIcon" style="font-size:12px;color:var(--text-muted)">▼</span>
+      </div>
+    </div>
+    <div class="chat-body">
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-empty">启动代理后即可测试对话</div>
+      </div>
+      <div class="chat-input-area">
+        <div class="model-selector" id="modelSelector">
+          <div class="model-selector-trigger" onclick="event.stopPropagation();toggleModelDropdown()">
+            <span class="model-current-icon" id="modelCurrentIcon"></span>
+            <span class="model-current-name" id="modelCurrentName"></span>
+            <span class="model-current-id" id="modelCurrentId" style="display:none"></span>
+            <span class="model-arrow">▾</span>
+          </div>
+          <div class="model-dropdown" id="modelDropdown"></div>
+        </div>
+        <input type="text" id="chatInput" placeholder="输入消息..." onkeydown="if(event.key==='Enter')sendTestChat()" disabled>
+        <button class="chat-send-btn" id="chatSendBtn" onclick="sendTestChat()" disabled>发送</button>
+      </div>
+    </div>
+  </div>
   <div class="filter-bar" id="filterBar" style="display:none">
     <button class="btn btn-ghost btn-sm" onclick="setFilterDate(-2)">前天</button>
     <button class="btn btn-ghost btn-sm" onclick="setFilterDate(-1)">昨天</button>
@@ -570,9 +810,18 @@ async function loadAccounts() {
 function renderStats() {
   const el = document.getElementById('stats');
   el.innerHTML = `
-    <div class="stat-card"><div class="stat-label">总账号</div><div class="stat-value" id="statTotal">-</div></div>
-    <div class="stat-card"><div class="stat-label">已用/总量</div><div class="stat-value" id="statQuota">-</div></div>
-    <div class="stat-card"><div class="stat-label">今日签到</div><div class="stat-value" id="statCheckin" style="color:var(--success)">-</div></div>
+    <div class="stat-card">
+      <div class="stat-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div>
+      <div class="stat-text"><div class="stat-label">总账号</div><div class="stat-value" id="statTotal">-</div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg></div>
+      <div class="stat-text"><div class="stat-label">已用 / 总量</div><div class="stat-value" id="statQuota">-</div></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></div>
+      <div class="stat-text"><div class="stat-label">今日签到</div><div class="stat-value" id="statCheckin">-</div></div>
+    </div>
   `;
   pywebview.api.get_stats(currentPlatform).then(raw => {
     const d = JSON.parse(raw);
@@ -1038,6 +1287,311 @@ async function refreshQuota() {
   if (quotaAccountId) await showQuotaDetail(quotaAccountId);
 }
 
+// ===== Proxy =====
+let proxyRunning = false;
+
+async function toggleProxy() {
+  const btn = document.getElementById('proxyToggleBtn');
+  const panel = document.getElementById('proxyPanel');
+  const statusText = document.getElementById('proxyStatusText');
+
+  if (proxyRunning) {
+    const raw = await pywebview.api.proxy_stop();
+    const r = JSON.parse(raw);
+    if (r.success) {
+      proxyRunning = false;
+      btn.textContent = '启动';
+      panel.classList.remove('online');
+      panel.dataset.port = document.getElementById('proxyPortInput').value || '8001';
+      statusText.textContent = '离线';
+      hideChatCard();
+    }
+    return;
+  }
+
+  const port = document.getElementById('proxyPortInput').value || '8001';
+  const pass = document.getElementById('proxyPassInput').value || '';
+  btn.textContent = '启动中...';
+
+  const raw = await pywebview.api.proxy_start(port, pass);
+  const r = JSON.parse(raw);
+  if (r.success) {
+    proxyRunning = true;
+    btn.textContent = '停止';
+    panel.classList.add('online');
+    panel.dataset.port = r.port;
+    statusText.textContent = '在线';
+    document.getElementById('proxyEndpointUrl').textContent = `http://127.0.0.1:${r.port}/v1`;
+    showChatCard();
+  } else {
+    btn.textContent = '启动';
+    showToast(r.error || '启动失败', 'warning');
+  }
+}
+
+async function refreshProxyStatus() {
+  const raw = await pywebview.api.proxy_status();
+  const r = JSON.parse(raw);
+  proxyRunning = r.running;
+  const btn = document.getElementById('proxyToggleBtn');
+  const panel = document.getElementById('proxyPanel');
+  const statusText = document.getElementById('proxyStatusText');
+  if (r.running) {
+    btn.textContent = '停止';
+    panel.classList.add('online');
+    panel.dataset.port = r.port;
+    statusText.textContent = '在线';
+    document.getElementById('proxyEndpointUrl').textContent = `http://127.0.0.1:${r.port}/v1`;
+    showChatCard();
+  }
+}
+
+// ===== Proxy Chat Card =====
+
+const MODEL_ICONS = {
+  deepseek: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#4D6BFE"/><path d="M12 5c-3.9 0-7 2.8-7 6.5 0 2 .9 3.7 2.4 4.9-.1.8-.5 1.8-1.2 2.7-.2.3 0 .7.4.6 1.8-.3 3.2-1 4.2-1.7.4.1.8.1 1.2.1 3.9 0 7-2.8 7-6.5S15.9 5 12 5z" fill="#fff"/><circle cx="9.5" cy="11.5" r="1" fill="#4D6BFE"/><circle cx="14.5" cy="11.5" r="1" fill="#4D6BFE"/></svg>',
+  kimi: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#7C5CFC"/><path d="M16 8a5 5 0 00-5 5v6c0 .6.4 1 1 1h2c.6 0 1-.4 1-1v-6a1 1 0 012 0v3c0 .6.4 1 1 1h1c.6 0 1-.4 1-1v-3a5 5 0 00-5-5z" fill="#fff" transform="translate(-3,-1)"/></svg>',
+  glm: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#00B894"/><path d="M8 7v10M8 7c0-1 1-2 2-2M8 12h4M16 7v10M16 7c0-1-1-2-2-2M16 12h-4" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>',
+  hunyuan: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#0053E0"/><path d="M7 12c0-2.8 2.2-5 5-5s5 2.2 5 5-2.2 5-5 5M17 12c0 2.8-2.2 5-5 5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" transform="rotate(45 12 12)"/><path d="M7 12c0-2.8 2.2-5 5-5s5 2.2 5 5-2.2 5-5 5M17 12c0 2.8-2.2 5-5 5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.5" transform="rotate(-45 12 12)"/></svg>',
+  minimax: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#FF6B35"/><path d="M6 16V8l3 4 3-4v8M15 16V8l3 4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>',
+  qwen: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#615CED"/><circle cx="12" cy="10" r="4" stroke="#fff" stroke-width="2" fill="none"/><path d="M12 14v5M9 19h6" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>',
+  auto: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="url(#autoGrad)"/><defs><linearGradient id="autoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs><path d="M12 5l1.8 4.5L18 11l-4.2 1.5L12 17l-1.8-4.5L6 11l4.2-1.5z" fill="#fff"/></svg>',
+};
+
+const PRESET_MODELS = [
+  { id: 'auto', provider: 'auto', name: 'Auto' },
+  { id: 'hy3', provider: 'hunyuan', name: 'Hy3' },
+  { id: 'glm-5.2', provider: 'glm', name: 'GLM-5.2' },
+  { id: 'glm-5.1', provider: 'glm', name: 'GLM-5.1' },
+  { id: 'glm-5v-turbo', provider: 'glm', name: 'GLM-5v-Turbo' },
+  { id: 'minimax-m3', provider: 'minimax', name: 'MiniMax-M3' },
+  { id: 'kimi-k3-1', provider: 'kimi', name: 'Kimi-K3' },
+  { id: 'kimi-k2.7', provider: 'kimi', name: 'Kimi-K2.7-Code' },
+  { id: 'kimi-k2.6', provider: 'kimi', name: 'Kimi-K2.6' },
+  { id: 'deepseek-v4-flash', provider: 'deepseek', name: 'Deepseek-V4-Flash' },
+  { id: 'deepseek-v4-pro', provider: 'deepseek', name: 'Deepseek-V4-Pro' },
+];
+
+function getProxyBaseUrl() {
+  const port = document.getElementById('proxyPanel').dataset.port || document.getElementById('proxyPortInput').value || '8001';
+  return `http://127.0.0.1:${port}`;
+}
+
+function getProxyPassword() {
+  return document.getElementById('proxyPassInput').value || '';
+}
+
+function copyEndpoint() {
+  const url = document.getElementById('proxyEndpointUrl').textContent;
+  navigator.clipboard.writeText(url).then(() => showToast('已复制 ' + url, 'success')).catch(() => {});
+}
+
+function renderModelSelect(models) {
+  const dropdown = document.getElementById('modelDropdown');
+  dropdown.innerHTML = '';
+  let firstModel = models[0];
+  for (const m of models) {
+    const icon = MODEL_ICONS[m.provider] || MODEL_ICONS.auto;
+    const div = document.createElement('div');
+    div.className = 'model-option';
+    div.setAttribute('data-model', m.id);
+    div.innerHTML = `${icon}<span>${m.name}</span>`;
+    div.onclick = (e) => { e.stopPropagation(); selectModel(m.id, m.name, icon); };
+    dropdown.appendChild(div);
+  }
+  if (firstModel) {
+    const icon = MODEL_ICONS[firstModel.provider] || MODEL_ICONS.auto;
+    selectModel(firstModel.id, firstModel.name, icon);
+  }
+}
+
+function selectModel(id, name, icon) {
+  document.getElementById('modelCurrentId').textContent = id;
+  document.getElementById('modelCurrentName').textContent = name;
+  document.getElementById('modelCurrentIcon').innerHTML = icon;
+  document.getElementById('modelDropdown').classList.remove('open');
+  document.querySelectorAll('.model-option').forEach(o => {
+    o.classList.toggle('active', o.getAttribute('data-model') === id);
+  });
+}
+
+function toggleModelDropdown() {
+  document.getElementById('modelDropdown').classList.toggle('open');
+}
+
+document.addEventListener('click', () => {
+  document.getElementById('modelDropdown')?.classList.remove('open');
+});
+
+function toggleChatCard() {
+  const card = document.getElementById('proxyChatCard');
+  const icon = document.getElementById('chatCollapseIcon');
+  card.classList.toggle('collapsed');
+  icon.textContent = card.classList.contains('collapsed') ? '▼' : '▲';
+}
+
+function showChatCard() {
+  document.getElementById('proxyChatCard').style.display = '';
+  renderModelSelect(PRESET_MODELS);
+  document.getElementById('chatInput').disabled = false;
+  document.getElementById('chatSendBtn').disabled = false;
+}
+
+function hideChatCard() {
+  document.getElementById('proxyChatCard').style.display = 'none';
+}
+
+async function exportToWorkBuddy() {
+  const btn = document.getElementById('exportBtn');
+  const label = btn.querySelector('.sync-label');
+  const port = document.getElementById('proxyPanel').dataset.port || document.getElementById('proxyPortInput').value || '8001';
+  const pass = document.getElementById('proxyPassInput').value || '';
+  btn.disabled = true;
+  label.textContent = '导入中...';
+  try {
+    const raw = await pywebview.api.export_to_workbuddy(port, pass);
+    const r = JSON.parse(raw);
+    if (r.success) {
+      label.textContent = `已导入 ${r.count} 个模型`;
+      let msg = `已写入 ${r.path}`;
+      if (r.backup) msg += `\n备份: ${r.backup}`;
+      showToast(msg, 'success');
+    } else {
+      throw new Error(r.error);
+    }
+  } catch (e) {
+    label.textContent = '导入失败';
+    showToast('导入失败: ' + e.message, 'error');
+  } finally {
+    setTimeout(() => { label.textContent = '导入 WorkBuddy'; btn.disabled = false; }, 2500);
+  }
+}
+
+async function syncModels() {
+  const btn = document.getElementById('syncModelsBtn');
+  const label = btn.querySelector('.sync-label');
+  btn.disabled = true;
+  label.textContent = '同步中...';
+  try {
+    const resp = await fetch(`${getProxyBaseUrl()}/v1/models`, {
+      headers: { 'Authorization': `Bearer ${getProxyPassword()}` }
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const ids = (data.data || []).map(m => m.id);
+    const synced = ids.map(id => {
+      let provider = 'auto';
+      const lower = id.toLowerCase();
+      if (lower.includes('deepseek')) provider = 'deepseek';
+      else if (lower.includes('kimi')) provider = 'kimi';
+      else if (lower.includes('glm')) provider = 'glm';
+      else if (lower.includes('hy') || lower.includes('hunyuan')) provider = 'hunyuan';
+      else if (lower.includes('minimax')) provider = 'minimax';
+      else if (lower.includes('qwen')) provider = 'qwen';
+      return { id, provider, name: id };
+    });
+    renderModelSelect(synced);
+    label.textContent = `已同步 ${synced.length} 个`;
+    setTimeout(() => { label.textContent = '同步官方模型'; btn.disabled = false; }, 2000);
+  } catch (e) {
+    label.textContent = '同步失败';
+    showToast('同步模型失败: ' + e.message, 'error');
+    setTimeout(() => { label.textContent = '同步官方模型'; btn.disabled = false; }, 2000);
+  }
+}
+
+let chatBusy = false;
+
+async function sendTestChat() {
+  if (chatBusy) return;
+  const input = document.getElementById('chatInput');
+  const btn = document.getElementById('chatSendBtn');
+  const model = document.getElementById('modelCurrentId').textContent;
+  const msg = input.value.trim();
+  if (!msg) return;
+  if (!proxyRunning) { showToast('请先启动代理网关', 'warning'); return; }
+
+  chatBusy = true;
+  btn.disabled = true;
+  btn.textContent = '...';
+  input.value = '';
+  input.disabled = true;
+
+  const container = document.getElementById('chatMessages');
+  const empty = container.querySelector('.chat-empty');
+  if (empty) empty.remove();
+
+  const userDiv = document.createElement('div');
+  userDiv.className = 'chat-msg user';
+  userDiv.textContent = msg;
+  container.appendChild(userDiv);
+
+  const assistantDiv = document.createElement('div');
+  assistantDiv.className = 'chat-msg assistant';
+  assistantDiv.innerHTML = '<span class="typing-indicator"><span></span><span></span><span></span></span>';
+  container.appendChild(assistantDiv);
+  container.scrollTop = container.scrollHeight;
+
+  try {
+    const resp = await fetch(`${getProxyBaseUrl()}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getProxyPassword()}`,
+      },
+      body: JSON.stringify({
+        model: model,
+        messages: [{ role: 'user', content: msg }],
+        stream: true,
+      }),
+    });
+
+    if (!resp.ok) throw new Error((await resp.text()).slice(0, 200));
+
+    assistantDiv.textContent = '';
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullText = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const event = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        for (const line of event.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') continue;
+          try {
+            const obj = JSON.parse(data);
+            const delta = obj.choices && obj.choices[0] && obj.choices[0].delta;
+            if (delta && delta.content) {
+              fullText += delta.content;
+              assistantDiv.textContent = fullText;
+              container.scrollTop = container.scrollHeight;
+            }
+          } catch {}
+        }
+      }
+    }
+
+    if (!fullText) assistantDiv.textContent = '(空响应)';
+  } catch (e) {
+    assistantDiv.className = 'chat-msg error';
+    assistantDiv.textContent = '错误: ' + e.message;
+  } finally {
+    chatBusy = false;
+    btn.disabled = false;
+    btn.textContent = '发送';
+    input.disabled = false;
+    input.focus();
+  }
+}
+
 // ===== Theme =====
 function setThemeUI(theme) {
   const html = document.documentElement;
@@ -1071,6 +1625,7 @@ function init() {
     } catch(e) { if (attempt < 10) setTimeout(() => tryLoad(attempt + 1), 500); }
   };
   tryLoad();
+  refreshProxyStatus();
 }
 document.addEventListener('DOMContentLoaded', init);
 </script>

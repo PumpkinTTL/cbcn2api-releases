@@ -9,7 +9,6 @@ import webview
 from src.gui.app import GuiApi
 from src.gui.html import HTML
 
-
 def main():
     api = GuiApi()
 
@@ -22,6 +21,9 @@ def main():
         min_size=(900, 600),
         resizable=True,
     )
+
+    import atexit
+    atexit.register(api.cleanup)
 
     webview.start(
         private_mode=False,

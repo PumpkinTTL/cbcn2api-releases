@@ -574,7 +574,161 @@ class GuiApi:
         store.save_theme(theme)
         return json.dumps({"ok": True})
 
-    # ========== Switch Account (Inject to local client) ==========
+    # ========== Proxy Gateway ==========
+
+    def proxy_start(self, port: str, password: str) -> str:
+        import subprocess
+        import sys
+        import time
+        import socket
+
+        existing = json.loads(self.proxy_status())
+        if existing.get("running"):
+            return json.dumps({"error": "代理已在运行"})
+
+        port_num = int(port) if port.strip() else 8001
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.bind(("127.0.0.1", port_num))
+            sock.close()
+        except OSError:
+            return json.dumps({"error": f"端口 {port_num} 已被占用，请换一个端口"})
+
+        env = os.environ.copy()
+        env["CBCN_PROXY_PORT"] = str(port_num)
+        env["CBCN_PROXY_PASSWORD"] = password
+        env["CBCN_PROXY_PLATFORM"] = "workbuddy"
+
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "src.proxy.proxy_server:app",
+             "--host", "127.0.0.1", "--port", str(port_num),
+             "--log-level", "error"],
+            cwd=root, env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        time.sleep(1.0)
+
+        if proc.poll() is not None:
+            err = b""
+            try:
+                err = proc.stderr.read() or b""
+            except Exception:
+                pass
+            err_text = err.decode("utf-8", errors="ignore").strip()
+            if "address already in use" in err_text.lower():
+                return json.dumps({"error": f"端口 {port_num} 已被占用，请换一个端口"})
+            return json.dumps({"error": f"代理启动失败: {err_text[:200]}"})
+
+        self._proxy_proc = proc
+        self._proxy_port = port_num
+        return json.dumps({"success": True, "port": port_num})
+
+    def proxy_stop(self) -> str:
+        proc = getattr(self, "_proxy_proc", None)
+        if proc and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+            self._proxy_proc = None
+            return json.dumps({"success": True})
+        return json.dumps({"error": "代理未运行"})
+
+    def proxy_status(self) -> str:
+        proc = getattr(self, "_proxy_proc", None)
+        running = proc is not None and proc.poll() is None
+        return json.dumps({
+            "running": running,
+            "port": getattr(self, "_proxy_port", 8001),
+        })
+
+    def cleanup(self):
+        proc = getattr(self, "_proxy_proc", None)
+        if proc and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except Exception:
+                proc.kill()
+
+    def export_to_workbuddy(self, port: str = "", password: str = "") -> str:
+        import pathlib
+
+        port_num = int(port) if port and port.strip() else getattr(self, "_proxy_port", 8001)
+        api_key = password.strip() if password else ""
+
+        model_specs = {
+            "hy3":            {"input": 192000,  "output": 64000,  "name": "Hy3"},
+            "deepseek-v4-flash": {"input": 1000000, "output": 50000,  "name": "Deepseek-V4-Flash"},
+            "deepseek-v4-pro":  {"input": 1000000, "output": 50000,  "name": "Deepseek-V4-Pro"},
+            "glm-5.2":         {"input": 1000000, "output": 48000,  "name": "GLM-5.2"},
+            "glm-5.1":         {"input": 200000,  "output": 48000,  "name": "GLM-5.1"},
+            "glm-5v-turbo":    {"input": 200000,  "output": 38000,  "name": "GLM-5v-Turbo"},
+            "minimax-m3":      {"input": 512000,  "output": 48000,  "name": "MiniMax-M3"},
+            "kimi-k3-1":       {"input": 1000000, "output": 48000,  "name": "Kimi-K3"},
+            "kimi-k2.7":       {"input": 256000,  "output": 32000,  "name": "Kimi-K2.7-Code"},
+            "kimi-k2.6":       {"input": 256000,  "output": 32000,  "name": "Kimi-K2.6"},
+            "auto":            {"input": 1000000, "output": 64000,  "name": "Auto"},
+        }
+
+        config = []
+        for m in ["deepseek-v4-flash", "deepseek-v4-pro", "hy3",
+                   "glm-5.2", "glm-5.1", "glm-5v-turbo",
+                   "minimax-m3", "kimi-k3-1", "kimi-k2.7", "kimi-k2.6", "auto"]:
+            spec = model_specs.get(m, {"input": 1000000, "output": 128000, "name": m})
+            config.append({
+                "id": spec["name"],
+                "name": spec["name"],
+                "vendor": "Custom",
+                "url": f"http://localhost:{port_num}/v1",
+                "apiKey": api_key,
+                "supportsToolCall": True,
+                "supportsImages": True,
+                "supportsReasoning": True,
+                "useCustomProtocol": False,
+                "maxInputTokens": spec["input"],
+                "maxOutputTokens": spec["output"],
+                "reasoning": {
+                    "supportedEfforts": ["low", "medium", "high", "xhigh"],
+                    "canDisableThinking": False,
+                },
+            })
+
+        candidates = [
+            pathlib.Path.home() / ".workbuddy" / "models.json",
+            pathlib.Path(os.environ.get("APPDATA", "")) / "WorkBuddy" / ".workbuddy" / "models.json",
+        ]
+
+        target = None
+        for p in candidates:
+            if p.parent.exists():
+                target = p
+                break
+        if not target:
+            target = candidates[0]
+            target.parent.mkdir(parents=True, exist_ok=True)
+
+        backup = None
+        if target.exists():
+            backup = target.with_suffix(".json.bak")
+            try:
+                backup.write_text(target.read_text(encoding="utf-8"), encoding="utf-8")
+            except Exception:
+                backup = None
+
+        try:
+            target.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+            return json.dumps({
+                "success": True,
+                "path": str(target),
+                "count": len(config),
+                "backup": str(backup) if backup else "",
+            })
+        except Exception as e:
+            return json.dumps({"error": str(e)})
 
     def _is_json(self, s: str) -> bool:
         try:
