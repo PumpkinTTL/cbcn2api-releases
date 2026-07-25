@@ -518,8 +518,13 @@ body {
 }
 .filter-bar input[type="date"]:hover {
   border-color: var(--primary);
-  background: var(--surface-active);
 }
+.filter-bar input[type="date"].empty::-webkit-datetime-edit,
+.filter-bar input[type="date"].empty::-webkit-datetime-edit-fields-wrapper,
+.filter-bar input[type="date"].empty::-webkit-datetime-edit-text,
+.filter-bar input[type="date"].empty::-webkit-datetime-edit-month-field,
+.filter-bar input[type="date"].empty::-webkit-datetime-edit-day-field,
+.filter-bar input[type="date"].empty::-webkit-datetime-edit-year-field { opacity: 0 !important; }
 .filter-bar input[type="date"]::-webkit-datetime-edit,
 .filter-bar input[type="date"]::-webkit-datetime-edit-fields-wrapper,
 .filter-bar input[type="date"]::-webkit-datetime-edit-text,
@@ -528,7 +533,6 @@ body {
 .filter-bar input[type="date"]::-webkit-datetime-edit-year-field {
   color: var(--text) !important;
   font-weight: 600 !important;
-  opacity: 1 !important;
 }
 .filter-bar input[type="date"]::-webkit-calendar-picker-indicator {
   cursor: pointer;
@@ -567,6 +571,28 @@ body {
   display: flex; flex-direction: column;
 }
 .card:hover { border-color: var(--border-hover); box-shadow: var(--shadow); }
+.card.current { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.card.active { animation: pulse-border 1.5s ease-in-out infinite; }
+@keyframes pulse-border {
+  0%, 100% { box-shadow: 0 0 0 2px #22c55e, 0 0 10px rgba(34,197,94,0.35); }
+  50% { box-shadow: 0 0 0 2px #22c55e, 0 0 22px rgba(34,197,94,0.6); }
+}
+.current-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; font-weight: 600; padding: 2px 7px;
+  border-radius: 4px; background: var(--primary); color: #fff;
+}
+.badge-status-normal { font-size: 10px; padding: 2px 7px; border-radius: 4px; background: rgba(34,197,94,0.12); color: #22c55e; }
+.badge-status-banned { font-size: 10px; padding: 2px 7px; border-radius: 4px; background: rgba(239,68,68,0.12); color: #ef4444; }
+.badge-status-disabled { font-size: 10px; padding: 2px 7px; border-radius: 4px; background: rgba(245,158,11,0.12); color: #f59e0b; }
+.status-filter-group { display: flex; gap: 4px; margin-left: auto; }
+.status-filter-select {
+  padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text-secondary); font-size: 12px;
+  cursor: pointer; font-family: inherit; outline: none;
+}
+.status-filter-select:hover { border-color: var(--border-hover); }
+.status-filter-select:focus { border-color: var(--primary); }
 .card-header {
   display: flex;
   align-items: flex-start;
@@ -867,14 +893,23 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
         <button class="btn btn-ghost btn-sm" onclick="setFilterDate(-1)">昨天</button>
         <button class="btn btn-ghost btn-sm" onclick="setFilterDate(0)">今天</button>
         <span style="font-size:12px;color:var(--text-muted);margin:0 2px 0 6px;">指定日期:</span>
-        <div class="date-input-wrapper">
-          <input type="date" id="filterDate" onchange="applyFilter()" title="点击选择指定日期">
+        <div class="date-input-wrapper" style="position:relative">
+          <input type="date" id="filterDate" onchange="applyFilter();updateDatePh()" oninput="updateDatePh()" title="点击选择指定日期">
+          <span id="datePh" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:12px;pointer-events:none">选择日期</span>
         </div>
       </div>
       <span class="filter-chip" id="filterChip">
         <span id="filterChipText"></span>
         <span class="x" onclick="clearFilter()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg></span>
       </span>
+      <div class="status-filter-group">
+        <select class="status-filter-select" id="statusFilterSelect" onchange="setStatusFilter(this.value)">
+          <option value="all">全部状态</option>
+          <option value="normal">正常</option>
+          <option value="disabled">已禁用</option>
+          <option value="banned">已封禁</option>
+        </select>
+      </div>
     </div>
 
     <!-- Account Grid -->
@@ -1006,6 +1041,10 @@ let currentPlatform = 'workbuddy';
 let currentAccounts = [];
 let oauthTimer = null;
 let quotaAccountId = null;
+let proxyCurrentAccount = null;
+let proxyActive = false;
+let proxyInfoTimer = null;
+let statusFilter = 'all';
 
 // ===== Platform Switch =====
 function switchPlatform(platform) {
@@ -1132,6 +1171,14 @@ async function loadAccounts() {
     currentAccounts = JSON.parse(raw);
     renderStats();
     buildFilter();
+    // 网关未运行时，从 DB 恢复优先账号标注
+    if (!proxyRunning) {
+      try {
+        const pr = await pywebview.api.get_priority_account();
+        const pd = JSON.parse(pr);
+        if (pd.priority) proxyCurrentAccount = pd.priority;
+      } catch {}
+    }
     renderAccounts();
     if (currentAccounts.length > 0) {
       pywebview.api.batch_checkin_status(currentPlatform).then(() => loadAccountsLight()).catch(() => {});
@@ -1199,13 +1246,8 @@ function updateFilterChip() {
 }
 
 function buildFilter() {
-  for (const a of currentAccounts) {
-    if (a.created_at) {
-      document.getElementById('filterBar').style.display = 'flex';
-      return;
-    }
-  }
-  document.getElementById('filterBar').style.display = 'none';
+  document.getElementById('filterBar').style.display = currentAccounts.length ? 'flex' : 'none';
+  updateDatePh();
 }
 
 function setFilterDate(offset) {
@@ -1213,27 +1255,56 @@ function setFilterDate(offset) {
   d.setDate(d.getDate() + offset);
   document.getElementById('filterDate').value = dateStr(d);
   applyFilter();
+  updateDatePh();
 }
 
 function applyFilter() {
   updateFilterChip();
+  updateDatePh();
   renderAccounts();
 }
 
 function clearFilter() {
   document.getElementById('filterDate').value = '';
   updateFilterChip();
+  updateDatePh();
   renderAccounts();
 }
 
+function updateDatePh() {
+  const input = document.getElementById('filterDate');
+  const ph = document.getElementById('datePh');
+  if (!input || !ph) return;
+  if (input.value) {
+    input.classList.remove('empty');
+    ph.style.display = 'none';
+  } else {
+    input.classList.add('empty');
+    ph.style.display = '';
+  }
+}
+
 function getFilteredAccounts() {
+  let result = currentAccounts;
+  if (statusFilter !== 'all') {
+    result = result.filter(a => (a.status || 'normal') === statusFilter);
+  }
   const val = document.getElementById('filterDate').value;
-  if (!val) return currentAccounts;
-  return currentAccounts.filter(a => {
-    if (!a.created_at) return false;
-    const d = new Date(a.created_at * 1000);
-    return dateStr(d) === val;
-  });
+  if (val) {
+    result = result.filter(a => {
+      if (!a.created_at) return false;
+      const d = new Date(a.created_at * 1000);
+      return dateStr(d) === val;
+    });
+  }
+  if (proxyCurrentAccount) {
+    result = [...result].sort((a, b) => {
+      if (a.id === proxyCurrentAccount) return -1;
+      if (b.id === proxyCurrentAccount) return 1;
+      return 0;
+    });
+  }
+  return result;
 }
 
 function renderAccounts() {
@@ -1265,20 +1336,34 @@ function renderAccounts() {
     const planBadge = getPlanBadge(a);
     const quotaData = parseQuota(a);
     const checkinData = parseCheckin(a);
+    const displayName = a.nickname || a.email || '未命名';
+    const showEmail = a.email && a.email !== displayName;
 
     return `
-      <div class="card">
+      <div class="card" data-account-id="${a.id}">
         <div class="card-header">
           <div style="display:flex;align-items:center;flex:1;min-width:0">
             <div class="card-avatar">${avatarChar}</div>
             <div class="card-info">
-              <div class="card-name">${escapeHtml(a.nickname || a.email || '未命名')}</div>
-              <div class="card-email">${escapeHtml(a.email)}</div>
+              <div class="card-name">${escapeHtml(displayName)}</div>
+              ${showEmail ? `<div class="card-email">${escapeHtml(a.email)}</div>` : ''}
               <div class="card-meta">
+                ${a.id === proxyCurrentAccount ? '<span class="current-badge"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg>当前</span>' : ''}
+                ${getStatusBadge(a)}
                 ${planBadge}
                 ${a.enterprise_name ? `<span style="font-size:11px;color:var(--text-muted)"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 6h2M13 6h2M9 10h2M13 10h2M9 14h2M13 14h2"/></svg> ${escapeHtml(a.enterprise_name)}</span>` : ''}
               </div>
             </div>
+          </div>
+          <div class="checkin-status">
+            ${checkinData !== null ? `
+              <span class="checkin-badge ${checkinData.done ? 'done' : 'pending'}">
+                ${checkinData.done
+                  ? '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-1px"><path d="M5 13l4 4L19 7"/></svg> 已签到'
+                  : '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> 未签到'}
+              </span>
+              ${checkinData.streak > 0 ? `<span class="streak-badge"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><path d="M8 2c0 4-3 6-3 9 0 4 3 7 7 7s7-3 7-7c0-3-2-5-3-7 0 3-2 5-4 5s-4-3-4-7z"/><path d="M12 22v-4"/></svg> ${checkinData.streak}天</span>` : ''}
+            ` : `<span class="checkin-badge inactive">未开通</span>`}
           </div>
         </div>
 
@@ -1292,26 +1377,19 @@ function renderAccounts() {
         </div>` : ''}
 
         <div class="card-footer">
-          <div class="checkin-status">
-            ${checkinData !== null ? `
-              <span class="checkin-badge ${checkinData.done ? 'done' : 'pending'}">
-                ${checkinData.done
-                  ? '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-1px"><path d="M5 13l4 4L19 7"/></svg> 已签到'
-                  : '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> 未签到'}
-              </span>
-              ${checkinData.streak > 0 ? `<span class="streak-badge"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><path d="M8 2c0 4-3 6-3 9 0 4 3 7 7 7s7-3 7-7c0-3-2-5-3-7 0 3-2 5-4 5s-4-3-4-7z"/><path d="M12 22v-4"/></svg> 连签 ${checkinData.streak}天</span>` : ''}
-            ` : `<span class="checkin-badge inactive">未开通签到</span>`}
-          </div>
           <div class="card-actions">
             <button class="btn btn-ghost btn-sm" onclick="showQuotaDetail('${a.id}')" title="额度详情"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M4 16l4-8 4 4 4-6 4 8"/></svg> 详情</button>
             <button class="btn btn-ghost btn-sm" onclick="doCheckin('${a.id}')" title="签到"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> 签到</button>
             <button class="btn btn-ghost btn-sm" onclick="refreshOne('${a.id}')" title="刷新"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg> 刷新</button>
+            ${(a.status || 'normal') === 'normal' ? `<button class="btn btn-ghost btn-sm btn-icon" onclick="setPriorityAccount('${a.id}')" title="设为优先调度"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></button>` : ''}
+            ${(a.status || 'normal') === 'banned' ? '' : `<button class="btn btn-ghost btn-sm" style="color:${(a.status || 'normal') === 'disabled' ? '#22c55e' : '#f59e0b'}" onclick="toggleAccountStatus('${a.id}')">${(a.status || 'normal') === 'disabled' ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg> 启用' : '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> 禁用'}</button>`}
             <button class="btn btn-danger btn-sm btn-icon" onclick="deleteOne('${a.id}')" title="删除"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
           </div>
         </div>
       </div>
     `;
   }).join('');
+  updateAccountHighlight();
 }
 
 // ===== Helpers =====
@@ -1320,6 +1398,46 @@ function escapeHtml(s) {
   const d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
+}
+
+function getStatusBadge(a) {
+  const s = a.status || 'normal';
+  if (s === 'banned') return '<span class="badge-status-banned">封禁</span>';
+  if (s === 'disabled') return '<span class="badge-status-disabled">已禁用</span>';
+  return '<span class="badge-status-normal">正常</span>';
+}
+
+async function toggleAccountStatus(id) {
+  const acc = currentAccounts.find(a => a.id === id);
+  if (!acc) return;
+  const newStatus = (acc.status || 'normal') === 'disabled' ? 'normal' : 'disabled';
+  try {
+    const raw = await pywebview.api.set_account_status(currentPlatform, id, newStatus);
+    const r = JSON.parse(raw);
+    if (r.ok) {
+      acc.status = newStatus;
+      renderAccounts();
+      showToast(newStatus === 'disabled' ? '已禁用' : '已启用', 'success');
+    }
+  } catch (e) {}
+}
+
+async function setPriorityAccount(id) {
+  try {
+    const raw = await pywebview.api.set_priority_account(currentPlatform, id);
+    const r = JSON.parse(raw);
+    if (r.ok) {
+      proxyCurrentAccount = id;
+      updateAccountHighlight();
+      renderAccounts();
+      showToast('已设为优先调度', 'success');
+    }
+  } catch (e) {}
+}
+
+function setStatusFilter(s) {
+  statusFilter = s;
+  renderAccounts();
 }
 
 function getPlanBadge(a) {
@@ -1667,12 +1785,13 @@ async function toggleProxy() {
     if (r.success) {
       proxyRunning = false;
       btn.className = 'btn btn-primary btn-sm';
-      btn.innerHTML = `${PROXY_GATEWAY_SVG} 启动代理`;
+      btn.innerHTML = `${PROXY_GATEWAY_SVG} 启动网关`;
       panel.classList.remove('online');
       panel.dataset.port = document.getElementById('proxyPortInput').value || '8001';
       statusText.textContent = '离线';
       setProxyBtnState(false);
       hideChatCard();
+      stopProxyInfoPolling();
     }
     return;
   }
@@ -1693,9 +1812,10 @@ async function toggleProxy() {
     document.getElementById('proxyEndpointUrl').textContent = `http://127.0.0.1:${r.port}/v1`;
     setProxyBtnState(true);
     showChatCard();
+    startProxyInfoPolling();
   } else {
     btn.className = 'btn btn-primary btn-sm';
-    btn.innerHTML = `${PROXY_GATEWAY_SVG} 启动代理`;
+    btn.innerHTML = `${PROXY_GATEWAY_SVG} 启动网关`;
     showToast(r.error || '启动失败', 'warning');
   }
 }
@@ -1716,13 +1836,51 @@ async function refreshProxyStatus() {
     document.getElementById('proxyEndpointUrl').textContent = `http://127.0.0.1:${r.port}/v1`;
     setProxyBtnState(true);
     showChatCard();
+    startProxyInfoPolling();
   } else {
     btn.className = 'btn btn-primary btn-sm';
-    btn.innerHTML = `${PROXY_GATEWAY_SVG} 启动代理`;
+    btn.innerHTML = `${PROXY_GATEWAY_SVG} 启动网关`;
     panel.classList.remove('online');
     statusText.textContent = '离线';
     setProxyBtnState(false);
+    stopProxyInfoPolling();
   }
+}
+
+function startProxyInfoPolling() {
+  if (proxyInfoTimer) return;
+  proxyInfoTimer = setInterval(pollProxyInfo, 2000);
+  pollProxyInfo();
+}
+
+function stopProxyInfoPolling() {
+  if (proxyInfoTimer) { clearInterval(proxyInfoTimer); proxyInfoTimer = null; }
+  proxyCurrentAccount = null;
+  proxyActive = false;
+  updateAccountHighlight();
+}
+
+async function pollProxyInfo() {
+  if (!proxyRunning) return;
+  try {
+    const r = await fetch(`${getProxyBaseUrl()}/proxy/info`);
+    const info = await r.json();
+    const newCurrent = info.current_account;
+    const newActive = info.active;
+    if (newCurrent !== proxyCurrentAccount || newActive !== proxyActive) {
+      proxyCurrentAccount = newCurrent;
+      proxyActive = newActive;
+      updateAccountHighlight();
+    }
+  } catch {}
+}
+
+function updateAccountHighlight() {
+  document.querySelectorAll('.card[data-account-id]').forEach(card => {
+    const id = card.dataset.accountId;
+    card.classList.toggle('current', id === proxyCurrentAccount);
+    card.classList.toggle('active', id === proxyCurrentAccount && proxyActive);
+  });
 }
 
 // ===== Proxy Chat Card =====

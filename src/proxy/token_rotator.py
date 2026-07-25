@@ -34,6 +34,7 @@ class TokenRotator:
         self._accounts: list[Account] = []
         self._index = 0
         self._current_id: Optional[str] = None  # 当前粘性锁定的账号
+        self._active: bool = False  # 是否正在处理请求
         # id -> {"reason": str, "until": float|None}
         self._disabled: dict[str, dict] = {}
 
@@ -44,8 +45,31 @@ class TokenRotator:
             if self._index >= len(self._accounts):
                 self._index = 0
 
+            # 校验当前锁定是否仍有效
+            if self._current_id:
+                cur = next((a for a in self._accounts if a.id == self._current_id), None)
+                if not cur or not self._is_usable(cur):
+                    self._current_id = None
+
+            # 恢复持久化的优先账号
+            if not self._current_id:
+                saved = store.get_setting("priority_account", "")
+                if saved:
+                    acc = next((a for a in self._accounts if a.id == saved), None)
+                    if acc and self._is_usable(acc):
+                        self._current_id = saved
+
+            # 都没有就自动选第一个可用账号
+            if not self._current_id:
+                for acc in self._accounts:
+                    if self._is_usable(acc):
+                        self._current_id = acc.id
+                        break
+
     def _is_usable(self, acc: Account) -> bool:
         if not acc.access_token:
+            return False
+        if acc.status in ("disabled", "banned"):
             return False
         if acc.expires_at and acc.expires_at < int(time.time()) + 60:
             return False
@@ -96,6 +120,16 @@ class TokenRotator:
             if account_id == self._current_id:
                 self._current_id = None
 
+    def set_active(self, active: bool):
+        """标记网关是否正在处理请求（用于 UI 边框动画）。"""
+        with self._lock:
+            self._active = active
+
+    def set_priority(self, account_id: str):
+        """手动设置优先调度账号，下次 get_next 优先使用它。"""
+        with self._lock:
+            self._current_id = account_id
+
     def count(self) -> int:
         with self._lock:
             return len(self._accounts)
@@ -111,6 +145,7 @@ class TokenRotator:
                 "total": len(self._accounts),
                 "usable": sum(1 for a in self._accounts if self._is_usable(a)),
                 "current": self._current_id,
+                "active": self._active,
                 "disabled": [
                     {"id": aid, "reason": s.get("reason"), "until": s.get("until")}
                     for aid, s in self._disabled.items()

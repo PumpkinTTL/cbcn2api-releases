@@ -326,6 +326,9 @@ class GuiApi:
             account.quota_raw = payload.get("quota_raw") or account.quota_raw
             account.usage_raw = payload.get("usage_raw") or account.usage_raw
 
+            if payload.get("status"):
+                account.status = payload["status"]
+
             if quota_error:
                 account.quota_query_last_error = quota_error
                 account.quota_query_last_error_at = int(time.time() * 1000)
@@ -597,6 +600,37 @@ class GuiApi:
     def open_external(self, url: str):
         import webbrowser
         webbrowser.open(url)
+
+    def set_account_status(self, platform: str, account_id: str, status: str) -> str:
+        """手动设置账号状态：normal / disabled。"""
+        import json as _json
+        acc = store.load_account(platform, account_id)
+        if not acc:
+            return _json.dumps({"ok": False, "error": "账号不存在"})
+        acc.status = status
+        store.upsert_account(platform, acc)
+        try:
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.reload(platform)
+        except Exception:
+            pass
+        return _json.dumps({"ok": True})
+
+    def set_priority_account(self, platform: str, account_id: str) -> str:
+        """手动设置优先调度账号，持久化到 DB。"""
+        import json as _json
+        try:
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.set_priority(account_id)
+            store.save_setting("priority_account", account_id)
+            return _json.dumps({"ok": True})
+        except Exception as e:
+            return _json.dumps({"ok": False, "error": str(e)})
+
+    def get_priority_account(self) -> str:
+        """获取持久化的优先账号 ID。"""
+        import json as _json
+        return _json.dumps({"priority": store.get_setting("priority_account", "")})
 
     def export_to_workbuddy(self, port: str = "", password: str = "") -> str:
         import pathlib

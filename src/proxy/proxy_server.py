@@ -14,6 +14,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from .token_rotator import token_rotator
 from .api_client import build_headers, build_chat_payload, resolve_base_url, AVAILABLE_MODELS
+from src.storage import store
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +187,19 @@ async def _normalize_text_stream(aiter: AsyncIterator[str]) -> AsyncGenerator[st
     yield "data: [DONE]\n\n"
 
 
-async def _stream_with_failover(
+def _persist_banned(platform: str, account_id: str, nickname: str):
+    """将封禁状态持久化到数据库。"""
+    try:
+        acc = store.load_account(platform, account_id)
+        if acc:
+            acc.status = "banned"
+            store.upsert_account(platform, acc)
+            logger.info("[调度] 账号=%s 已标记封禁(持久化)", nickname)
+    except Exception as e:
+        logger.warning("[调度] 持久化封禁状态失败: %s", e)
+
+
+async def _stream_inner(
     payload: dict,
     conversation_id: Optional[str],
     platform: str,
@@ -231,6 +244,8 @@ async def _stream_with_failover(
                 logger.warning("[调度] 账号=%s 上游返回 %d, kind=%s, body=%s", acc.nickname, resp.status_code, kind, body[:200])
                 if kind:
                     token_rotator.mark_disabled(acc.id, kind)
+                    if kind == "banned":
+                        _persist_banned(platform, acc.id, acc.nickname)
                     last_msg = body[:300]
                     continue
                 yield f"data: {json.dumps({'error': {'message': body, 'type': 'upstream_error', 'status': resp.status_code}}, ensure_ascii=False)}\n\n"
@@ -263,6 +278,8 @@ async def _stream_with_failover(
                 logger.warning("[调度] 账号=%s 200内联错误, kind=%s, err=%s", acc.nickname, kind, inline_err[:200])
                 if kind:
                     token_rotator.mark_disabled(acc.id, kind)
+                    if kind == "banned":
+                        _persist_banned(platform, acc.id, acc.nickname)
                     last_msg = inline_err[:300]
                     continue
                 # 不可重试的内联错误
@@ -302,6 +319,20 @@ async def _stream_with_failover(
     logger.warning("[调度] 所有账号不可用, last_msg=%s", last_msg)
     yield f"data: {json.dumps({'error': {'message': last_msg, 'type': 'no_account'}}, ensure_ascii=False)}\n\n"
     yield "data: [DONE]\n\n"
+
+
+async def _stream_with_failover(
+    payload: dict,
+    conversation_id: Optional[str],
+    platform: str,
+) -> AsyncGenerator[str, None]:
+    """带 active 状态追踪的流式生成器包装。"""
+    token_rotator.set_active(True)
+    try:
+        async for chunk in _stream_inner(payload, conversation_id, platform):
+            yield chunk
+    finally:
+        token_rotator.set_active(False)
 
 
 async def _non_stream_chat(
@@ -463,6 +494,7 @@ async def proxy_info():
         "accounts_usable": st["usable"],
         "accounts_disabled": st["disabled"],
         "current_account": st["current"],
+        "active": st["active"],
         "models": AVAILABLE_MODELS,
     }
 

@@ -133,6 +133,8 @@ def _fetch_user_resource(access_token: str, uid: Optional[str],
         }
 
         resp = session.post(url, headers=headers, json=body, timeout=30)
+        if resp.status_code in (401, 403):
+            return {"_forbidden": True}
         resp.raise_for_status()
         return resp.json()
     except Exception:

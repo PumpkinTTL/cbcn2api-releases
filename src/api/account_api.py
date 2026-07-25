@@ -43,6 +43,10 @@ def build_payload_from_token(access_token: str, domain: Optional[str] = None) ->
     payment = _fetch_payment_type(access_token, uid, enterprise_id, domain)
     user_resource = _fetch_user_resource(access_token, uid, enterprise_id, domain)
 
+    is_forbidden = isinstance(user_resource, dict) and user_resource.get("_forbidden") is True
+    if is_forbidden:
+        user_resource = None
+
     dosage_data = dosage.get("data") if dosage else None
     payment_data = payment.get("data") if payment else None
 
@@ -81,7 +85,7 @@ def build_payload_from_token(access_token: str, domain: Optional[str] = None) ->
         "quota_raw": quota_raw if quota_raw else None,
         "profile_raw": account_data,
         "usage_raw": user_resource,
-        "status": "normal",
+        "status": "banned" if is_forbidden else "normal",
     }
 
 
@@ -136,9 +140,13 @@ def refresh_full_payload(account: Account) -> tuple:
     payment = _fetch_payment_type(new_at, account.uid, account.enterprise_id, new_domain)
     user_resource = _fetch_user_resource(new_at, account.uid, account.enterprise_id, new_domain)
 
+    is_forbidden = isinstance(user_resource, dict) and user_resource.get("_forbidden") is True
+    if is_forbidden:
+        user_resource = None
+
     quota_error = None
     if user_resource is None:
-        quota_error = "获取配额资源失败"
+        quota_error = "账号已被封禁 (401/403)" if is_forbidden else "获取配额资源失败"
 
     dosage_data = dosage.get("data") if dosage else None
     payment_data = payment.get("data") if payment else None
@@ -162,6 +170,7 @@ def refresh_full_payload(account: Account) -> tuple:
         "payment_type": payment_data if isinstance(payment_data, str) else (payment_data.get("paymentType") if payment_data else account.payment_type),
         "quota_raw": quota_raw if quota_raw else account.quota_raw,
         "usage_raw": user_resource or account.usage_raw,
+        "status": "banned" if is_forbidden else "normal",
     }
 
     return payload, quota_error
