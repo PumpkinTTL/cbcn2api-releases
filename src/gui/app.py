@@ -594,6 +594,10 @@ class GuiApi:
         if server:
             server.should_exit = True
 
+    def open_external(self, url: str):
+        import webbrowser
+        webbrowser.open(url)
+
     def export_to_workbuddy(self, port: str = "", password: str = "") -> str:
         import pathlib
 

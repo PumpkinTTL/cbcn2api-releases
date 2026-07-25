@@ -183,6 +183,56 @@ body {
   font-weight: 600;
 }
 .sidebar-footer { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--border); }
+.shop-cards { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; }
+.shop-cards-header {
+  padding: 20px 24px 16px;
+  font-size: 16px; font-weight: 700; color: var(--text);
+}
+.shop-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  padding: 20px 24px 24px;
+}
+.shop-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 28px 20px 20px;
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; gap: 12px;
+  transition: var(--transition);
+  cursor: pointer;
+}
+.shop-card:hover { border-color: var(--primary); box-shadow: 0 4px 16px rgba(0,0,0,0.1); transform: translateY(-2px); }
+.shop-card-icon { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; }
+.shop-card-name { font-size: 16px; font-weight: 600; color: var(--text); }
+.shop-card-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.shop-card-btn {
+  margin-top: 4px;
+  padding: 6px 18px; border: 1px solid var(--primary); border-radius: 6px;
+  background: transparent; color: var(--primary); font-size: 13px; font-weight: 500;
+  transition: var(--transition);
+}
+.shop-card:hover .shop-card-btn { background: var(--primary); color: #fff; }
+.shop-cards-desc {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 24px;
+  margin: 0 24px 4px;
+}
+.shop-cards-desc h4 { font-size: 14px; font-weight: 700; color: var(--text); margin: 0 0 8px; }
+.shop-cards-desc p { font-size: 13px; color: var(--text-secondary); line-height: 1.7; margin: 0; }
+.shop-cards-desc .desc-highlight { color: var(--primary); font-weight: 500; }
+.shop-view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.shop-toolbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 20px; border-bottom: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0;
+}
+.shop-name { font-size: 14px; font-weight: 600; color: var(--text); flex: 1; }
+.shop-frame { flex: 1; width: 100%; border: none; background: #fff; }
 
 /* Content Area */
 .content { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
@@ -681,28 +731,31 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
     <span class="sidebar-logo-title">AI模型网关</span>
     <span class="sidebar-logo-badge">PRO</span>
   </div>
-  <div class="sidebar-nav-section">平台列表</div>
+  <div class="sidebar-nav-section">控制台</div>
   <nav class="sidebar-nav">
-    <button class="nav-item active" data-platform="workbuddy" onclick="switchPlatform('workbuddy')">
+    <button class="nav-item active" data-view="console" onclick="showConsole()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
       WorkBuddy
     </button>
-    <button class="nav-item" data-platform="codebuddy_cn" onclick="switchPlatform('codebuddy_cn')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>
-      CodeBuddy CN
+  </nav>
+  <div class="sidebar-nav-section">推荐</div>
+  <nav class="sidebar-nav">
+    <button class="nav-item shop-item" data-view="shop-cards" onclick="showShopCards()">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+      联营店铺
     </button>
   </nav>
   <div class="sidebar-footer">
     <button class="btn btn-ghost btn-sm" onclick="toggleTheme()" id="themeBtn" title="切换主题" style="width:100%;justify-content:center">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> 切换主题
     </button>
-    <div style="text-align:center;font-size:11px;color:var(--text-tertiary);margin-top:8px">v1.0.0</div>
+    <div style="text-align:center;font-size:11px;color:var(--text-tertiary);margin-top:8px">v1.0.1</div>
   </div>
 </aside>
 
 <!-- Content -->
 <div class="content">
-  <div class="header-top">
+  <div class="header-top" id="consoleHeader">
     <div class="header-left">
       <span>控制台</span>
       <span class="header-platform-tag" id="headerPlatformTag">WorkBuddy</span>
@@ -827,6 +880,51 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
     <!-- Account Grid -->
     <div class="account-grid" id="accountGrid"></div>
   </div>
+
+  <!-- Shop Cards View -->
+  <div class="shop-cards" id="shopCardsView" style="display:none">
+    <div class="shop-cards-header">联营店铺</div>
+    <div class="shop-cards-desc">
+      <h4>关于流量卡</h4>
+      <p>市面上大多数便宜流量卡其实是<span class="desc-highlight">物联卡</span>——虚标流量、限速断网、充进去的钱说没就没了。<br>本店上架的华玥通讯和北极工坊，全是<span class="desc-highlight">正规运营商手机卡</span>，11 位手机号，官方 app 可查套餐，<span class="desc-highlight">不限速不虚标</span>，月租多少就是多少。觉得合适就办一张，不合适看看也无妨。</p>
+    </div>
+    <div class="shop-cards-grid">
+      <div class="shop-card" onclick="openShop('https://buy.bitlesu.com/', '奥瑞斯·星域')">
+        <img src="icons/kawang.png" class="shop-card-icon" alt="">
+        <span class="shop-card-name">奥瑞斯·星域</span>
+        <span class="shop-card-desc">WorkBuddy 等卡密自助秒发，寄卖即用</span>
+        <span class="shop-card-btn">进入店铺</span>
+      </div>
+      <div class="shop-card" onclick="openShop('https://sztc.rimian666.cn/ProductEn/Index/498fe9ed5fc34753', '华玥通讯')">
+        <img src="icons/liulaing1.png" class="shop-card-icon" alt="">
+        <span class="shop-card-name">华玥通讯</span>
+        <span class="shop-card-desc">正规运营商大流量套餐，官方可查，不限速不虚标</span>
+        <span class="shop-card-btn">进入店铺</span>
+      </div>
+      <div class="shop-card" onclick="openShop('https://h5.dandanhou.net/index?k=QlA1TGwvZVVFelk9', '北极工坊')">
+        <img src="icons/liuliang2.png" class="shop-card-icon" alt="">
+        <span class="shop-card-name">北极工坊</span>
+        <span class="shop-card-desc">多运营商套餐严选，11 位手机号，月租透明无套路</span>
+        <span class="shop-card-btn">进入店铺</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shop iframe View -->
+  <div class="shop-view" id="shopView" style="display:none">
+    <div class="shop-toolbar">
+      <button class="btn btn-ghost btn-sm" onclick="showConsole()">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        返回控制台
+      </button>
+      <span class="shop-name" id="shopName"></span>
+      <button class="btn btn-ghost btn-sm" onclick="openShopExternal()">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
+        浏览器打开
+      </button>
+    </div>
+    <iframe id="shopFrame" class="shop-frame"></iframe>
+  </div>
 </div>
 
 <!-- OAuth Modal -->
@@ -912,10 +1010,40 @@ let quotaAccountId = null;
 // ===== Platform Switch =====
 function switchPlatform(platform) {
   currentPlatform = platform;
-  document.querySelectorAll('.nav-item').forEach(t => t.classList.toggle('active', t.dataset.platform === platform));
-  const tag = document.getElementById('headerPlatformTag');
-  if (tag) tag.textContent = platform === 'workbuddy' ? 'WorkBuddy' : 'CodeBuddy CN';
   loadAccounts();
+}
+
+// ===== Shop / Console View Switch =====
+let currentShopUrl = '';
+
+function showConsole() {
+  document.getElementById('consoleHeader').style.display = '';
+  document.getElementById('main').style.display = '';
+  document.getElementById('shopCardsView').style.display = 'none';
+  document.getElementById('shopView').style.display = 'none';
+  const frame = document.getElementById('shopFrame');
+  if (frame) frame.src = '';
+  document.querySelectorAll('.sidebar .nav-item').forEach(t => t.classList.toggle('active', t.dataset.view === 'console'));
+}
+
+function showShopCards() {
+  document.getElementById('consoleHeader').style.display = 'none';
+  document.getElementById('main').style.display = 'none';
+  document.getElementById('shopView').style.display = 'none';
+  document.getElementById('shopCardsView').style.display = '';
+  document.querySelectorAll('.sidebar .nav-item').forEach(t => t.classList.toggle('active', t.dataset.view === 'shop-cards'));
+}
+
+function openShop(url, name) {
+  document.getElementById('shopCardsView').style.display = 'none';
+  document.getElementById('shopView').style.display = 'flex';
+  document.getElementById('shopName').textContent = name;
+  document.getElementById('shopFrame').src = url;
+  currentShopUrl = url;
+}
+
+function openShopExternal() {
+  if (currentShopUrl) pywebview.api.open_external(currentShopUrl);
 }
 
 // ===== Toast =====

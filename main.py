@@ -3,6 +3,7 @@ import os
 import sys
 import threading
 import ctypes
+import pathlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -16,9 +17,6 @@ if sys.platform == "win32":
 
 import webview
 from src.gui.app import GuiApi
-_GUI_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "gui", "index.html")
-with open(_GUI_HTML, encoding="utf-8") as _f:
-    HTML = _f.read()
 
 APP_TITLE = "AI Gateway"
 
@@ -27,6 +25,9 @@ def _resource(name):
     if getattr(sys, 'frozen', False):
         return os.path.join(sys._MEIPASS, name)
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+
+_GUI_HTML = _resource(os.path.join("src", "gui", "index.html"))
+_HTML_URL = pathlib.Path(_GUI_HTML).as_uri()
 
 _ICO_PATH = _resource("gateway.ico")
 
@@ -58,7 +59,7 @@ def main():
 
     window = webview.create_window(
         APP_TITLE,
-        html=HTML,
+        url=_HTML_URL,
         js_api=api,
         width=1200,
         height=820,
