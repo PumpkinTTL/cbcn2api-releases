@@ -593,6 +593,16 @@ body {
 }
 .status-filter-select:hover { border-color: var(--border-hover); }
 .status-filter-select:focus { border-color: var(--primary); }
+.version-link { color: var(--text-tertiary); cursor: pointer; transition: var(--transition); }
+.version-link:hover { color: var(--primary); text-decoration: underline; }
+.changelog-modal { max-width: 480px; width: 90%; }
+.changelog-modal .modal-body { max-height: 60vh; overflow-y: auto; }
+.changelog-version { font-size: 18px; font-weight: 700; color: var(--primary); margin-bottom: 4px; }
+.changelog-date { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
+.changelog-section-title { font-size: 13px; font-weight: 600; color: var(--text); margin: 14px 0 8px; display: flex; align-items: center; gap: 6px; }
+.changelog-list { list-style: none; padding: 0; margin: 0; }
+.changelog-list li { font-size: 13px; color: var(--text-secondary); line-height: 1.7; padding-left: 16px; position: relative; }
+.changelog-list li::before { content: '•'; position: absolute; left: 4px; color: var(--primary); }
 .card-header {
   display: flex;
   align-items: flex-start;
@@ -675,9 +685,17 @@ body {
   background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
   width: 100%; max-width: 500px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow);
 }
-.modal-header { padding: 20px 24px 12px; flex-shrink: 0; }
+.modal-header { padding: 20px 24px 12px; flex-shrink: 0; position: relative; }
 .modal-header h2 { font-size: 17px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
 .modal-header p { font-size: 13px; color: var(--text-secondary); }
+.modal-close {
+  position: absolute; top: 16px; right: 16px;
+  background: transparent; border: none; color: var(--text-muted);
+  cursor: pointer; padding: 4px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  transition: var(--transition);
+}
+.modal-close:hover { background: var(--surface-hover); color: var(--text); }
 .modal-body { padding: 12px 24px 20px; overflow-y: auto; flex: 1; }
 .modal-actions { padding: 14px 24px; border-top: 1px solid var(--border); flex-shrink: 0; display: flex; gap: 8px; justify-content: flex-end; }
 
@@ -775,7 +793,9 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
     <button class="btn btn-ghost btn-sm" onclick="toggleTheme()" id="themeBtn" title="切换主题" style="width:100%;justify-content:center">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> 切换主题
     </button>
-    <div style="text-align:center;font-size:11px;color:var(--text-tertiary);margin-top:8px">v1.0.1</div>
+    <div style="text-align:center;font-size:11px;margin-top:8px">
+      <span class="version-link" onclick="showChangelog()">v1.0.2</span>
+    </div>
   </div>
 </aside>
 
@@ -1029,6 +1049,47 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="closeModal('quotaModal')">关闭</button>
       <button class="btn btn-primary" onclick="refreshQuota()">刷新配额</button>
+    </div>
+  </div>
+</div>
+
+<!-- Changelog Modal -->
+<div class="modal-overlay" id="changelogModal">
+  <div class="modal changelog-modal">
+    <div class="modal-header">
+      <h2>更新日志</h2>
+      <button class="modal-close" onclick="closeModal('changelogModal')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    </div>
+    <div class="modal-body">
+      <div class="changelog-version">v1.0.2</div>
+      <div class="changelog-date">2026-07-26</div>
+
+      <div class="changelog-section-title">🎯 账号调度</div>
+      <ul class="changelog-list">
+        <li>实时显示当前正在使用的账号，排在列表第一位</li>
+        <li>请求处理中绿色光效提示，处理完自动消失</li>
+        <li>可手动指定优先使用的账号，重启后仍然记住</li>
+        <li>可手动禁用账号，禁用后不再参与调度</li>
+        <li>自动选择最优账号，无需手动干预</li>
+      </ul>
+
+      <div class="changelog-section-title">🛡️ 安全防护</div>
+      <ul class="changelog-list">
+        <li>自动检测被封禁的账号，标记后不再使用</li>
+        <li>封禁状态永久保存，避免重复尝试</li>
+        <li>封禁账号红色醒目标识</li>
+      </ul>
+
+      <div class="changelog-section-title">🎨 体验优化</div>
+      <ul class="changelog-list">
+        <li>账号状态筛选（全部 / 正常 / 禁用 / 封禁）</li>
+        <li>签到状态移至卡片右上角，一目了然</li>
+        <li>日期筛选器中文化</li>
+        <li>界面细节打磨，整体更清爽</li>
+      </ul>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="closeModal('changelogModal')">知道了</button>
     </div>
   </div>
 </div>
@@ -1439,6 +1500,8 @@ function setStatusFilter(s) {
   statusFilter = s;
   renderAccounts();
 }
+
+function showChangelog() { showModal('changelogModal'); }
 
 function getPlanBadge(a) {
   const code = a.dosage_notify_code || a.plan_type || '';
