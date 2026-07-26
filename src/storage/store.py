@@ -46,6 +46,25 @@ def _ensure_schema(conn: sqlite3.Connection):
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_accounts_platform ON accounts(platform)
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS proxy_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp INTEGER NOT NULL,
+            event TEXT NOT NULL,
+            account_id TEXT,
+            account_name TEXT,
+            model TEXT,
+            message TEXT,
+            details TEXT,
+            platform TEXT DEFAULT 'workbuddy'
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_logs_platform ON proxy_logs(platform)
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON proxy_logs(timestamp)
+    """)
 
 
 def upsert_account(platform: str, account: Account) -> Account:
@@ -238,3 +257,69 @@ def get_setting(key: str, default: str = "") -> str:
         return row["value"] if row else default
     finally:
         conn.close()
+
+
+MAX_LOG_ROWS = 5000
+
+
+def add_log(event: str, platform: str = "workbuddy", account_id: str = "",
+            account_name: str = "", model: str = "", message: str = "",
+            details: str = ""):
+    if get_setting("log_enabled", "1") != "1":
+        return
+    conn = _get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO proxy_logs (timestamp, event, platform, account_id, account_name, model, message, details) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (int(time.time()), event, platform, account_id, account_name, model, message, details),
+        )
+        conn.commit()
+        _prune_logs(conn)
+    finally:
+        conn.close()
+
+
+def list_logs(platform: str, limit: int = 200, offset: int = 0,
+              event: str = "", since: int = 0) -> list[dict]:
+    conn = _get_conn()
+    try:
+        sql = "SELECT * FROM proxy_logs WHERE platform=? "
+        params = [platform]
+        if event:
+            sql += "AND event=? "
+            params.append(event)
+        if since:
+            sql += "AND timestamp>=? "
+            params.append(since)
+        sql += "ORDER BY timestamp DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        rows = conn.execute(sql, tuple(params)).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def clear_logs(platform: str = "", before: int = 0):
+    conn = _get_conn()
+    try:
+        if before:
+            conn.execute("DELETE FROM proxy_logs WHERE timestamp<?", (before,))
+        elif platform:
+            conn.execute("DELETE FROM proxy_logs WHERE platform=?", (platform,))
+        else:
+            conn.execute("DELETE FROM proxy_logs")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _prune_logs(conn: sqlite3.Connection):
+    row = conn.execute("SELECT COUNT(*) as cnt FROM proxy_logs").fetchone()
+    if row and row["cnt"] > MAX_LOG_ROWS:
+        excess = row["cnt"] - MAX_LOG_ROWS
+        conn.execute(
+            "DELETE FROM proxy_logs WHERE id IN (SELECT id FROM proxy_logs ORDER BY timestamp ASC LIMIT ?)",
+            (excess,),
+        )
+        conn.commit()

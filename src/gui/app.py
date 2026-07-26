@@ -16,19 +16,6 @@ from src.api.account_api import refresh_full_payload
 _LICENSE_ENABLED = False
 
 
-def _num(v):
-    if v is None:
-        return 0
-    if isinstance(v, (int, float)):
-        return v
-    try:
-        return int(v)
-    except (ValueError, TypeError):
-        try:
-            return float(v)
-        except (ValueError, TypeError):
-            return 0
-
 
 class GuiApi:
     def __init__(self):
@@ -267,31 +254,9 @@ class GuiApi:
         total_quota = 0
         total_used = 0
         for a in accounts:
-            qr = a.quota_raw
-            if not qr:
-                continue
-            ur = qr.get("userResource") or a.usage_raw
-            if not ur:
-                continue
-            accts = (ur.get("data", {}).get("Response", {}).get("Data", {}).get("Accounts", [])
-                     or ur.get("data", {}).get("Resources", []))
-            for r in accts:
-                cap = (
-                    _num(r.get("CycleCapacitySizePrecise"))
-                    or _num(r.get("CycleCapacitySize"))
-                    or _num(r.get("CapacitySizePrecise"))
-                    or _num(r.get("CapacitySize"))
-                    or 0
-                )
-                remain = (
-                    _num(r.get("CycleCapacityRemainPrecise"))
-                    or _num(r.get("CycleCapacityRemain"))
-                    or _num(r.get("CapacityRemainPrecise"))
-                    or _num(r.get("CapacityRemain"))
-                    or 0
-                )
-                total_quota += cap
-                total_used += cap - remain
+            t, u = quota_api.calc_totals(a.quota_raw, a.usage_raw)
+            total_quota += t
+            total_used += u
         checked_in = 0
         today_start = int(time.time()) // 86400 * 86400
         for a in accounts:
@@ -602,7 +567,7 @@ class GuiApi:
         webbrowser.open(url)
 
     def set_account_status(self, platform: str, account_id: str, status: str) -> str:
-        """手动设置账号状态：normal / disabled。"""
+        """手动设置账号状态：normal / disabled。启用时清除运行时冷却。"""
         import json as _json
         acc = store.load_account(platform, account_id)
         if not acc:
@@ -611,6 +576,8 @@ class GuiApi:
         store.upsert_account(platform, acc)
         try:
             from src.proxy.token_rotator import token_rotator
+            if status == "normal":
+                token_rotator.clear_disabled(account_id)
             token_rotator.reload(platform)
         except Exception:
             pass
@@ -714,3 +681,25 @@ class GuiApi:
             return True
         except (json.JSONDecodeError, TypeError):
             return False
+
+    # ——— 运行日志 ———
+
+    def get_logs(self, platform: str = "workbuddy", limit: int = 200, offset: int = 0,
+                 event: str = "", since: int = 0) -> str:
+        from src.storage.store import list_logs
+        logs = list_logs(platform, limit=limit, offset=offset, event=event, since=since)
+        for log in logs:
+            log["_time"] = time.strftime("%H:%M:%S", time.localtime(log["timestamp"]))
+        return json.dumps({"logs": logs, "count": len(logs)})
+
+    def clear_logs(self, platform: str = "", before: int = 0) -> str:
+        from src.storage.store import clear_logs
+        clear_logs(platform=platform, before=before)
+        return json.dumps({"ok": True})
+
+    def get_log_enabled(self) -> str:
+        return json.dumps({"enabled": store.get_setting("log_enabled", "1") == "1"})
+
+    def set_log_enabled(self, enabled: bool) -> str:
+        store.save_setting("log_enabled", "1" if enabled else "0")
+        return json.dumps({"ok": True, "enabled": enabled})

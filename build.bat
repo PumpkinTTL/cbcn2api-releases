@@ -20,9 +20,8 @@ if not exist gateway.ico (
 
 :: 清理旧文件
 echo [1/4] 清理旧构建...
-if exist dist rmdir /s /q dist
 if exist build rmdir /s /q build
-if exist "AI Gateway v1.0.2.spec" del /q "AI Gateway v1.0.2.spec"
+if exist "AI Gateway v1.0.3.spec" del /q "AI Gateway v1.0.3.spec"
 set "PYI_WORK=%TEMP%\AI-Gateway-PyInstaller"
 if exist "%PYI_WORK%" rmdir /s /q "%PYI_WORK%"
 
@@ -35,7 +34,7 @@ echo [2/4] 开始 PyInstaller 打包...
     --workpath "%PYI_WORK%\build" ^
     --specpath "%PYI_WORK%" ^
     --distpath "dist" ^
-    --name "AI Gateway v1.0.2" ^
+    --name "AI Gateway v1.0.3" ^
     --icon "%CD%\gateway.ico" ^
     --add-data "%CD%\gateway.ico;." ^
     --add-data "%CD%\src\gui\index.html;src\gui" ^
@@ -51,7 +50,7 @@ if %errorlevel% neq 0 (
 
 if exist "%PYI_WORK%" rmdir /s /q "%PYI_WORK%"
 echo [3/4] 打包完成
-echo [4/4] 输出: dist\AI Gateway v1.0.2.exe
+echo [4/4] 输出: dist\AI Gateway v1.0.3.exe
 echo.
 echo exe 图标 = gateway.ico
 echo 窗口图标 = gateway.ico (运行时 ctypes 加载)

@@ -14,7 +14,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from .token_rotator import token_rotator
 from .api_client import build_headers, build_chat_payload, resolve_base_url, AVAILABLE_MODELS
-from src.storage import store
+from src.storage.store import add_log
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +34,9 @@ def update_config(port: int, password: str, platform: str):
 security = HTTPBearer(auto_error=False)
 
 # 上游错误分类
-QUOTA_ERROR_CODES = {14018}          # 额度耗尽
-TRANSIENT_STATUS_CODES = {429, 502, 503, 504}  # 临时错误（401封禁/403鉴权单独处理）
+QUOTA_ERROR_CODES = {14018}                # 额度耗尽（body code）
+QUOTA_STATUS_CODES = {429}                 # 额度耗尽（HTTP 429）
+TRANSIENT_STATUS_CODES = {401, 502, 503, 504}  # 临时错误
 
 PEEK_BYTE_LIMIT = 32768  # peek 阶段最多缓冲字节数
 
@@ -96,8 +97,8 @@ def _classify_upstream_error(status_code: int, body: str) -> Optional[str]:
                 code = err.get("code")
     if code in QUOTA_ERROR_CODES:
         return "quota"
-    if status_code == 401:
-        return "banned"
+    if status_code in QUOTA_STATUS_CODES:
+        return "quota"
     if status_code == 403:
         return "auth"
     if status_code in TRANSIENT_STATUS_CODES:
@@ -187,16 +188,6 @@ async def _normalize_text_stream(aiter: AsyncIterator[str]) -> AsyncGenerator[st
     yield "data: [DONE]\n\n"
 
 
-def _persist_banned(platform: str, account_id: str, nickname: str):
-    """将封禁状态持久化到数据库。"""
-    try:
-        acc = store.load_account(platform, account_id)
-        if acc:
-            acc.status = "banned"
-            store.upsert_account(platform, acc)
-            logger.info("[调度] 账号=%s 已标记封禁(持久化)", nickname)
-    except Exception as e:
-        logger.warning("[调度] 持久化封禁状态失败: %s", e)
 
 
 async def _stream_inner(
@@ -209,11 +200,14 @@ async def _stream_inner(
     fallback = "codebuddy_cn" if platform != "codebuddy_cn" else "workbuddy"
     max_attempts = max(token_rotator.count_usable(), 1)
     last_msg = "无可用账号"
+    model = payload.get("model", "")
 
     for _attempt in range(max_attempts):
         acc = token_rotator.get_next(platform) or token_rotator.get_next(fallback)
         if not acc:
             break
+
+        add_log("request", platform, acc.id, acc.nickname, model, f"开始请求 model={model}", "")
 
         base_url = resolve_base_url()
         api_url = f"{base_url}/v2/chat/completions"
@@ -227,10 +221,12 @@ async def _stream_inner(
             )
         except httpx.ConnectError as e:
             logger.warning("[调度] 账号=%s 连接失败: %s", acc.nickname, e)
+            add_log("error", platform, acc.id, acc.nickname, model, f"连接失败: {e}", "")
             last_msg = f"无法连接上游: {e}"
             break
         except httpx.TimeoutException as e:
             logger.warning("[调度] 账号=%s 超时, 标记transient: %s", acc.nickname, e)
+            add_log("error", platform, acc.id, acc.nickname, model, f"请求超时", "")
             token_rotator.mark_disabled(acc.id, "transient")
             last_msg = f"上游超时: {e}"
             continue
@@ -244,10 +240,10 @@ async def _stream_inner(
                 logger.warning("[调度] 账号=%s 上游返回 %d, kind=%s, body=%s", acc.nickname, resp.status_code, kind, body[:200])
                 if kind:
                     token_rotator.mark_disabled(acc.id, kind)
-                    if kind == "banned":
-                        _persist_banned(platform, acc.id, acc.nickname)
+                    add_log("error", platform, acc.id, acc.nickname, model, f"HTTP {resp.status_code} → {kind}", body[:500])
                     last_msg = body[:300]
                     continue
+                add_log("error", platform, acc.id, acc.nickname, model, f"HTTP {resp.status_code} (不可重试)", body[:500])
                 yield f"data: {json.dumps({'error': {'message': body, 'type': 'upstream_error', 'status': resp.status_code}}, ensure_ascii=False)}\n\n"
                 yield "data: [DONE]\n\n"
                 return
@@ -278,10 +274,10 @@ async def _stream_inner(
                 logger.warning("[调度] 账号=%s 200内联错误, kind=%s, err=%s", acc.nickname, kind, inline_err[:200])
                 if kind:
                     token_rotator.mark_disabled(acc.id, kind)
-                    if kind == "banned":
-                        _persist_banned(platform, acc.id, acc.nickname)
+                    add_log("error", platform, acc.id, acc.nickname, model, f"200内联错误 → {kind}", inline_err[:500])
                     last_msg = inline_err[:300]
                     continue
+                add_log("error", platform, acc.id, acc.nickname, model, "200内联错误(不可重试)", inline_err[:500])
                 # 不可重试的内联错误
                 try:
                     eobj = json.loads(inline_err)
@@ -300,6 +296,7 @@ async def _stream_inner(
                     yield c
 
             logger.info("[调度] 账号=%s 请求成功", acc.nickname)
+            add_log("success", platform, acc.id, acc.nickname, model, "请求成功", "")
             try:
                 async for piece in _normalize_text_stream(_combined()):
                     yield piece
@@ -317,6 +314,7 @@ async def _stream_inner(
 
     # 全部账号耗尽
     logger.warning("[调度] 所有账号不可用, last_msg=%s", last_msg)
+    add_log("error", platform, "", "", model, f"所有账号不可用: {last_msg}", "")
     yield f"data: {json.dumps({'error': {'message': last_msg, 'type': 'no_account'}}, ensure_ascii=False)}\n\n"
     yield "data: [DONE]\n\n"
 
