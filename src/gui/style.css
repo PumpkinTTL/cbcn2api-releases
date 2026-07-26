@@ -43,36 +43,36 @@
 }
 
 [data-theme="light"] {
-  /* Official Claude Airy Warm Light Theme */
-  --bg: #fcfbf8;
-  --surface: #ffffff;
-  --surface-hover: #f7f5ef;
-  --surface-active: #f0ede4;
-  --border: #ebe7df;
-  --border-hover: #ddd8cc;
-  --border-light: #f3efe7;
-  --text: #201e1d;
-  --text-primary: #201e1d;
-  --text-secondary: #66605a;
-  --text-muted: #948e87;
-  --text-tertiary: #b0a9a1;
-  --primary: #da7756; /* Claude Terracotta Coral */
-  --primary-hover: #c46343;
-  --primary-light: #fcf4ef;
-  --primary-border: rgba(218, 119, 86, 0.22);
+  /* Eye-Care Warm Beige Theme (护眼暖米色) */
+  --bg: #f5f2eb;
+  --surface: #faf7f0;
+  --surface-hover: #efeae0;
+  --surface-active: #e5dfd3;
+  --border: #e4ded3;
+  --border-hover: #d6cfc2;
+  --border-light: #ebe5da;
+  --text: #24211e;
+  --text-primary: #24211e;
+  --text-secondary: #615a52;
+  --text-muted: #8e867c;
+  --text-tertiary: #a69e94;
+  --primary: #d9704e; /* Warm Terracotta Coral */
+  --primary-hover: #c25d3c;
+  --primary-light: #f3e8df;
+  --primary-border: rgba(217, 112, 78, 0.25);
   --accent: #d97757;
-  --accent-light: #fdf7f3;
+  --accent-light: #f7ebe3;
   --success: #2e7d32;
-  --success-light: #f2f8f3;
+  --success-light: #edf5ed;
   --warning: #d97706;
-  --warning-light: #fffbf0;
+  --warning-light: #fdf6e7;
   --danger: #d9534f;
-  --danger-light: #fdf5f4;
-  --bg-tertiary: #f5f2eb;
-  --hover: rgba(32, 30, 29, 0.03);
-  --shadow: 0 2px 10px rgba(32, 30, 29, 0.04), 0 1px 3px rgba(32, 30, 29, 0.02);
-  --shadow-lg: 0 10px 30px rgba(32, 30, 29, 0.07), 0 2px 6px rgba(32, 30, 29, 0.03);
-  --modal-overlay: rgba(32, 30, 29, 0.35);
+  --danger-light: #fdf0ee;
+  --bg-tertiary: #eee8dc;
+  --hover: rgba(36, 33, 30, 0.04);
+  --shadow: 0 2px 10px rgba(36, 33, 30, 0.04), 0 1px 3px rgba(36, 33, 30, 0.02);
+  --shadow-lg: 0 10px 30px rgba(36, 33, 30, 0.08), 0 2px 6px rgba(36, 33, 30, 0.04);
+  --modal-overlay: rgba(36, 33, 30, 0.4);
 }
 
 [data-theme="dark"] {
