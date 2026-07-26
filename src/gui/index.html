@@ -138,12 +138,12 @@
             <span>端口</span>
             <input type="number" id="proxyPortInput" value="8001" min="1024" max="65535">
           </label>
-          <label class="proxy-field">
-            <span>密码</span>
+          <label class="proxy-field" title="客户端请求需携带的 Bearer Key，留空则不校验">
+            <span>Key</span>
             <input type="password" id="proxyPassInput" placeholder="可选">
           </label>
           <label class="proxy-field" title="剩余积分低于此值自动禁用当前账号并切换下一个（0=关闭）">
-            <span>阈值</span>
+            <span>切号阈值</span>
             <input type="number" id="quotaThresholdInput" value="0" min="0" step="0.01" placeholder="0=关闭" onchange="saveQuotaThreshold(this.value)">
           </label>
         </div>

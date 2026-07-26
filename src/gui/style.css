@@ -564,7 +564,7 @@ body {
   align-items: center;      /* 标签与输入框在这条 30px 的轴上共同居中 */
   height: 100%;
   gap: 6px;
-  padding: 0 11px;
+  padding: 0 10px;
   white-space: nowrap;
   cursor: text;
   transition: background var(--transition);
@@ -578,7 +578,7 @@ body {
   font-weight: 600;
   line-height: 1;
   color: var(--text-muted);
-  text-transform: uppercase;
+  text-transform: uppercase;   /* 只对 Key 这类拉丁标签生效，中文不受影响 */
   letter-spacing: 0.3px;
   user-select: none;
 }
@@ -596,7 +596,11 @@ body {
   outline: none;
   width: 52px;
 }
-.proxy-fields input[type="password"] { width: 68px; }
+/* 逐个按内容定宽，把「切号阈值」这个 4 字标签多占的横向空间省回来。
+   端口最多 5 位（65535），tabular-nums 下 42px 够用。 */
+#proxyPortInput { width: 42px; }
+.proxy-fields input[type="password"] { width: 62px; }
+#quotaThresholdInput { width: 50px; }   /* 容得下 placeholder「0=关闭」 */
 /* WebView2 会给聚焦的 input 补一圈自己的 focus ring，必须显式压掉，
    否则和容器描边叠成双层边框 */
 .proxy-fields input:focus,
