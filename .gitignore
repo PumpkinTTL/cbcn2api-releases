@@ -6,3 +6,5 @@ __pycache__/
 .venv/
 accounts.db
 test_out.txt
+
+# 测试临时库由 tempfile 建在系统临时目录，不入库
