@@ -193,14 +193,18 @@ class TokenRotator:
             if not acc or acc.status != "normal":
                 return
 
-            has_fallback = any(a.id != account_id and self._is_usable(a) for a in self._accounts)
-            if not has_fallback:
+            # 备选必须"可用且剩余额度>=阈值"，否则切过去又触发阈值→死循环
+            good = [a for a in self._accounts
+                    if a.id != account_id
+                    and self._is_usable(a)
+                    and self._estimated_remain.get(a.id, 0) >= self._threshold]
+            if not good:
                 if not self._threshold_no_fallback:
                     self._threshold_no_fallback = True
                     self._threshold_switch = "__nofallback__" + (acc.nickname or account_id)
                     try:
                         store.add_log("warning", self._platform, account_id, acc.nickname or "",
-                                      "", "额度低于阈值但无可用备选账号，继续使用当前号", "")
+                                      "", "额度低于阈值且无额度充足的备选账号，继续使用当前号", "")
                     except Exception:
                         pass
                 return
@@ -210,11 +214,7 @@ class TokenRotator:
                 store.upsert_account(self._platform, acc)
             except Exception:
                 pass
-            self._current_id = None
-            for a in self._accounts:
-                if self._is_usable(a):
-                    self._current_id = a.id
-                    break
+            self._current_id = good[0].id
             self._threshold_switch = acc.nickname or account_id
             try:
                 store.add_log("warning", self._platform, account_id, acc.nickname or "",
@@ -244,9 +244,8 @@ class TokenRotator:
 
     def _refresh_estimates(self):
         for acc in self._accounts:
-            if acc.id not in self._estimated_remain:
-                total, used = calc_totals(acc.quota_raw, acc.usage_raw)
-                self._estimated_remain[acc.id] = max(0, total - used)
+            total, used = calc_totals(acc.quota_raw, acc.usage_raw)
+            self._estimated_remain[acc.id] = max(0, total - used)
 
     def _persist_cooldowns(self):
         now = time.time()
