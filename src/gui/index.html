@@ -9,6 +9,27 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<!-- Custom Titlebar (frameless window) -->
+<div class="titlebar" id="appTitlebar">
+  <div class="titlebar-drag pywebview-drag-region">
+    <div class="titlebar-icon">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
+    </div>
+    <span class="titlebar-title">AI Gateway</span>
+  </div>
+  <div class="titlebar-controls">
+    <button class="titlebar-btn" onclick="winMin()" title="最小化">
+      <svg viewBox="0 0 12 12" width="12" height="12"><rect x="1.5" y="5.5" width="9" height="1" rx="0.5" fill="currentColor"/></svg>
+    </button>
+    <button class="titlebar-btn" onclick="winMax()" title="最大化/还原" id="winMaxBtn">
+      <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="1.5" width="9" height="9" rx="1.5"/></svg>
+    </button>
+    <button class="titlebar-btn titlebar-close" onclick="winClose()" title="关闭">
+      <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg>
+    </button>
+  </div>
+</div>
+
 <!-- License Activation Gate -->
 <div class="license-overlay" id="licenseOverlay">
   <div class="license-card">
@@ -411,6 +432,19 @@
 <div class="toast" id="toast"></div>
 <script src="vue.prod.js"></script>
 <script>
+
+// ===== Frameless Window Controls =====
+async function winMin(){ try{ await pywebview.api.win_minimize(); }catch(e){} }
+async function winMax(){
+  try{
+    // 按后端回报的真实窗口状态设置图标，而不是盲目 toggle ——
+    // 否则 Win+↑、双击边框、贴边分屏改变状态后图标就和窗口不一致了。
+    const r = JSON.parse(await pywebview.api.win_toggle_max());
+    const btn = document.getElementById('winMaxBtn');
+    if(btn) btn.classList.toggle('is-max', !!r.maximized);
+  }catch(e){}
+}
+async function winClose(){ try{ await pywebview.api.win_close(); }catch(e){} }
 
 let currentPlatform = 'workbuddy';
 let currentAccounts = [];
@@ -972,7 +1006,8 @@ function _pickN(item, keys) {
   return 0;
 }
 function fmt(n) {
-  return _n(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const v = _n(n);
+  return (Math.round(v * 100) / 100).toString();
 }
 function fmtK(n) {
   const v = _n(n);

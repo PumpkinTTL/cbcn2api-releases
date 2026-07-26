@@ -18,9 +18,68 @@ _LICENSE_ENABLED = False
 
 
 class GuiApi:
+    _APP_TITLE = "AI Gateway"
+
     def __init__(self):
         self._oauth_callbacks = {}
         self._current_oauth_login_id = None
+        self._window = None
+        self._cached_hwnd = 0
+
+    def set_window(self, window):
+        self._window = window
+
+    def _hwnd(self):
+        """查找并缓存主窗口句柄（frameless 模式下用 Win32 控制窗口）。
+
+        走 win_chrome.find_main_hwnd 以校验 PID，避免抓到别的进程里同名的窗口；
+        句柄在窗口生命周期内不变，缓存掉每次点按钮的枚举开销。
+        """
+        if self._cached_hwnd:
+            return self._cached_hwnd
+        try:
+            from src.gui import win_chrome
+            # 窗口此刻已经在了，不必等 —— 超时给一点余量就够。
+            self._cached_hwnd = win_chrome.find_main_hwnd(self._APP_TITLE, timeout=1.0)
+        except Exception:
+            self._cached_hwnd = 0
+        return self._cached_hwnd
+
+    def _is_maximized(self) -> bool:
+        """查询窗口当前是否最大化。
+
+        pywebview 的 window.maximized 只是建窗时的初始参数、不反映实时状态，
+        所以状态仍靠 IsZoomed 读；但**动作**交给 pywebview 官方方法执行。
+        """
+        try:
+            import ctypes
+            hwnd = self._hwnd()
+            return bool(hwnd and ctypes.windll.user32.IsZoomed(hwnd))
+        except Exception:
+            return False
+
+    def win_minimize(self) -> str:
+        # 用 pywebview 官方 API 而不是裸 ShowWindow：它内部走 Form.Invoke
+        # 把调用编组到 UI 线程，而 js_api 方法本身跑在别的线程上。
+        if self._window:
+            self._window.minimize()
+        return json.dumps({"ok": True})
+
+    def win_toggle_max(self) -> str:
+        if not self._window:
+            return json.dumps({"ok": False, "maximized": False})
+        was_max = self._is_maximized()
+        if was_max:
+            self._window.restore()   # WindowState = Normal，同样用于取消最大化
+        else:
+            self._window.maximize()
+        # 回报真实状态，让前端图标跟着实际窗口走，而不是盲目 toggle class。
+        return json.dumps({"ok": True, "maximized": not was_max})
+
+    def win_close(self) -> str:
+        if self._window:
+            self._window.destroy()
+        return json.dumps({"ok": True})
 
     # ========== Account Management ==========
 

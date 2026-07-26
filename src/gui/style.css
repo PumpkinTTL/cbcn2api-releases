@@ -118,6 +118,80 @@ body {
   -moz-osx-font-smoothing: grayscale;
   display: flex;
   flex-direction: row;
+  padding-top: 36px;
+}
+
+/* ===== Custom Titlebar (frameless) ===== */
+.titlebar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  /* 必须高于 .modal-overlay(1000) 和 .license-overlay(5000)，
+     否则弹窗打开时最小化/关闭按钮点不到。 */
+  z-index: 6000;
+  user-select: none;
+}
+.titlebar-drag {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-left: 14px;
+  flex: 1;
+  height: 100%;
+}
+.titlebar-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 1px 4px rgba(218, 119, 86, 0.3);
+}
+.titlebar-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.2px;
+}
+.titlebar-controls {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+}
+.titlebar-btn {
+  width: 46px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.titlebar-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.titlebar-btn:active {
+  background: var(--surface-active);
+}
+.titlebar-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+.titlebar-btn.is-max svg rect {
+  rx: 1;
 }
 
 /* Scrollbar */
