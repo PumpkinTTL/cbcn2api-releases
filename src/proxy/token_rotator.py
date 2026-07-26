@@ -5,6 +5,7 @@ from typing import Optional
 
 from src.storage import store
 from src.models.account import Account
+from src.api.quota import calc_totals
 
 # 冷却时长（秒）
 QUOTA_COOLDOWN = 3600   # 额度耗尽（429）：1 小时后重试
@@ -12,6 +13,7 @@ AUTH_COOLDOWN = 600     # 非法请求（403）：10 分钟后重试
 TRANSIENT_COOLDOWN = 60  # 临时错误（401/502/503/504/超时）：1 分钟后重试
 
 _COOLDOWN_SETTING_KEY = "cooldowns"
+_THRESHOLD_SETTING_KEY = "quota_threshold"
 
 _COOLDOWNS = {
     "quota": QUOTA_COOLDOWN,
@@ -39,15 +41,26 @@ class TokenRotator:
         self._active: bool = False  # 是否正在处理请求
         # id -> {"reason": str, "until": float}
         self._disabled: dict[str, dict] = {}
+        # id -> 估算剩余额度（从 quota_raw 初始化，每次请求扣减）
+        self._estimated_remain: dict[str, float] = {}
+        self._threshold: float = 0.0
+        self._platform: str = "workbuddy"
+        self._threshold_switch: Optional[str] = None
+        self._threshold_no_fallback: bool = False
+        self._threshold_no_fallback_id: Optional[str] = None
 
     def reload(self, platform: str):
         with self._lock:
+            self._platform = platform
             all_accs = store.list_accounts(platform)
             self._accounts = [a for a in all_accs if a.access_token]
             if self._index >= len(self._accounts):
                 self._index = 0
 
             self._restore_cooldowns()
+            self._load_threshold()
+            self._refresh_estimates()
+            self._threshold_no_fallback = False
 
             # 校验当前锁定是否仍有效
             if self._current_id:
@@ -140,6 +153,21 @@ class TokenRotator:
             self._disabled.pop(account_id, None)
             self._persist_cooldowns()
 
+    def on_disable(self, account_id: str) -> bool:
+        """手动禁用账号后，若它是当前号则自动切换到下一个可用号。
+        若禁用后无可用账号则拒绝操作，返回 False。"""
+        with self._lock:
+            usable_without = [a for a in self._accounts if a.id != account_id and self._is_usable(a)]
+            if not usable_without:
+                return False
+            for a in self._accounts:
+                if a.id == account_id:
+                    a.status = "disabled"
+                    break
+            if account_id == self._current_id:
+                self._current_id = usable_without[0].id
+            return True
+
     def count(self) -> int:
         with self._lock:
             return len(self._accounts)
@@ -147,6 +175,75 @@ class TokenRotator:
     def count_usable(self) -> int:
         with self._lock:
             return sum(1 for a in self._accounts if self._is_usable(a))
+
+    def deduct_quota(self, account_id: str, amount: float):
+        """请求成功后扣减估算额度，低于阈值则自动禁用并切号。
+        若池中无可换的号则不切号不禁用，只第一次弹出 warn/prompt。"""
+        with self._lock:
+            if account_id not in self._estimated_remain:
+                return
+            self._estimated_remain[account_id] = max(0, self._estimated_remain[account_id] - amount)
+            if self._threshold <= 0 or self._estimated_remain[account_id] >= self._threshold:
+                return
+
+            acc = next((a for a in self._accounts if a.id == account_id), None)
+            if not acc or acc.status != "normal":
+                return
+
+            has_fallback = any(a.id != account_id and self._is_usable(a) for a in self._accounts)
+            if not has_fallback:
+                if not self._threshold_no_fallback:
+                    self._threshold_no_fallback = True
+                    self._threshold_switch = acc.nickname or account_id
+                    try:
+                        store.add_log("warning", self._platform, account_id, acc.nickname or "",
+                                      "", "额度低于阈值但无可用备选账号，继续使用当前号", "")
+                    except Exception:
+                        pass
+                self._threshold_switch = "__nofallback__" + (acc.nickname or account_id)
+                return
+
+            acc.status = "disabled"
+            try:
+                store.upsert_account(self._platform, acc)
+            except Exception:
+                pass
+            self._current_id = None
+            for a in self._accounts:
+                if self._is_usable(a):
+                    self._current_id = a.id
+                    break
+            self._threshold_switch = acc.nickname or account_id
+            try:
+                store.add_log("warning", self._platform, account_id, acc.nickname or "",
+                              "", f"额度低于阈值({self._threshold})，已自动禁用并切换", "")
+            except Exception:
+                pass
+
+    def set_threshold(self, value: float):
+        with self._lock:
+            self._threshold = value
+            try:
+                store.save_setting(_THRESHOLD_SETTING_KEY, str(value))
+            except Exception:
+                pass
+
+    def get_threshold(self) -> float:
+        with self._lock:
+            if self._threshold == 0.0:
+                self._load_threshold()
+            return self._threshold
+
+    def _load_threshold(self):
+        try:
+            self._threshold = float(store.get_setting(_THRESHOLD_SETTING_KEY, "0") or "0")
+        except (ValueError, TypeError):
+            self._threshold = 0.0
+
+    def _refresh_estimates(self):
+        for acc in self._accounts:
+            total, used = calc_totals(acc.quota_raw, acc.usage_raw)
+            self._estimated_remain[acc.id] = max(0, total - used)
 
     def _persist_cooldowns(self):
         now = time.time()
@@ -173,11 +270,14 @@ class TokenRotator:
     def status(self) -> dict:
         with self._lock:
             now = time.time()
+            sw = self._threshold_switch
+            self._threshold_switch = None
             return {
                 "total": len(self._accounts),
                 "usable": sum(1 for a in self._accounts if self._is_usable(a)),
                 "current": self._current_id,
                 "active": self._active,
+                "threshold_switch": sw,
                 "disabled": [
                     {"id": aid, "reason": s.get("reason"), "until": s.get("until")}
                     for aid, s in self._disabled.items()

@@ -246,6 +246,39 @@ class GuiApi:
         saved = store.upsert_account(platform, account)
         return json.dumps(saved.to_dict())
 
+    def export_accounts(self, platform: str) -> str:
+        accounts = store.list_accounts(platform)
+        data = []
+        for a in accounts:
+            data.append({
+                "id": a.id, "email": a.email, "uid": a.uid,
+                "nickname": a.nickname, "enterprise_id": a.enterprise_id,
+                "enterprise_name": a.enterprise_name,
+                "access_token": a.access_token, "refresh_token": a.refresh_token,
+                "token_type": a.token_type, "expires_at": a.expires_at,
+                "domain": a.domain, "status": a.status,
+            })
+        return json.dumps(data, ensure_ascii=False, indent=2)
+
+    def get_quota_threshold(self) -> str:
+        from src.proxy.token_rotator import token_rotator
+        return json.dumps({"threshold": token_rotator.get_threshold()})
+
+    def set_quota_threshold(self, value: float) -> str:
+        from src.proxy.token_rotator import token_rotator
+        token_rotator.set_threshold(float(value))
+        return json.dumps({"ok": True, "threshold": value})
+
+    def get_all_stats(self, platform: str) -> str:
+        from src.storage.store import list_account_stats
+        stats = list_account_stats(platform)
+        return json.dumps({"stats": stats})
+
+    def reset_stats(self, platform: str = "", account_id: str = "") -> str:
+        from src.storage.store import reset_account_stats
+        reset_account_stats(platform, account_id)
+        return json.dumps({"ok": True})
+
     # ========== Stats ==========
 
     def get_stats(self, platform: str) -> str:
@@ -292,7 +325,9 @@ class GuiApi:
             account.usage_raw = payload.get("usage_raw") or account.usage_raw
 
             if payload.get("status"):
-                account.status = payload["status"]
+                new_status = payload["status"]
+                if new_status == "banned" or account.status not in ("disabled", "banned"):
+                    account.status = new_status
 
             if quota_error:
                 account.quota_query_last_error = quota_error
@@ -303,6 +338,10 @@ class GuiApi:
 
             account.last_used = Account.now_ts()
             saved = store.upsert_account(platform, account)
+            try:
+                store.reset_account_credit(platform, account_id)
+            except Exception:
+                pass
             return json.dumps(saved.to_dict())
         except Exception as e:
             return json.dumps({"error": str(e)})
@@ -578,6 +617,9 @@ class GuiApi:
             from src.proxy.token_rotator import token_rotator
             if status == "normal":
                 token_rotator.clear_disabled(account_id)
+            if status == "disabled":
+                if not token_rotator.on_disable(account_id):
+                    return _json.dumps({"ok": False, "error": "至少保留一个可用账号"})
             token_rotator.reload(platform)
         except Exception:
             pass

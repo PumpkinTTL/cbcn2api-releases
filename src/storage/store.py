@@ -65,6 +65,27 @@ def _ensure_schema(conn: sqlite3.Connection):
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON proxy_logs(timestamp)
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS account_stats (
+            account_id TEXT NOT NULL,
+            platform TEXT NOT NULL,
+            prompt_tokens INTEGER DEFAULT 0,
+            completion_tokens INTEGER DEFAULT 0,
+            total_tokens INTEGER DEFAULT 0,
+            total_credit REAL DEFAULT 0,
+            lifetime_credit REAL DEFAULT 0,
+            cache_hits INTEGER DEFAULT 0,
+            cache_misses INTEGER DEFAULT 0,
+            request_count INTEGER DEFAULT 0,
+            updated_at INTEGER DEFAULT 0,
+            PRIMARY KEY (account_id, platform)
+        )
+    """)
+    try:
+        conn.execute("ALTER TABLE account_stats ADD COLUMN lifetime_credit REAL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+    conn.execute("UPDATE account_stats SET lifetime_credit=total_credit WHERE lifetime_credit=0")
 
 
 def upsert_account(platform: str, account: Account) -> Account:
@@ -323,3 +344,84 @@ def _prune_logs(conn: sqlite3.Connection):
             (excess,),
         )
         conn.commit()
+
+
+def update_account_stats(platform: str, account_id: str, usage: dict):
+    conn = _get_conn()
+    try:
+        pt = int(usage.get("prompt_tokens", 0) or 0)
+        ct = int(usage.get("completion_tokens", 0) or 0)
+        tt = int(usage.get("total_tokens", pt + ct) or 0)
+        credit = float(usage.get("credit", 0) or 0)
+        hits = int(usage.get("prompt_cache_hit_tokens", 0) or 0)
+        misses = int(usage.get("prompt_cache_miss_tokens", 0) or 0)
+        now = int(time.time())
+        conn.execute("""
+            INSERT INTO account_stats (account_id, platform, prompt_tokens, completion_tokens, total_tokens, total_credit, lifetime_credit, cache_hits, cache_misses, request_count, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,1,?)
+            ON CONFLICT(account_id, platform) DO UPDATE SET
+                prompt_tokens=prompt_tokens+?,
+                completion_tokens=completion_tokens+?,
+                total_tokens=total_tokens+?,
+                total_credit=total_credit+?,
+                lifetime_credit=lifetime_credit+?,
+                cache_hits=cache_hits+?,
+                cache_misses=cache_misses+?,
+                request_count=request_count+1,
+                updated_at=?
+        """, (account_id, platform, pt, ct, tt, credit, credit, hits, misses, now,
+              pt, ct, tt, credit, credit, hits, misses, now))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_account_stats(platform: str, account_id: str) -> dict:
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM account_stats WHERE account_id=? AND platform=?",
+            (account_id, platform)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def list_account_stats(platform: str) -> list[dict]:
+    conn = _get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM account_stats WHERE platform=? ORDER BY updated_at DESC",
+            (platform,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def reset_account_credit(platform: str, account_id: str):
+    """刷新账号时仅清零代理累积积分，保留 token/缓存统计。"""
+    conn = _get_conn()
+    try:
+        conn.execute(
+            "UPDATE account_stats SET total_credit=0 WHERE account_id=? AND platform=?",
+            (account_id, platform)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def reset_account_stats(platform: str = "", account_id: str = ""):
+    conn = _get_conn()
+    try:
+        if account_id and platform:
+            conn.execute("DELETE FROM account_stats WHERE account_id=? AND platform=?", (account_id, platform))
+        elif platform:
+            conn.execute("DELETE FROM account_stats WHERE platform=?", (platform,))
+        else:
+            conn.execute("DELETE FROM account_stats")
+        conn.commit()
+    finally:
+        conn.close()

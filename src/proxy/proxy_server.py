@@ -14,7 +14,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from .token_rotator import token_rotator
 from .api_client import build_headers, build_chat_payload, resolve_base_url, AVAILABLE_MODELS
-from src.storage.store import add_log
+from src.storage.store import add_log, update_account_stats
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +128,19 @@ def _first_event_kind(text: str):
     return ("data" if has_data else "none"), None
 
 
-async def _normalize_text_stream(aiter: AsyncIterator[str]) -> AsyncGenerator[str, None]:
+def _extract_consumed(usage: dict) -> float:
+    """从 usage 对象提取消耗的积分/额度。"""
+    for key in ("credit", "deduction", "cost", "credits", "consumed", "points"):
+        v = usage.get(key)
+        if v is not None:
+            try:
+                return float(v)
+            except (ValueError, TypeError):
+                pass
+    return 0.0
+
+
+async def _normalize_text_stream(aiter: AsyncIterator[str], usage_box: Optional[dict] = None) -> AsyncGenerator[str, None]:
     """规整上游 SSE，对照 9router passthrough 模式：
     - 只删空 tool_calls: []（CodeBuddy CN 每块都带，AI SDK 误判）
     - 补 object/created 若缺失
@@ -156,6 +168,10 @@ async def _normalize_text_stream(aiter: AsyncIterator[str]) -> AsyncGenerator[st
                     if "choices" in obj:
                         obj.setdefault("object", "chat.completion.chunk")
                         obj.setdefault("created", int(time.time()))
+
+                    # 捕获 usage（最后一个 chunk 携带）
+                    if usage_box is not None and isinstance(obj.get("usage"), dict):
+                        usage_box["usage"] = obj["usage"]
 
                     for choice in obj.get("choices", []):
                         delta = choice.get("delta", {})
@@ -297,11 +313,19 @@ async def _stream_inner(
 
             logger.info("[调度] 账号=%s 请求成功", acc.nickname)
             add_log("success", platform, acc.id, acc.nickname, model, "请求成功", "")
+            usage_box = {}
             try:
-                async for piece in _normalize_text_stream(_combined()):
+                async for piece in _normalize_text_stream(_combined(), usage_box):
                     yield piece
             finally:
                 await resp.aclose()
+            if usage_box.get("usage"):
+                u = usage_box["usage"]
+                consumed = _extract_consumed(u)
+                if consumed > 0:
+                    token_rotator.deduct_quota(acc.id, consumed)
+                update_account_stats(platform, acc.id, u)
+                add_log("success", platform, acc.id, acc.nickname, model, f"消耗 {consumed}" if consumed > 0 else "请求成功", "")
             return
         except httpx.TimeoutException as e:
             await resp.aclose()
@@ -493,6 +517,7 @@ async def proxy_info():
         "accounts_disabled": st["disabled"],
         "current_account": st["current"],
         "active": st["active"],
+        "threshold_switch": st.get("threshold_switch"),
         "models": AVAILABLE_MODELS,
     }
 

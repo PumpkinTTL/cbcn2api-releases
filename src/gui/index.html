@@ -672,7 +672,7 @@ body {
 /* Footer & Checkin */
 .card-footer {
   display: flex; align-items: center; justify-content: space-between;
-  margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); gap: 8px; flex-wrap: wrap;
+  margin-top: 12px; gap: 8px; flex-wrap: wrap;
 }
 .checkin-status { display: flex; align-items: center; gap: 8px; }
 .checkin-badge {
@@ -830,6 +830,7 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
       <button class="btn btn-ghost btn-sm" onclick="showImportModal()">粘贴 Token</button>
       <button class="btn btn-ghost btn-sm" onclick="document.getElementById('fileInput').click()">文件导入</button>
       <input type="file" id="fileInput" accept=".json" style="display:none" onchange="handleFileImport(event)">
+      <button class="btn btn-ghost btn-sm" onclick="exportAccounts()">导出账号</button>
       <button class="btn btn-ghost btn-sm" onclick="showOAuthModal()">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
         OAuth登录
@@ -869,6 +870,10 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
           <div class="proxy-field">
             <span>密码:</span>
             <input type="password" id="proxyPassInput" placeholder="可选密码">
+          </div>
+          <div class="proxy-field">
+            <span>换号阈值:</span>
+            <input type="number" id="quotaThresholdInput" value="0" min="0" step="0.01" placeholder="0=不自动换号" style="width:130px" onchange="saveQuotaThreshold(this.value)" title="剩余积分低于此值自动禁用当前账号并切换下一个（0=关闭）">
           </div>
           <button class="btn btn-primary btn-sm" onclick="toggleProxy()" id="proxyToggleBtn">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
@@ -1013,6 +1018,7 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
           <option value="">全部类型</option>
           <option value="request">请求</option>
           <option value="success">成功</option>
+          <option value="warning">警告</option>
           <option value="error">错误</option>
         </select>
         <button class="btn btn-ghost btn-sm" onclick="clearLogs()" title="清除日志">清空</button>
@@ -1221,6 +1227,35 @@ function showLogs() {
   })();
 }
 
+async function exportAccounts() {
+  try {
+    const data = await pywebview.api.export_accounts(currentPlatform);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `accounts_${currentPlatform}_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('导出成功', 'success');
+  } catch(e) { showToast('导出失败', 'error'); }
+}
+
+async function saveQuotaThreshold(val) {
+  try {
+    await pywebview.api.set_quota_threshold(parseFloat(val) || 0);
+    showToast(`换号阈值已设为 ${parseFloat(val) || 0}`, 'success');
+  } catch(e) {}
+}
+
+async function loadQuotaThreshold() {
+  try {
+    const r = JSON.parse(await pywebview.api.get_quota_threshold());
+    const el = document.getElementById('quotaThresholdInput');
+    if (el) el.value = r.threshold || 0;
+  } catch(e) {}
+}
+
 async function toggleLogEnabled() {
   const cb = document.getElementById('logEnabledToggle');
   try {
@@ -1354,12 +1389,23 @@ async function loadAccountsLight() {
   } catch (e) {}
 }
 
+let accountStats = {};
+
 async function loadAccounts() {
   try {
-    const raw = await pywebview.api.list_accounts(currentPlatform);
+    const [raw, statsRaw] = await Promise.all([
+      pywebview.api.list_accounts(currentPlatform),
+      pywebview.api.get_all_stats(currentPlatform),
+    ]);
     currentAccounts = JSON.parse(raw);
+    try {
+      const sd = JSON.parse(statsRaw);
+      accountStats = {};
+      (sd.stats || []).forEach(s => { accountStats[s.account_id] = s; });
+    } catch {}
     renderStats();
     buildFilter();
+    loadQuotaThreshold();
     // 网关未运行时，从 DB 恢复优先账号标注
     if (!proxyRunning) {
       try {
@@ -1376,6 +1422,7 @@ async function loadAccounts() {
     currentAccounts = [];
     renderStats();
     buildFilter();
+    loadQuotaThreshold();
     renderAccounts();
   }
 }
@@ -1557,13 +1604,35 @@ function renderAccounts() {
         </div>
 
         ${quotaData ? `
-        <div class="quota-section">
-          <div class="quota-header">
-            <span>已用 ${fmt(quotaData.used)} / 剩余 ${fmt(quotaData.total - quotaData.used)}</span>
-            <span>${fmt(quotaData.total)}</span>
-          </div>
-          <div class="quota-bar"><div class="quota-fill ${quotaData.pct >= 80 ? 'danger' : quotaData.pct >= 50 ? 'warning' : ''}" style="width:${Math.min(quotaData.pct, 100)}%"></div></div>
-        </div>` : ''}
+        ${(() => {
+          const pc = accountStats[a.id]?.total_credit || 0;
+          const adjUsed = quotaData.used + pc;
+          const adjRemain = quotaData.total - adjUsed;
+          const adjPct = quotaData.total > 0 ? Math.round(adjUsed / quotaData.total * 100) : 0;
+          return `<div class="quota-section">
+            <div class="quota-header">
+              <span>已用 ${fmt(adjUsed)} / 剩余 ${fmt(Math.max(0, adjRemain))}</span>
+              <span>${fmt(quotaData.total)}</span>
+            </div>
+            <div class="quota-bar"><div class="quota-fill ${adjPct >= 80 ? 'danger' : adjPct >= 50 ? 'warning' : ''}" style="width:${Math.min(adjPct, 100)}%"></div></div>
+          </div>`;
+        })()}` : ''}
+
+        ${(() => {
+          const s = accountStats[a.id];
+          if (!s || !s.request_count) return '';
+          const hits = s.cache_hits || 0, misses = s.cache_misses || 0;
+          const hitRate = (hits + misses) > 0 ? (hits / (hits + misses) * 100).toFixed(1) : 0;
+          return `<div style="display:flex;gap:4px;font-size:10px;color:var(--text-muted);padding:0 0 4px;flex-wrap:wrap;align-items:center;line-height:1.2">
+            <span>次数:${s.request_count}</span>
+            <span>·</span>
+            <span>Token:↑${fmtK(s.prompt_tokens)} ↓${fmtK(s.completion_tokens)}</span>
+            <span>·</span>
+            <span>消耗:${fmtL(s.lifetime_credit)}</span>
+            <span>·</span>
+            <span>缓存命中率:${hitRate}%</span>
+          </div>`;
+        })()}
 
         <div class="card-footer">
           <div class="card-actions">
@@ -1605,8 +1674,11 @@ async function toggleAccountStatus(id) {
     const r = JSON.parse(raw);
     if (r.ok) {
       acc.status = newStatus;
-      renderAccounts();
+      await refreshProxyStatus();
+      await loadAccounts();
       showToast(newStatus === 'disabled' ? '已禁用' : '已启用', 'success');
+    } else {
+      showToast(r.error || '操作失败', 'error');
     }
   } catch (e) {}
 }
@@ -1665,6 +1737,19 @@ function _pickN(item, keys) {
 function fmt(n) {
   return _n(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
 }
+function fmtK(n) {
+  const v = _n(n);
+  if (v >= 100000000) return (v / 100000000).toFixed(1) + '亿';
+  if (v >= 10000) return (v / 10000).toFixed(1) + 'w';
+  if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
+  return String(v);
+}
+function fmtL(n) {
+  const v = _n(n);
+  if (v >= 10000) return (v / 10000).toFixed(1) + 'w';
+  if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
+  return v.toFixed(2);
+}
 
 function parseQuota(a) {
   try {
@@ -1719,6 +1804,7 @@ async function refreshOne(id) {
     if (r.error) { showToast(r.error, 'error'); return; }
     showToast('刷新成功', 'success');
     await loadAccountsLight();
+    await refreshAccountStats();
   } catch (e) { showToast('刷新失败: ' + e, 'error'); }
   finally { btnDone(btn); }
 }
@@ -1884,20 +1970,43 @@ async function showQuotaDetail(id) {
   showModal('quotaModal');
 
   try {
-    const raw = await pywebview.api.get_quota(currentPlatform, id);
-    const r = JSON.parse(raw);
+    const [quotaRaw, statsRaw] = await Promise.all([
+      pywebview.api.get_quota(currentPlatform, id),
+      pywebview.api.get_all_stats(currentPlatform),
+    ]);
+    const r = JSON.parse(quotaRaw);
+    const statsData = JSON.parse(statsRaw);
+    const myStats = statsData.stats?.find(s => s.account_id === id);
     if (r.error) {
       document.getElementById('quotaContent').innerHTML = `<p style="color:var(--danger)">${r.error}</p>`;
     } else {
-      renderQuotaContent(r);
+      renderQuotaContent(r, myStats);
     }
   } catch (e) {
     document.getElementById('quotaContent').innerHTML = `<p style="color:var(--danger)">查询失败: ${e}</p>`;
   }
 }
 
-function renderQuotaContent(data) {
+function renderQuotaContent(data, stats) {
   let html = '';
+
+  if (stats && stats.request_count > 0) {
+    const totalReq = stats.request_count;
+    const hits = stats.cache_hits || 0;
+    const misses = stats.cache_misses || 0;
+    const hitRate = (hits + misses) > 0 ? (hits / (hits + misses) * 100).toFixed(1) : 0;
+    html += `<div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;margin-bottom:12px;">
+      <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;">使用统计（本代理）</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px;">
+        <div><span style="color:var(--text-muted)">请求次数</span><br><span style="font-weight:600">${totalReq.toLocaleString()}</span></div>
+        <div><span style="color:var(--text-muted)">输入Token</span><br><span style="font-weight:600">${(stats.prompt_tokens||0).toLocaleString()}</span></div>
+        <div><span style="color:var(--text-muted)">输出Token</span><br><span style="font-weight:600">${(stats.completion_tokens||0).toLocaleString()}</span></div>
+        <div><span style="color:var(--text-muted)">总Token</span><br><span style="font-weight:600">${(stats.total_tokens||0).toLocaleString()}</span></div>
+        <div><span style="color:var(--text-muted)">消耗积分</span><br><span style="font-weight:600">${(stats.total_credit||0).toFixed(2)}</span></div>
+        <div><span style="color:var(--text-muted)">缓存命中</span><br><span style="font-weight:600;color:${hitRate>=50?'var(--success)':'var(--text)'}">${hitRate}%</span></div>
+      </div>
+    </div>`;
+  }
 
   if (data.dosage_notify_zh || data.dosage_notify_en) {
     html += `<div style="background:var(--warning-light);border:1px solid rgba(234,179,8,0.3);border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:var(--warning);">
@@ -2067,10 +2176,33 @@ async function pollProxyInfo() {
     const newCurrent = info.current_account;
     const newActive = info.active;
     if (newCurrent !== proxyCurrentAccount || newActive !== proxyActive) {
+      const wasActive = proxyActive;
+      const prevAccount = proxyCurrentAccount;
       proxyCurrentAccount = newCurrent;
       proxyActive = newActive;
       updateAccountHighlight();
+      if (wasActive && !newActive) {
+        refreshAccountStats();
+      }
     }
+    if (info.threshold_switch) {
+      if (info.threshold_switch.startsWith('__nofallback__')) {
+        const name = info.threshold_switch.replace('__nofallback__','');
+        showToast(`账号 ${name} 额度低于阈值，池中无可用账号可换`, 'warning');
+      } else {
+        showToast(`账号 ${info.threshold_switch} 额度低于阈值，已自动切换`, 'warning');
+      }
+    }
+  } catch {}
+}
+
+async function refreshAccountStats() {
+  try {
+    const statsRaw = await pywebview.api.get_all_stats(currentPlatform);
+    const sd = JSON.parse(statsRaw);
+    accountStats = {};
+    (sd.stats || []).forEach(s => { accountStats[s.account_id] = s; });
+    renderAccounts();
   } catch {}
 }
 
@@ -2439,7 +2571,7 @@ function startApp() {
     } catch(e) { if (attempt < 10) setTimeout(() => tryLoad(attempt + 1), 500); }
   };
   tryLoad();
-  refreshProxyStatus();
+  try { refreshProxyStatus(); } catch(e) {}
   if (_LICENSE_ENABLED) {
     setInterval(() => {
       pywebview.api.check_license().then(raw => {
