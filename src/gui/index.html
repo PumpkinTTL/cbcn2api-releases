@@ -64,7 +64,7 @@
 <!-- Content -->
 <div class="content">
   <div class="header-top" id="consoleHeader">
-    <div class="header-right" style="margin-left:auto">
+    <div class="header-right">
       <button class="btn btn-ghost btn-sm" onclick="showImportModal()">粘贴 Token</button>
       <button class="btn btn-ghost btn-sm" onclick="document.getElementById('fileInput').click()">文件导入</button>
       <input type="file" id="fileInput" accept=".json" style="display:none" onchange="handleFileImport(event)">
@@ -84,84 +84,84 @@
     </div>
   </div>
 
-  <div class="main" id="main">
-    <!-- Integrated Proxy Gateway Card -->
-    <div class="proxy-panel" id="proxyPanel" data-port="8001">
-      <div class="proxy-panel-main">
-        <div class="proxy-status">
-          <span class="proxy-status-pill" id="proxyStatusPill">
-            <span class="ping-dot"></span>
-            <span id="proxyStatusText">离线</span>
-          </span>
-          <span class="proxy-endpoint" id="proxyEndpoint">
-            <code id="proxyEndpointUrl">http://127.0.0.1:8001/v1</code>
-            <button class="copy-btn" onclick="copyEndpoint()" title="复制地址">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-            </button>
-          </span>
-        </div>
-        <div class="proxy-input-group">
-          <div class="proxy-field">
-            <span>端口:</span>
-            <input type="number" id="proxyPortInput" value="8001" min="1024" max="65535" placeholder="端口">
-          </div>
-          <div class="proxy-field">
-            <span>密码:</span>
-            <input type="password" id="proxyPassInput" placeholder="可选密码">
-          </div>
-          <div class="proxy-field">
-            <span>换号阈值:</span>
-            <input type="number" id="quotaThresholdInput" value="0" min="0" step="0.01" placeholder="0=不自动换号" style="width:130px" onchange="saveQuotaThreshold(this.value)" title="剩余积分低于此值自动禁用当前账号并切换下一个（0=关闭）">
-          </div>
-          <button class="btn btn-primary btn-sm" onclick="toggleProxy()" id="proxyToggleBtn">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
-            启动网关
+  <!-- Integrated Proxy Gateway Sub-Header Strip (Seamlessly attached under Header) -->
+  <div class="proxy-panel" id="proxyPanel" data-port="8001">
+    <div class="proxy-panel-main">
+      <div class="proxy-status">
+        <span class="proxy-status-pill" id="proxyStatusPill">
+          <span class="ping-dot"></span>
+          <span id="proxyStatusText">离线</span>
+        </span>
+        <span class="proxy-endpoint" id="proxyEndpoint">
+          <code id="proxyEndpointUrl">http://127.0.0.1:8001/v1</code>
+          <button class="copy-btn" onclick="copyEndpoint()" title="复制地址">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
           </button>
-        </div>
+        </span>
       </div>
-
-      <!-- Collapsible Proxy Test Chat Area -->
-      <div class="proxy-chat-card collapsed" id="proxyChatCard" style="display:none">
-        <div class="chat-header">
-          <div class="chat-header-left">
-            <span style="color:var(--success);font-weight:600;">网关工作中</span>
-            <span style="color:var(--text-muted);margin:0 6px;">|</span>
-            <span style="color:var(--text-secondary);font-size:12px;">导入配置即可或自行配置</span>
-          </div>
-          <div class="chat-header-actions">
-            <button class="sync-btn" onclick="syncModels()" id="syncModelsBtn">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg><span class="sync-label">同步模型</span>
-            </button>
-            <button class="sync-btn" onclick="exportToWorkBuddy()" id="exportBtn">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg><span class="sync-label">导入 WorkBuddy</span>
-            </button>
-            <button class="sync-btn" onclick="toggleChatCard()" id="proxyChatToggleBtn">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-              <span>对话测试</span> <span id="chatCollapseIcon">▼</span>
-            </button>
-          </div>
+      <div class="proxy-input-group">
+        <div class="proxy-field">
+          <span>端口:</span>
+          <input type="number" id="proxyPortInput" value="8001" min="1024" max="65535" placeholder="端口">
         </div>
-        <div class="chat-body">
-          <div class="chat-messages" id="chatMessages">
-            <div class="chat-empty">启动网关后即可测试对话</div>
-          </div>
-          <div class="chat-input-area">
-            <div class="model-selector" id="modelSelector">
-              <div class="model-selector-trigger" onclick="event.stopPropagation();toggleModelDropdown()">
-                <span class="model-current-icon" id="modelCurrentIcon"></span>
-                <span class="model-current-name" id="modelCurrentName"></span>
-                <span class="model-current-id" id="modelCurrentId" style="display:none"></span>
-                <span class="model-arrow">▾</span>
-              </div>
-              <div class="model-dropdown" id="modelDropdown"></div>
-            </div>
-            <input type="text" id="chatInput" placeholder="输入消息测试..." onkeydown="if(event.key==='Enter')sendTestChat()" disabled>
-            <button class="chat-send-btn" id="chatSendBtn" onclick="sendTestChat()" disabled>发送</button>
-          </div>
+        <div class="proxy-field">
+          <span>密码:</span>
+          <input type="password" id="proxyPassInput" placeholder="可选密码">
         </div>
+        <div class="proxy-field">
+          <span>换号阈值:</span>
+          <input type="number" id="quotaThresholdInput" value="0" min="0" step="0.01" placeholder="0=关闭" style="width:100px" onchange="saveQuotaThreshold(this.value)" title="剩余积分低于此值自动禁用当前账号并切换下一个（0=关闭）">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="toggleProxy()" id="proxyToggleBtn">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
+          启动网关
+        </button>
       </div>
     </div>
 
+    <!-- Collapsible Proxy Test Chat Area -->
+    <div class="proxy-chat-card collapsed" id="proxyChatCard" style="display:none">
+      <div class="chat-header">
+        <div class="chat-header-left">
+          <span style="color:var(--success);font-weight:600;">网关工作中</span>
+          <span style="color:var(--text-muted);margin:0 6px;">|</span>
+          <span style="color:var(--text-secondary);font-size:12px;">导入配置即可或自行配置</span>
+        </div>
+        <div class="chat-header-actions">
+          <button class="sync-btn" onclick="syncModels()" id="syncModelsBtn">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg><span class="sync-label">同步模型</span>
+          </button>
+          <button class="sync-btn" onclick="exportToWorkBuddy()" id="exportBtn">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg><span class="sync-label">导入 WorkBuddy</span>
+          </button>
+          <button class="sync-btn" onclick="toggleChatCard()" id="proxyChatToggleBtn">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            <span>对话测试</span> <span id="chatCollapseIcon">▼</span>
+          </button>
+        </div>
+      </div>
+      <div class="chat-body">
+        <div class="chat-messages" id="chatMessages">
+          <div class="chat-empty">启动网关后即可测试对话</div>
+        </div>
+        <div class="chat-input-area">
+          <div class="model-selector" id="modelSelector">
+            <div class="model-selector-trigger" onclick="event.stopPropagation();toggleModelDropdown()">
+              <span class="model-current-icon" id="modelCurrentIcon"></span>
+              <span class="model-current-name" id="modelCurrentName"></span>
+              <span class="model-current-id" id="modelCurrentId" style="display:none"></span>
+              <span class="model-arrow">▾</span>
+            </div>
+            <div class="model-dropdown" id="modelDropdown"></div>
+          </div>
+          <input type="text" id="chatInput" placeholder="输入消息测试..." onkeydown="if(event.key==='Enter')sendTestChat()" disabled>
+          <button class="chat-send-btn" id="chatSendBtn" onclick="sendTestChat()" disabled>发送</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="main" id="main">
     <!-- Stats Cards -->
     <div class="stats" id="stats"></div>
 
@@ -862,14 +862,11 @@ function renderAccounts() {
           if (!s || !s.request_count) return '';
           const hits = s.cache_hits || 0, misses = s.cache_misses || 0;
           const hitRate = (hits + misses) > 0 ? (hits / (hits + misses) * 100).toFixed(1) : 0;
-          return `<div style="display:flex;gap:4px;font-size:10px;color:var(--text-muted);padding:0 0 4px;flex-wrap:wrap;align-items:center;line-height:1.2">
-            <span>次数:${s.request_count}</span>
-            <span>·</span>
-            <span>Token:↑${fmtK(s.prompt_tokens)} ↓${fmtK(s.completion_tokens)}</span>
-            <span>·</span>
-            <span>消耗:${fmtL(s.lifetime_credit)}</span>
-            <span>·</span>
-            <span>缓存命中率:${hitRate}%</span>
+          return `<div class="card-stats-row">
+            <span class="stat-pill" title="总请求次数">请求 ${s.request_count} 次</span>
+            <span class="stat-pill" title="输入/输出 Token">Token ↑${fmtK(s.prompt_tokens)} ↓${fmtK(s.completion_tokens)}</span>
+            <span class="stat-pill" title="累计消耗积分">消耗 ${fmtL(s.lifetime_credit)}</span>
+            <span class="stat-pill" title="缓存命中率">缓存 ${hitRate}%</span>
           </div>`;
         })()}
 
