@@ -151,9 +151,9 @@ class TokenRotator:
                 "reason": reason,
                 "until": time.time() + cd,
             }
-            self._persist_cooldowns()
             if account_id == self._current_id:
                 self._current_id = None
+        self._persist_cooldowns()
 
     def set_active(self, active: bool):
         """标记网关是否正在处理请求（用于 UI 边框动画）。"""
@@ -172,7 +172,7 @@ class TokenRotator:
         """清除指定账号的所有运行时冷却（手动启用时调用）。"""
         with self._lock:
             self._disabled.pop(account_id, None)
-            self._persist_cooldowns()
+        self._persist_cooldowns()
 
     def on_disable(self, account_id: str) -> bool:
         """手动禁用账号后，若它是当前号则自动切换到下一个可用号。
@@ -188,10 +188,6 @@ class TokenRotator:
             if account_id == self._current_id:
                 self._current_id = usable_without[0].id
             return True
-
-    def count(self) -> int:
-        with self._lock:
-            return len(self._accounts)
 
     def count_usable(self) -> int:
         with self._lock:
@@ -288,10 +284,12 @@ class TokenRotator:
                 self._estimated_remain.setdefault(acc.id, 0.0)
 
     def _persist_cooldowns(self):
-        now = time.time()
-        active = {aid: s for aid, s in self._disabled.items() if s["until"] > now}
+        with self._lock:
+            now = time.time()
+            active = {aid: s for aid, s in self._disabled.items() if s.get("until", 0) > now}
+            payload = json.dumps(active, ensure_ascii=False)
         try:
-            store.save_setting(_COOLDOWN_SETTING_KEY, json.dumps(active, ensure_ascii=False))
+            store.save_setting(_COOLDOWN_SETTING_KEY, payload)
         except Exception:
             pass
 

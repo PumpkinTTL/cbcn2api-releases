@@ -145,11 +145,14 @@ def _first_event_kind(text: str):
 
 def _extract_consumed(usage: dict) -> float:
     """从 usage 对象提取消耗的积分/额度。"""
+    import math
     for key in ("credit", "deduction", "cost", "credits", "consumed", "points"):
         v = usage.get(key)
         if v is not None:
             try:
-                return float(v)
+                fv = float(v)
+                if math.isfinite(fv):
+                    return fv
             except (ValueError, TypeError):
                 pass
     return 0.0
@@ -186,11 +189,11 @@ async def _normalize_text_stream(
             stripped = line.strip()
             if stripped.startswith(":") or not stripped:
                 continue
-            if "[DONE]" in stripped:
-                yield "data: [DONE]\n\n"
-                return
             if stripped.startswith("data:"):
                 payload_str = stripped[5:].strip()
+                if payload_str == "[DONE]":
+                    yield "data: [DONE]\n\n"
+                    return
                 try:
                     obj = json.loads(payload_str)
 
@@ -338,6 +341,14 @@ async def _stream_inner(
                     logger.warning("[调度] 账号=%s peek 超时，按正常数据放行", acc.nickname)
                     decision = "data"
                     break
+
+            if decision == "none":
+                # peek 全程只收到心跳/注释，无实质数据 → 上游假死，按 transient 换号
+                await resp.aclose()
+                token_rotator.mark_disabled(acc.id, "transient")
+                _safe_log("error", platform, acc.id, acc.nickname, model, "peek 无实质内容，疑似上游假死", "")
+                last_msg = "上游无实质响应"
+                continue
 
             if decision == "error" and inline_err:
                 await resp.aclose()

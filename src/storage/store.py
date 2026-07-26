@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -9,13 +10,21 @@ from src.models.account import Account
 DB_DIR = Path.home() / ".cbcn2api"
 DB_PATH = DB_DIR / "accounts.db"
 
+_schema_lock = threading.Lock()
+_SCHEMA_VERSION = 1
+
 
 def _get_conn() -> sqlite3.Connection:
     DB_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    _ensure_schema(conn)
+    # 每个 DB 独立用 user_version 标记是否已初始化（测试切换临时库也能正确建表）
+    if conn.execute("PRAGMA user_version").fetchone()[0] < _SCHEMA_VERSION:
+        with _schema_lock:
+            if conn.execute("PRAGMA user_version").fetchone()[0] < _SCHEMA_VERSION:
+                conn.execute("PRAGMA journal_mode=WAL")
+                _ensure_schema(conn)
+                conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
     return conn
 
 
@@ -349,12 +358,20 @@ def _prune_logs(conn: sqlite3.Connection):
 def update_account_stats(platform: str, account_id: str, usage: dict):
     conn = _get_conn()
     try:
-        pt = int(usage.get("prompt_tokens", 0) or 0)
-        ct = int(usage.get("completion_tokens", 0) or 0)
-        tt = int(usage.get("total_tokens", pt + ct) or 0)
-        credit = float(usage.get("credit", 0) or 0)
-        hits = int(usage.get("prompt_cache_hit_tokens", 0) or 0)
-        misses = int(usage.get("prompt_cache_miss_tokens", 0) or 0)
+        def _i(v):
+            try:
+                return int(float(v)) if v else 0
+            except (ValueError, TypeError):
+                return 0
+        pt = _i(usage.get("prompt_tokens", 0))
+        ct = _i(usage.get("completion_tokens", 0))
+        tt = _i(usage.get("total_tokens", pt + ct))
+        try:
+            credit = float(usage.get("credit", 0) or 0)
+        except (ValueError, TypeError):
+            credit = 0.0
+        hits = _i(usage.get("prompt_cache_hit_tokens", 0))
+        misses = _i(usage.get("prompt_cache_miss_tokens", 0))
         now = int(time.time())
         conn.execute("""
             INSERT INTO account_stats (account_id, platform, prompt_tokens, completion_tokens, total_tokens, total_credit, lifetime_credit, cache_hits, cache_misses, request_count, updated_at)

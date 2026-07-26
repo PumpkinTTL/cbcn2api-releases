@@ -355,8 +355,14 @@ class GuiApi:
 
     def set_quota_threshold(self, value: float) -> str:
         from src.proxy.token_rotator import token_rotator
-        token_rotator.set_threshold(float(value))
-        return json.dumps({"ok": True, "threshold": value})
+        try:
+            v = float(value)
+        except (ValueError, TypeError):
+            return json.dumps({"error": f"无效的阈值: {value}"})
+        if v < 0:
+            v = 0
+        token_rotator.set_threshold(v)
+        return json.dumps({"ok": True, "threshold": v})
 
     def get_all_stats(self, platform: str) -> str:
         from src.storage.store import list_account_stats
@@ -376,7 +382,10 @@ class GuiApi:
         total_quota = 0
         total_used = 0
         for a in accounts:
-            t, u = quota_api.calc_totals(a.quota_raw, a.usage_raw)
+            try:
+                t, u = quota_api.calc_totals(a.quota_raw, a.usage_raw)
+            except Exception:
+                t, u = 0, 0
             total_quota += t
             total_used += u
         checked_in = 0
@@ -634,10 +643,12 @@ class GuiApi:
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            sock.bind(("127.0.0.1", port_num))
+            try:
+                sock.bind(("127.0.0.1", port_num))
+            except OSError:
+                return json.dumps({"error": f"端口 {port_num} 已被占用，请换一个端口"})
+        finally:
             sock.close()
-        except OSError:
-            return json.dumps({"error": f"端口 {port_num} 已被占用，请换一个端口"})
 
         # 设置环境变量（proxy_server 模块在 import 时读取）
         os.environ["CBCN_PROXY_PORT"] = str(port_num)
@@ -720,8 +731,8 @@ class GuiApi:
             if status == "normal":
                 token_rotator.clear_disabled(account_id)
             token_rotator.reload(platform)
-        except Exception:
-            pass
+        except Exception as e:
+            return _json.dumps({"ok": False, "error": str(e)})
         return _json.dumps({"ok": True})
 
     def set_priority_account(self, platform: str, account_id: str) -> str:

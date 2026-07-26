@@ -107,7 +107,7 @@ def calc_totals(quota_raw: Optional[dict], usage_raw: Optional[dict] = None) -> 
         ur = usage_raw
     if not ur:
         return 0, 0
-    accounts = ur.get("data", {}).get("Response", {}).get("Data", {}).get("Accounts", [])
+    accounts = (ur.get("data") or {}).get("Response", {}).get("Data", {}).get("Accounts", [])
     resources = parse_resources(accounts)
     total = sum(r["total"] for r in resources)
     used = sum(r["used"] for r in resources)
