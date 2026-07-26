@@ -3,238 +3,172 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI大模型网关</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<title>AI模型网关</title>
 <style>
+/* ====== 复用原CSS全部样式 ====== */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-
 :root {
-  --bg: #0a0e1a;
-  --surface: #141b2d;
-  --surface-hover: #1c263d;
-  --surface-active: #24314e;
-  --border: rgba(255, 255, 255, 0.12);
-  --border-hover: rgba(255, 255, 255, 0.22);
-  --text: #f8fafc;
-  --text-secondary: #cbd5e1;
-  --text-muted: #94a3b8;
-  --primary: #3b82f6;
-  --primary-hover: #2563eb;
-  --primary-light: rgba(59, 130, 246, 0.2);
-  --accent: #f97316;
-  --success: #22c55e;
-  --success-light: rgba(34, 197, 94, 0.2);
-  --warning: #eab308;
-  --warning-light: rgba(234, 179, 8, 0.2);
+  --primary: #3b82f6; --primary-light: rgba(59,130,246,0.1); --primary-hover: #2563eb;
+  --success: #22c55e; --success-light: rgba(34,197,94,0.1);
+  --warning: #ea9a0b; --warning-light: rgba(234,179,8,0.1);
   --danger: #ef4444;
-  --danger-light: rgba(239, 68, 68, 0.2);
-  --radius: 10px;
-  --radius-sm: 6px;
-  --radius-lg: 14px;
-  --shadow: 0 4px 16px rgba(0,0,0,0.3);
-  --transition: 0.15s ease;
+  --bg: #f5f7fb; --surface: #fff; --surface-hover: #f0f2f6;
+  --bg-tertiary: #eef0f4;
+  --text: #1a1c23; --text-secondary: #5a5f6e; --text-muted: #9196a6;
+  --border: #e2e5ec; --border-light: #eff1f5; --border-hover: #c9cdd7;
+  --shadow: 0 2px 8px rgba(0,0,0,0.06);
+  --radius: 10px; --radius-sm: 6px;
+  --transition: all 0.2s ease;
+  --accent: #6366f1; --hover: rgba(0,0,0,0.03);
 }
+[data-theme="dark"] {
+  --bg: #12151e; --surface: #1a1e2a; --surface-hover: #222839;
+  --bg-tertiary: #262b3a;
+  --text: #e8eaf0; --text-secondary: #9da0b2; --text-muted: #6b6f82;
+  --border: #2b3045; --border-light: #23283b; --border-hover: #3b4060;
+  --shadow: 0 2px 12px rgba(0,0,0,0.3);
+  --hover: rgba(255,255,255,0.03);
+}
+body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; }
+input, select, textarea { font-family: inherit; font-size: 14px; }
+code { font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; background: var(--bg-tertiary); padding: 2px 6px; border-radius: 4px; }
 
-[data-theme="light"] {
-  --bg: #f0f4f8;
-  --surface: #ffffff;
-  --surface-hover: #f8fafc;
-  --surface-active: #e2e8f0;
-  --border: #d0d7de;
-  --border-hover: #94a3b8;
-  --text: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #64748b;
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
-  --primary-light: rgba(37, 99, 235, 0.1);
-  --accent: #ea580c;
-  --success: #16a34a;
-  --success-light: rgba(22, 163, 74, 0.12);
-  --warning: #ca8a04;
-  --warning-light: rgba(202, 138, 4, 0.12);
-  --danger: #dc2626;
-  --danger-light: rgba(220, 38, 38, 0.12);
-  --shadow: 0 4px 14px rgba(0,0,0,0.08);
-  --modal-overlay: rgba(0,0,0,0.4);
-}
+.app-layout { display: flex; height: 100vh; overflow: hidden; }
+.sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; padding: 16px 10px; }
+.sidebar-logo { display: flex; align-items: center; gap: 8px; padding: 0 6px 16px; }
+.sidebar-logo-icon { --bg-icon: var(--primary); background: var(--bg-icon); width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; }
+.sidebar-logo-title { font-size: 15px; font-weight: 700; letter-spacing: -0.3px; color: var(--text); }
+.sidebar-logo-badge { font-size: 10px; background: var(--primary-light); color: var(--primary); padding: 2px 6px; border-radius: 4px; font-weight: 600; }
+.sidebar-nav-section { font-size: 11px; color: var(--text-muted); padding: 12px 6px 4px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+.nav-item { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--radius-sm); font-size: 13px; color: var(--text-secondary); transition: var(--transition); margin-bottom: 2px; }
+.nav-item:hover { background: var(--hover); color: var(--text); }
+.nav-item.active { background: var(--primary-light); color: var(--primary); font-weight: 600; }
+.sidebar-footer { margin-top: auto; padding-top: 12px; }
+.version-link { cursor: pointer; font-size: 11px; color: var(--text-muted); }
+.version-link:hover { color: var(--primary); }
 
-html, body { height: 100%; overflow: hidden; }
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
-  display: flex;
-  flex-direction: row;
-}
+.main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.header-top { display: flex; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface); gap: 6px; flex-shrink: 0; }
+.main { flex: 1; overflow-y: auto; padding: 16px; }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 13px; border: 1px solid transparent; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; transition: var(--transition); }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn-ghost { background: var(--surface); color: var(--text); border-color: var(--border); }
+.btn-ghost:hover { background: var(--surface-hover); border-color: var(--border-hover); }
+.btn-primary { background: var(--primary); color: white; }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-accent { background: rgba(99,102,241,0.1); color: var(--accent); }
+.btn-accent:hover { background: rgba(99,102,241,0.2); }
+.btn-danger { background: transparent; color: var(--danger); padding: 4px 6px; font-size: 12px; border: 1px solid transparent; }
+.btn-danger:hover { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.2); }
+.btn-icon { padding: 3px 6px; }
 
-/* Animation Keyframes */
-@keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
-}
+.proxy-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 14px; }
+.proxy-panel-main { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.proxy-status { display: flex; align-items: center; gap: 10px; }
+.proxy-status-pill { display: flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; background: var(--bg-tertiary); }
+.proxy-endpoint { display: flex; align-items: center; gap: 4px; }
+.proxy-input-group { display: flex; align-items: center; gap: 8px; }
+.proxy-field { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+.proxy-field input { width: 70px; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; background: var(--bg); color: var(--text); }
+.proxy-field input[type="number"] { width: 110px; }
+.copy-btn { padding: 2px 4px; border-radius: 4px; color: var(--text-muted); }
+.copy-btn:hover { background: var(--hover); color: var(--text); }
 
-.spinner-sm {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: currentColor;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite !important;
-  vertical-align: middle;
-}
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+.stat-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+.stat-value { font-size: 22px; font-weight: 700; }
 
-.spinner {
-  display: inline-block;
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--border);
-  border-top-color: var(--primary);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite !important;
-  margin: 0 auto 10px;
-}
+.filter-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.filter-label { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 4px; }
+.filter-date-group { display: flex; align-items: center; gap: 4px; }
+.filter-chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 11px; background: var(--primary-light); color: var(--primary); }
+.filter-chip .x { cursor: pointer; }
+.status-filter-select { font-size: 12px; padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text); }
 
-/* Sidebar */
-.sidebar {
-  width: 230px;
-  flex-shrink: 0;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
-  padding: 16px 14px;
-  display: flex;
-  flex-direction: column;
-}
-.sidebar-logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 6px 18px 6px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 16px;
-}
-.sidebar-logo-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: var(--primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  flex-shrink: 0;
-}
-.sidebar-logo-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text);
-  letter-spacing: -0.2px;
-}
-.sidebar-logo-badge {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--primary-light);
-  color: var(--primary);
-  margin-left: auto;
-}
-.sidebar-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
-.sidebar-nav-section {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 10px 8px 4px;
-}
-.sidebar-nav .nav-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 12px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: var(--transition);
-  font-family: inherit;
-  text-align: left;
-}
-.sidebar-nav .nav-item svg { width: 17px; height: 17px; flex-shrink: 0; }
-.sidebar-nav .nav-item:hover { color: var(--text); background: var(--surface-hover); }
-.sidebar-nav .nav-item.active {
-  color: var(--primary);
-  background: var(--primary-light);
-  border-color: rgba(59, 130, 246, 0.3);
-  font-weight: 600;
-}
-.sidebar-footer { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--border); }
-.shop-cards { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; }
-.shop-cards-header {
-  padding: 20px 24px 16px;
-  font-size: 16px; font-weight: 700; color: var(--text);
-}
-.shop-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  padding: 20px 24px 24px;
-}
-.shop-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 28px 20px 20px;
-  display: flex; flex-direction: column; align-items: center;
-  text-align: center; gap: 12px;
-  transition: var(--transition);
-  cursor: pointer;
-}
-.shop-card:hover { border-color: var(--primary); box-shadow: 0 4px 16px rgba(0,0,0,0.1); transform: translateY(-2px); }
-.shop-card-icon { width: 64px; height: 64px; border-radius: 14px; object-fit: cover; }
-.shop-card-name { font-size: 16px; font-weight: 600; color: var(--text); }
-.shop-card-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
-.shop-card-btn {
-  margin-top: 4px;
-  padding: 6px 18px; border: 1px solid var(--primary); border-radius: 6px;
-  background: transparent; color: var(--primary); font-size: 13px; font-weight: 500;
-  transition: var(--transition);
-}
-.shop-card:hover .shop-card-btn { background: var(--primary); color: #fff; }
-.shop-cards-desc {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px 24px;
-  margin: 0 24px 4px;
-}
-.shop-cards-desc h4 { font-size: 14px; font-weight: 700; color: var(--text); margin: 0 0 8px; }
-.shop-cards-desc p { font-size: 13px; color: var(--text-secondary); line-height: 1.7; margin: 0; }
-.shop-cards-desc .desc-highlight { color: var(--primary); font-weight: 500; }
-.shop-view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-.shop-toolbar {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 20px; border-bottom: 1px solid var(--border);
-  background: var(--surface); flex-shrink: 0;
-}
+.account-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; transition: var(--transition); display: flex; flex-direction: column; }
+.card:hover { border-color: var(--border-hover); box-shadow: var(--shadow); }
+.card.current { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.card.active { animation: pulse-border 1.5s infinite; }
+@keyframes pulse-border { 0%, 100% { border-color: rgba(34,197,94,0.3); } 50% { border-color: rgba(34,197,94,0.8); } }
+.card-header { display: flex; align-items: flex-start; gap: 10px; }
+.card-avatar { width: 36px; height: 36px; border-radius: 8px; background: var(--primary-light); color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; flex-shrink: 0; }
+.card-info { flex: 1; min-width: 0; }
+.card-name { font-weight: 600; font-size: 14px; }
+.card-email { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; flex-wrap: wrap; }
+
+.badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+.badge-pro { background: var(--primary-light); color: var(--primary); border: 1px solid rgba(59,130,246,0.3); }
+.badge-free { background: var(--surface-hover); color: var(--text-secondary); border: 1px solid var(--border); }
+.badge-trial { background: var(--success-light); color: var(--success); border: 1px solid rgba(34,197,94,0.3); }
+.badge-enterprise { background: rgba(99,102,241,0.1); color: var(--accent); }
+.current-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 4px; font-size: 10px; background: var(--primary-light); color: var(--primary); font-weight: 600; }
+.badge-status-normal { background: rgba(34,197,94,0.1); color: var(--success); padding: 2px 8px; border-radius: 4px; font-size: 10px; }
+.badge-status-disabled { background: rgba(234,179,8,0.1); color: var(--warning); padding: 2px 8px; border-radius: 4px; font-size: 10px; }
+.badge-status-banned { background: rgba(239,68,68,0.1); color: var(--danger); padding: 2px 8px; border-radius: 4px; font-size: 10px; }
+
+.quota-section { margin-top: 8px; margin-bottom: 12px; }
+.quota-header { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 3px; }
+.quota-bar { height: 4px; background: var(--bg-tertiary); border-radius: 2px; overflow: hidden; }
+.quota-fill { height: 100%; background: var(--primary); border-radius: 2px; transition: width 0.3s; }
+.quota-fill.warning { background: var(--warning); }
+.quota-fill.danger { background: var(--danger); }
+
+.card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; gap: 8px; flex-wrap: wrap; }
+.card-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.checkin-status { display: flex; align-items: center; gap: 8px; }
+.checkin-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.checkin-badge.done { background: rgba(34,197,94,0.1); color: var(--success); }
+.checkin-badge.pending { background: rgba(234,179,8,0.1); color: var(--warning); }
+.checkin-badge.inactive { background: var(--bg-tertiary); color: var(--text-muted); }
+.streak-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 6px; border-radius: 4px; font-size: 10px; background: rgba(34,197,94,0.1); color: var(--success); }
+
+.empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+.empty-state svg { width: 48px; height: 48px; margin-bottom: 12px; opacity: 0.4; }
+.empty-state h3 { font-size: 16px; color: var(--text-secondary); margin-bottom: 6px; }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal { background: var(--surface); border-radius: var(--radius); padding: 24px; max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto; }
+.modal-header h2 { font-size: 17px; margin-bottom: 4px; }
+.modal-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+.modal-close { padding: 4px; border-radius: 4px; color: var(--text-muted); }
+.modal-close:hover { background: var(--hover); }
+.modal-body { font-size: 13px; }
+.modal-actions { margin-top: 16px; text-align: right; }
+
+.changelog-version { font-size: 16px; font-weight: 700; color: var(--primary); }
+.changelog-date { font-size: 11px; color: var(--text-muted); margin-bottom: 12px; }
+.changelog-section-title { font-size: 13px; font-weight: 600; margin: 16px 0 6px; }
+.changelog-list { padding-left: 18px; font-size: 12px; color: var(--text-secondary); line-height: 1.8; }
+
+.toast { position: fixed; top: 16px; right: 16px; padding: 10px 18px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; z-index: 200; animation: toast-in 0.3s; }
+.toast.success { background: rgba(34,197,94,0.15); color: var(--success); border: 1px solid rgba(34,197,94,0.3); }
+.toast.error { background: rgba(239,68,68,0.15); color: var(--danger); border: 1px solid rgba(239,68,68,0.3); }
+.toast.warning { background: rgba(234,179,8,0.15); color: var(--warning); border: 1px solid rgba(234,179,8,0.3); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* shop */
+.shop-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; padding: 16px; }
+.shop-card { background: var(--surface); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); cursor: pointer; transition: var(--transition); }
+.shop-card:hover { box-shadow: var(--shadow); }
+.shop-card-img { --img-bg: var(--primary); background: var(--img-bg); height: 120px; display: flex; align-items: center; justify-content: center; font-size: 32px; }
+.shop-card-body { padding: 14px; }
+.shop-card-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+.shop-card-desc { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+.shop-card-btn { font-size: 12px; color: var(--primary); font-weight: 600; }
+
+.shop-view { display: flex; flex-direction: column; flex: 1; }
+.shop-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--border); }
 .shop-name { font-size: 14px; font-weight: 600; color: var(--text); flex: 1; }
 .shop-frame { flex: 1; width: 100%; border: none; background: #fff; }
 
-/* Logs View */
+/* logs */
 .logs-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .logs-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--surface); }
 .logs-title { font-size: 15px; font-weight: 600; color: var(--text); }
@@ -246,2369 +180,618 @@ body {
 .log-badge { padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; min-width: 28px; text-align: center; font-family: inherit; }
 .log-badge.log-success { background: #e6f7ee; color: #0d8118; }
 .log-badge.log-error { background: #fdecea; color: #c0392b; }
+.log-badge.log-warning { background: rgba(234,179,8,0.15); color: var(--warning); }
 .log-badge.log-request { background: var(--bg-tertiary); color: var(--text-secondary); }
 .log-acct { color: var(--accent); min-width: 80px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-model { color: var(--text-secondary); min-width: 60px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-msg { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.log-row.log-success .log-msg { color: #0d8118; }
-.log-row.log-error .log-msg { color: #c0392b; }
-.log-row.log-request .log-msg { color: var(--accent); }
 
-/* Content Area */
-.content { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
-
-/* Header Top */
-.header-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 24px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text);
-}
-.header-platform-tag {
-  font-size: 12px;
-  font-weight: 500;
-  padding: 2px 8px;
-  border-radius: 12px;
-  background: var(--surface-hover);
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
-}
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-/* Buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 7px 13px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-weight: 500;
-  font-family: inherit;
-  cursor: pointer;
-  transition: var(--transition);
-  white-space: nowrap;
-  line-height: 1.2;
-}
-.btn-primary {
-  background: var(--primary);
-  color: #fff;
-  border-color: var(--primary);
-}
-.btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
-.btn-accent { background: var(--accent); color: #fff; border-color: var(--accent); }
-.btn-accent:hover { filter: brightness(1.08); }
-.btn-ghost { background: var(--surface); color: var(--text); border-color: var(--border); }
-.btn-ghost:hover { background: var(--surface-hover); border-color: var(--border-hover); }
-.btn-danger { background: var(--danger-light); color: var(--danger); border-color: rgba(239,68,68,0.25); }
-.btn-danger:hover { background: rgba(239,68,68,0.3); }
-.btn-sm { padding: 5px 10px; font-size: 12px; }
-.btn-icon { padding: 6px; min-width: 32px; justify-content: center; }
-.btn:disabled { opacity: 0.5; pointer-events: none; }
-.btn-loading { pointer-events: none; opacity: 0.8; }
-
-/* Main Content Container */
-.main {
-  flex: 1;
-  padding: 20px 24px;
-  overflow-y: auto;
-}
-
-/* Stats Bar */
-.stats {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 14px;
-  margin-bottom: 18px;
-}
-.stat-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 14px 16px;
-  transition: var(--transition);
-  min-width: 0;
-}
-.stat-card:hover { border-color: var(--border-hover); }
-.stat-icon {
-  display: flex; align-items: center; justify-content: center;
-  width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
-}
-.stat-icon svg { width: 20px; height: 20px; }
-.stat-icon.blue { background: var(--primary-light); color: var(--primary); }
-.stat-icon.purple { background: rgba(139,92,246,0.18); color: #a78bfa; }
-.stat-icon.green { background: var(--success-light); color: var(--success); }
-
-.stat-text { flex: 1; min-width: 0; }
-.stat-label { font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 2px; }
-.stat-value { font-size: 15px; font-weight: 700; color: var(--text); line-height: 1.3; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-/* Unified Proxy Gateway Card */
-.proxy-panel {
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-size: 13px;
-  transition: var(--transition);
-  margin-bottom: 18px;
-  overflow: hidden;
-}
-.proxy-panel.online { border-color: rgba(34, 197, 94, 0.4); }
-
-.proxy-panel-main {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 12px 18px;
-}
-
-.proxy-status { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.proxy-status-pill {
-  display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
-  padding: 4px 11px; border-radius: 20px;
-  font-size: 12px; font-weight: 600; border: 1px solid var(--border);
-  background: var(--surface-hover); color: var(--text-muted);
-  transition: var(--transition);
-}
-.proxy-panel.online .proxy-status-pill {
-  background: var(--success-light); color: var(--success); border-color: rgba(34, 197, 94, 0.3);
-}
-
-.ping-dot { position: relative; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: currentColor; }
-.proxy-panel.online .ping-dot::before {
-  content: ''; position: absolute; inset: 0; border-radius: 50%; background: currentColor;
-  animation: proxy-ping 1.8s cubic-bezier(0,0,0.2,1) infinite;
-}
-@keyframes proxy-ping { 75%,100% { transform: scale(2.2); opacity: 0; } }
-
-.proxy-endpoint { display: none; align-items: center; gap: 8px; min-width: 0; }
-.proxy-panel.online .proxy-endpoint { display: inline-flex; }
-.proxy-endpoint code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px; color: var(--text);
-  background: var(--bg); padding: 4px 10px; border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px;
-}
-.copy-btn {
-  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-  width: 28px; height: 28px; border: 1px solid var(--border); background: var(--surface);
-  color: var(--text-secondary); border-radius: var(--radius-sm); cursor: pointer; transition: var(--transition);
-}
-.copy-btn:hover { color: var(--text); background: var(--surface-hover); border-color: var(--border-hover); }
-.copy-btn svg { width: 14px; height: 14px; }
-
-.proxy-input-group { display: flex; gap: 10px; align-items: center; flex-shrink: 0; }
-.proxy-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
-.proxy-input-group input {
-  width: 80px; padding: 5px 9px; background: var(--bg); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); color: var(--text); font-size: 12px; font-family: inherit; outline: none; transition: var(--transition);
-}
-.proxy-input-group input:focus { border-color: var(--primary); }
-.proxy-input-group input[type="password"] { width: 120px; }
-
-.proxy-btn-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; transition: var(--transition); display: inline-block; vertical-align: middle; margin-right: 4px; }
-.proxy-btn-dot.off { background: var(--text-muted); }
-.proxy-btn-dot.on { background: var(--success); box-shadow: 0 0 6px rgba(34, 197, 94, 0.8); }
-.btn-proxy-on { background: var(--success-light) !important; color: var(--success) !important; border-color: rgba(34, 197, 94, 0.4) !important; }
-.btn-proxy-on:hover { background: rgba(34, 197, 94, 0.25) !important; }
-
-/* Collapsible Proxy Test Chat Section */
-.proxy-chat-card {
-  border-top: 1px solid var(--border);
-  background: var(--bg);
-  transition: var(--transition);
-}
-.proxy-chat-card.collapsed .chat-body { display: none; }
-.chat-header {
-  display: flex; align-items: center; justify-content: space-between; padding: 10px 18px;
-  background: var(--surface); border-bottom: 1px solid var(--border); gap: 12px; flex-wrap: wrap;
-}
-.chat-header-left {
-  display: flex; align-items: center; font-size: 12.5px; font-weight: 500; color: var(--text); min-width: 0;
-}
-.chat-header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-
-.chat-body { padding: 0; }
-.chat-messages {
-  max-height: 280px; overflow-y: auto; padding: 14px 18px;
-  display: flex; flex-direction: column; gap: 10px; background: var(--bg); min-height: 80px;
-}
-.chat-msg {
-  padding: 9px 13px; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.5;
-  max-width: 85%; word-break: break-word; white-space: pre-wrap;
-}
-.chat-msg.user { align-self: flex-end; background: var(--primary); color: #fff; }
-.chat-msg.assistant { align-self: flex-start; background: var(--surface); border: 1px solid var(--border); color: var(--text); }
-.chat-msg.error { align-self: center; background: var(--danger-light); color: var(--danger); border: 1px solid rgba(239,68,68,0.3); font-size: 12px; text-align: center; }
-.chat-empty { text-align: center; color: var(--text-muted); font-size: 12px; padding: 24px 0; }
-
-.chat-input-area {
-  display: flex; gap: 8px; padding: 12px 18px; background: var(--surface); border-top: 1px solid var(--border);
-}
-.chat-input-area input {
-  flex: 1; padding: 7px 12px; background: var(--bg); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); color: var(--text); font-size: 13px; font-family: inherit; outline: none;
-}
-.chat-input-area input:focus { border-color: var(--primary); }
-
-.model-selector { position: relative; flex-shrink: 0; }
-.model-selector-trigger {
-  display: flex; align-items: center; gap: 6px; cursor: pointer;
-  padding: 6px 10px; background: var(--bg); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); font-size: 12px; color: var(--text);
-  white-space: nowrap; max-width: 180px; transition: var(--transition);
-}
-.model-selector-trigger:hover { border-color: var(--border-hover); }
-.model-dropdown {
-  display: none; position: absolute; bottom: 100%; left: 0; right: auto;
-  min-width: 200px; max-height: 240px; overflow-y: auto;
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); box-shadow: var(--shadow); z-index: 100; margin-bottom: 6px;
-}
-.model-dropdown.open { display: block; }
-.model-option { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; font-size: 12px; color: var(--text); transition: var(--transition); }
-.model-option:hover { background: var(--surface-hover); }
-.model-option.active { background: var(--primary-light); color: var(--primary); font-weight: 600; }
-
-.sync-btn {
-  display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; font-size: 12px; font-weight: 500;
-  border-radius: var(--radius-sm); font-family: inherit; background: var(--surface-hover); border: 1px solid var(--border);
-  color: var(--text-secondary); cursor: pointer; transition: var(--transition);
-}
-.sync-btn:hover { color: var(--text); border-color: var(--border-hover); }
-.chat-send-btn {
-  padding: 7px 16px; font-size: 12px; font-weight: 600; border-radius: var(--radius-sm);
-  border: none; cursor: pointer; transition: var(--transition); background: var(--primary); color: #fff;
-}
-.chat-send-btn:hover { background: var(--primary-hover); }
-
-/* Filter Bar */
-.filter-bar {
-  display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;
-  padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-}
-.filter-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
-.filter-label svg { width: 14px; height: 14px; color: var(--text-muted); }
-.filter-date-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-
-.date-input-wrapper {
-  display: inline-flex;
-  align-items: center;
-  position: relative;
-}
-.filter-bar input[type="date"] {
-  padding: 6px 12px;
-  background: var(--surface-hover);
-  border: 1px solid var(--border-hover);
-  border-radius: var(--radius-sm);
-  color: var(--text) !important;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: inherit;
-  outline: none;
-  cursor: pointer;
-  min-width: 140px;
-  transition: var(--transition);
-}
-.filter-bar input[type="date"]:hover {
-  border-color: var(--primary);
-}
-.filter-bar input[type="date"].empty::-webkit-datetime-edit,
-.filter-bar input[type="date"].empty::-webkit-datetime-edit-fields-wrapper,
-.filter-bar input[type="date"].empty::-webkit-datetime-edit-text,
-.filter-bar input[type="date"].empty::-webkit-datetime-edit-month-field,
-.filter-bar input[type="date"].empty::-webkit-datetime-edit-day-field,
-.filter-bar input[type="date"].empty::-webkit-datetime-edit-year-field { opacity: 0 !important; }
-.filter-bar input[type="date"]::-webkit-datetime-edit,
-.filter-bar input[type="date"]::-webkit-datetime-edit-fields-wrapper,
-.filter-bar input[type="date"]::-webkit-datetime-edit-text,
-.filter-bar input[type="date"]::-webkit-datetime-edit-month-field,
-.filter-bar input[type="date"]::-webkit-datetime-edit-day-field,
-.filter-bar input[type="date"]::-webkit-datetime-edit-year-field {
-  color: var(--text) !important;
-  font-weight: 600 !important;
-}
-.filter-bar input[type="date"]::-webkit-calendar-picker-indicator {
-  cursor: pointer;
-  opacity: 1 !important;
-  filter: invert(0.9) sepia(1) saturate(5) hue-rotate(180deg);
-  width: 16px;
-  height: 16px;
-}
-[data-theme="light"] .filter-bar input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: none;
-  opacity: 0.9 !important;
-}
-
-.filter-chip {
-  display: none; align-items: center; gap: 6px; padding: 3px 8px 3px 10px;
-  border-radius: 12px; font-size: 12px; font-weight: 500;
-  background: var(--primary-light); color: var(--primary); border: 1px solid rgba(59,130,246,0.3);
-}
-.filter-chip.show { display: inline-flex; }
-.filter-chip .x { cursor: pointer; opacity: 0.6; display: inline-flex; }
-.filter-chip .x:hover { opacity: 1; }
-.filter-chip .x svg { width: 13px; height: 13px; }
-
-/* Account Grid & Cards */
-.account-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 14px;
-}
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 16px;
-  transition: var(--transition);
-  display: flex; flex-direction: column;
-}
-.card:hover { border-color: var(--border-hover); box-shadow: var(--shadow); }
-.card.current { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
-.card.active { animation: pulse-border 1.5s ease-in-out infinite; }
-@keyframes pulse-border {
-  0%, 100% { box-shadow: 0 0 0 2px #22c55e, 0 0 10px rgba(34,197,94,0.35); }
-  50% { box-shadow: 0 0 0 2px #22c55e, 0 0 22px rgba(34,197,94,0.6); }
-}
-.current-badge {
-  display: inline-flex; align-items: center; gap: 3px;
-  font-size: 10px; font-weight: 600; padding: 2px 7px;
-  border-radius: 4px; background: var(--primary); color: #fff;
-}
-.badge-status-normal { font-size: 10px; padding: 2px 7px; border-radius: 4px; background: rgba(34,197,94,0.12); color: #22c55e; }
-.badge-status-banned { font-size: 10px; padding: 2px 7px; border-radius: 4px; background: rgba(239,68,68,0.12); color: #ef4444; }
-.badge-status-disabled { font-size: 10px; padding: 2px 7px; border-radius: 4px; background: rgba(245,158,11,0.12); color: #f59e0b; }
-.status-filter-group { display: flex; gap: 4px; margin-left: auto; }
-.status-filter-select {
-  padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
-  background: var(--surface); color: var(--text-secondary); font-size: 12px;
-  cursor: pointer; font-family: inherit; outline: none;
-}
-.status-filter-select:hover { border-color: var(--border-hover); }
-.status-filter-select:focus { border-color: var(--primary); }
-.version-link { color: var(--text-tertiary); cursor: pointer; transition: var(--transition); }
-.version-link:hover { color: var(--primary); text-decoration: underline; }
-.changelog-modal { max-width: 480px; width: 90%; }
-.changelog-modal .modal-body { max-height: 60vh; overflow-y: auto; }
-.changelog-version { font-size: 18px; font-weight: 700; color: var(--primary); margin-bottom: 4px; }
-.changelog-date { font-size: 12px; color: var(--text-muted); margin-bottom: 16px; }
-.changelog-section-title { font-size: 13px; font-weight: 600; color: var(--text); margin: 14px 0 8px; display: flex; align-items: center; gap: 6px; }
-.changelog-list { list-style: none; padding: 0; margin: 0; }
-.changelog-list li { font-size: 13px; color: var(--text-secondary); line-height: 1.7; padding-left: 16px; position: relative; }
-.changelog-list li::before { content: '•'; position: absolute; left: 4px; color: var(--primary); }
-.card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.card-avatar {
-  width: 38px; height: 38px;
-  border-radius: 10px;
-  background: var(--primary-light);
-  border: 1px solid rgba(59,130,246,0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--primary);
-  flex-shrink: 0;
-}
-.card-info { flex: 1; min-width: 0; padding-left: 12px; }
-.card-name { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.3; }
-.card-email { font-size: 12px; color: var(--text-secondary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card-meta { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
-.badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 7px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
-}
-.badge-pro { background: var(--primary-light); color: var(--primary); border: 1px solid rgba(59,130,246,0.3); }
-.badge-free { background: var(--surface-hover); color: var(--text-secondary); border: 1px solid var(--border); }
-.badge-enterprise { background: var(--warning-light); color: var(--warning); border: 1px solid rgba(234,179,8,0.3); }
-.badge-trial { background: var(--success-light); color: var(--success); border: 1px solid rgba(34,197,94,0.3); }
-
-/* Quota Section */
-.quota-section { margin-top: 8px; margin-bottom: 12px; }
-.quota-header { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 5px; }
-.quota-header span:last-child { font-weight: 600; color: var(--text); }
-.quota-bar { height: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
-.quota-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; background: var(--primary); }
-.quota-fill.warning { background: var(--warning); }
-.quota-fill.danger { background: var(--danger); }
-
-/* Footer & Checkin */
-.card-footer {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-top: 12px; gap: 8px; flex-wrap: wrap;
-}
-.checkin-status { display: flex; align-items: center; gap: 8px; }
-.checkin-badge {
-  display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;
-}
-.checkin-badge.done { background: var(--success-light); color: var(--success); border: 1px solid rgba(34,197,94,0.3); }
-.checkin-badge.pending { background: var(--warning-light); color: var(--warning); border: 1px solid rgba(234,179,8,0.3); }
-.checkin-badge.inactive { background: var(--surface-hover); color: var(--text-muted); border: 1px solid var(--border); }
-.streak-badge { font-size: 11px; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 3px; }
-
-.card-actions { display: flex; gap: 4px; flex-shrink: 0; }
-
-/* Empty State */
-.empty-state {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  padding: 60px 20px; color: var(--text-muted); grid-column: 1 / -1; background: var(--surface);
-  border: 1px solid var(--border); border-radius: var(--radius);
-}
-.empty-state svg { width: 48px; height: 48px; margin-bottom: 14px; opacity: 0.4; }
-.empty-state h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; color: var(--text); }
-.empty-state p { font-size: 13px; color: var(--text-secondary); }
-
-/* Modal */
-.modal-overlay {
-  display: none; position: fixed; inset: 0; background: var(--modal-overlay, rgba(0,0,0,0.4));
-  z-index: 1000; align-items: center; justify-content: center; padding: 20px;
-}
-.modal-overlay.show { display: flex; }
-.modal {
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
-  width: 100%; max-width: 500px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; box-shadow: var(--shadow);
-}
-.modal-header { padding: 20px 24px 12px; flex-shrink: 0; position: relative; }
-.modal-header h2 { font-size: 17px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-.modal-header p { font-size: 13px; color: var(--text-secondary); }
-.modal-close {
-  position: absolute; top: 16px; right: 16px;
-  background: transparent; border: none; color: var(--text-muted);
-  cursor: pointer; padding: 4px; border-radius: 6px;
-  display: flex; align-items: center; justify-content: center;
-  transition: var(--transition);
-}
-.modal-close:hover { background: var(--surface-hover); color: var(--text); }
-.modal-body { padding: 12px 24px 20px; overflow-y: auto; flex: 1; }
-.modal-actions { padding: 14px 24px; border-top: 1px solid var(--border); flex-shrink: 0; display: flex; gap: 8px; justify-content: flex-end; }
-
-/* Forms */
-textarea, input[type="text"], input[type="url"], select {
-  width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); color: var(--text); font-size: 13px; font-family: inherit; outline: none; transition: var(--transition);
-}
-textarea:focus, input:focus { border-color: var(--primary); }
-textarea { resize: vertical; min-height: 120px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--text-secondary); }
-.form-group { margin-bottom: 16px; }
-
-/* Toast */
-.toast {
-  position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-20px);
-  padding: 9px 20px; border-radius: 8px; font-size: 13px; font-weight: 500; z-index: 9999;
-  opacity: 0; transition: all 0.2s ease; pointer-events: none; white-space: nowrap; box-shadow: var(--shadow);
-}
-.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-.toast.error { background: var(--danger); color: #fff; }
-.toast.success { background: var(--success); color: #fff; }
-.toast.info { background: var(--primary); color: #fff; }
-.toast.warning { background: var(--warning); color: #fff; }
-
-/* License */
-.license-overlay { position: fixed; inset: 0; z-index: 5000; display: none; align-items: center; justify-content: center; background: var(--bg); }
-.license-overlay.show { display: flex; }
-.license-card { width: 100%; max-width: 400px; padding: 36px 32px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow); text-align: center; }
-.license-icon { width: 52px; height: 52px; margin: 0 auto 16px; border-radius: 14px; display: flex; align-items: center; justify-content: center; background: var(--primary); color: #fff; }
-.license-card h2 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
-.license-card .license-sub { font-size: 13px; color: var(--text-secondary); margin-bottom: 20px; }
-.license-card input { width: 100%; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 13px; font-family: monospace; outline: none; text-align: center; }
-.license-card .btn { width: 100%; margin-top: 14px; justify-content: center; padding: 10px; }
-.license-error { color: var(--danger); font-size: 12px; margin-top: 10px; min-height: 16px; }
-.license-info { font-size: 11px; color: var(--text-muted); margin-top: 16px; }
-
-/* Quota Item */
-.quota-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-.quota-item:last-child { border-bottom: none; }
-.quota-item .label { color: var(--text-secondary); }
-.quota-item .value { font-weight: 600; color: var(--text); }
-
-/* Responsive */
-@media (max-width: 768px) {
-  .sidebar { display: none; }
-  .stats { grid-template-columns: 1fr; }
-  .header-top { flex-wrap: wrap; }
-  .proxy-panel-main { flex-direction: column; align-items: stretch; }
-  .proxy-input-group { justify-content: space-between; flex-wrap: wrap; }
-}
+.date-input-wrapper { position: relative; }
+.date-input-wrapper input[type="date"] { padding: 4px 8px; border-radius: 4px; border: 1px solid var(--border); font-size: 12px; background: var(--bg-tertiary); color: var(--text); width: 120px; }
+.date-input-wrapper input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: 0.6; }
+.ping-dot { --ping-dot-color: var(--text-muted); width: 8px; height: 8px; border-radius: 50%; background: var(--ping-dot-color); }
+.ping-dot.online { --ping-dot-color: var(--success); animation: ping-pulse 2s infinite; }
+@keyframes ping-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+.spinner { width: 28px; height: 28px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 
-<!-- License Activation Gate -->
-<div class="license-overlay" id="licenseOverlay">
-  <div class="license-card">
-    <div class="license-icon">
-      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-    </div>
-    <h2>激活授权</h2>
-    <div class="license-sub" id="licenseSub">请输入激活码以继续使用</div>
-    <input id="licenseInput" placeholder="粘贴激活码" onkeydown="if(event.key==='Enter')doActivate()">
-    <button class="btn btn-primary" onclick="doActivate()">激活</button>
-    <div class="license-error" id="licenseError"></div>
-    <div class="license-info">激活码由算法签发，无需联网验证</div>
-  </div>
-</div>
+<!-- ====== Vue3 App ====== -->
+<div id="app" v-cloak>
+<div class="app-layout">
 
 <!-- Sidebar -->
 <aside class="sidebar">
   <div class="sidebar-logo">
     <div class="sidebar-logo-icon">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
     </div>
     <span class="sidebar-logo-title">AI模型网关</span>
     <span class="sidebar-logo-badge">PRO</span>
   </div>
   <div class="sidebar-nav-section">控制台</div>
   <nav class="sidebar-nav">
-    <button class="nav-item active" data-view="console" onclick="showConsole()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+    <button class="nav-item" :class="{active:view==='console'}" @click="view='console'">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
       WorkBuddy
     </button>
-    <button class="nav-item" data-view="logs" onclick="showLogs()">
-      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+    <button class="nav-item" :class="{active:view==='logs'}" @click="switchToLogs">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
       运行日志
     </button>
   </nav>
   <div class="sidebar-nav-section">推荐</div>
   <nav class="sidebar-nav">
-    <button class="nav-item shop-item" data-view="shop-cards" onclick="showShopCards()">
-      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+    <button class="nav-item" :class="{active:view==='shop'}" @click="view='shop'">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>
       联营店铺
     </button>
   </nav>
   <div class="sidebar-footer">
-    <button class="btn btn-ghost btn-sm" onclick="toggleTheme()" id="themeBtn" title="切换主题" style="width:100%;justify-content:center">
+    <button class="btn btn-ghost btn-sm" @click="toggleTheme" style="width:100%;justify-content:center">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> 切换主题
     </button>
     <div style="text-align:center;font-size:11px;margin-top:8px">
-      <span class="version-link" onclick="showChangelog()">v1.0.3</span>
+      <span class="version-link" @click="showChangelog=true">v1.0.3</span>
     </div>
   </div>
 </aside>
 
-<!-- Content -->
-<div class="content">
-  <div class="header-top" id="consoleHeader">
-    <div class="header-right" style="margin-left:auto">
-      <button class="btn btn-ghost btn-sm" onclick="showImportModal()">粘贴 Token</button>
-      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('fileInput').click()">文件导入</button>
-      <input type="file" id="fileInput" accept=".json" style="display:none" onchange="handleFileImport(event)">
-      <button class="btn btn-ghost btn-sm" onclick="exportAccounts()">导出账号</button>
-      <button class="btn btn-ghost btn-sm" onclick="showOAuthModal()">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
-        OAuth登录
-      </button>
-      <button class="btn btn-accent btn-sm" onclick="checkinAll()">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4"/></svg>
-        一键签到
-      </button>
-      <button class="btn btn-primary btn-sm" onclick="refreshAll()">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>
-        全部刷新
-      </button>
-    </div>
+<!-- Main Area -->
+<div class="main-area">
+
+  <!-- Header -->
+  <div class="header-top" v-show="view==='console'">
+    <button class="btn btn-ghost btn-sm" @click="showImport=true">粘贴 Token</button>
+    <button class="btn btn-ghost btn-sm" @click="$refs.fileInput.click()">文件导入</button>
+    <input type="file" ref="fileInput" accept=".json" style="display:none" @change="handleFileImport">
+    <button class="btn btn-ghost btn-sm" @click="exportAccounts">导出账号</button>
+    <button class="btn btn-ghost btn-sm" @click="showOAuth=true">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
+      OAuth登录
+    </button>
+    <button class="btn btn-accent btn-sm" @click="checkinAll">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4"/></svg>
+      一键签到
+    </button>
+    <button class="btn btn-primary btn-sm" @click="refreshAll">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>
+      全部刷新
+    </button>
   </div>
 
-  <div class="main" id="main">
-    <!-- Integrated Proxy Gateway Card -->
-    <div class="proxy-panel" id="proxyPanel" data-port="8001">
+  <div class="main" v-show="view==='console'">
+    <!-- Proxy Panel -->
+    <div class="proxy-panel">
       <div class="proxy-panel-main">
         <div class="proxy-status">
-          <span class="proxy-status-pill" id="proxyStatusPill">
-            <span class="ping-dot"></span>
-            <span id="proxyStatusText">离线</span>
+          <span class="proxy-status-pill">
+            <span class="ping-dot" :class="{online:proxyRunning}"></span>
+            <span>{{ proxyRunning ? '在线' : '离线' }}</span>
           </span>
-          <span class="proxy-endpoint" id="proxyEndpoint">
-            <code id="proxyEndpointUrl">http://127.0.0.1:8001/v1</code>
-            <button class="copy-btn" onclick="copyEndpoint()" title="复制地址">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-            </button>
+          <span class="proxy-endpoint">
+            <code>{{ proxyUrl }}</code>
+            <button class="copy-btn" @click="copyEndpoint">📋</button>
           </span>
         </div>
         <div class="proxy-input-group">
-          <div class="proxy-field">
-            <span>端口:</span>
-            <input type="number" id="proxyPortInput" value="8001" min="1024" max="65535" placeholder="端口">
-          </div>
-          <div class="proxy-field">
-            <span>密码:</span>
-            <input type="password" id="proxyPassInput" placeholder="可选密码">
-          </div>
-          <div class="proxy-field">
-            <span>换号阈值:</span>
-            <input type="number" id="quotaThresholdInput" value="0" min="0" step="0.01" placeholder="0=不自动换号" style="width:130px" onchange="saveQuotaThreshold(this.value)" title="剩余积分低于此值自动禁用当前账号并切换下一个（0=关闭）">
-          </div>
-          <button class="btn btn-primary btn-sm" onclick="toggleProxy()" id="proxyToggleBtn">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
-            启动网关
-          </button>
-        </div>
-      </div>
-
-      <!-- Collapsible Proxy Test Chat Area -->
-      <div class="proxy-chat-card collapsed" id="proxyChatCard" style="display:none">
-        <div class="chat-header">
-          <div class="chat-header-left">
-            <span style="color:var(--success);font-weight:600;">网关工作中</span>
-            <span style="color:var(--text-muted);margin:0 6px;">|</span>
-            <span style="color:var(--text-secondary);font-size:12px;">导入配置即可或自行配置</span>
-          </div>
-          <div class="chat-header-actions">
-            <button class="sync-btn" onclick="syncModels()" id="syncModelsBtn">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg><span class="sync-label">同步模型</span>
-            </button>
-            <button class="sync-btn" onclick="exportToWorkBuddy()" id="exportBtn">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg><span class="sync-label">导入 WorkBuddy</span>
-            </button>
-            <button class="sync-btn" onclick="toggleChatCard()" id="proxyChatToggleBtn">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-              <span>对话测试</span> <span id="chatCollapseIcon">▼</span>
-            </button>
-          </div>
-        </div>
-        <div class="chat-body">
-          <div class="chat-messages" id="chatMessages">
-            <div class="chat-empty">启动网关后即可测试对话</div>
-          </div>
-          <div class="chat-input-area">
-            <div class="model-selector" id="modelSelector">
-              <div class="model-selector-trigger" onclick="event.stopPropagation();toggleModelDropdown()">
-                <span class="model-current-icon" id="modelCurrentIcon"></span>
-                <span class="model-current-name" id="modelCurrentName"></span>
-                <span class="model-current-id" id="modelCurrentId" style="display:none"></span>
-                <span class="model-arrow">▾</span>
-              </div>
-              <div class="model-dropdown" id="modelDropdown"></div>
-            </div>
-            <input type="text" id="chatInput" placeholder="输入消息测试..." onkeydown="if(event.key==='Enter')sendTestChat()" disabled>
-            <button class="chat-send-btn" id="chatSendBtn" onclick="sendTestChat()" disabled>发送</button>
-          </div>
+          <div class="proxy-field"><span>端口:</span><input type="number" v-model.number="proxyPort" min="1024" max="65535"></div>
+          <div class="proxy-field"><span>密码:</span><input type="password" v-model="proxyPass" placeholder="可选密码"></div>
+          <div class="proxy-field"><span>换号阈值:</span><input type="number" v-model.number="threshold" min="0" step="0.01" placeholder="0=关" style="width:90px" @change="saveThreshold" title="剩余积分低于此值自动禁用当前账号（0=关闭）"></div>
+          <button class="btn btn-primary btn-sm" @click="toggleProxy">{{ proxyRunning ? '停止' : '启动' }}网关</button>
         </div>
       </div>
     </div>
 
-    <!-- Stats Cards -->
-    <div class="stats" id="stats"></div>
+    <!-- Stats -->
+    <div class="stats">
+      <div class="stat-card"><div class="stat-label">总账号</div><div class="stat-value">{{ stats.total_accounts }}</div></div>
+      <div class="stat-card"><div class="stat-label">总配额</div><div class="stat-value">{{ fmt(stats.total_quota) }}</div></div>
+      <div class="stat-card"><div class="stat-label">已用</div><div class="stat-value">{{ fmt(stats.total_used) }}</div></div>
+      <div class="stat-card"><div class="stat-label">今日签到</div><div class="stat-value">{{ stats.checked_in_today }}</div></div>
+    </div>
 
     <!-- Filter Bar -->
-    <div class="filter-bar" id="filterBar" style="display:none">
-      <span class="filter-label">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-        按添加日期筛选：
-      </span>
+    <div class="filter-bar" v-show="accounts.length">
+      <span class="filter-label">📅 按添加日期筛选：</span>
       <div class="filter-date-group">
-        <button class="btn btn-ghost btn-sm" onclick="setFilterDate(-2)">前天</button>
-        <button class="btn btn-ghost btn-sm" onclick="setFilterDate(-1)">昨天</button>
-        <button class="btn btn-ghost btn-sm" onclick="setFilterDate(0)">今天</button>
-        <span style="font-size:12px;color:var(--text-muted);margin:0 2px 0 6px;">指定日期:</span>
-        <div class="date-input-wrapper" style="position:relative">
-          <input type="date" id="filterDate" onchange="applyFilter();updateDatePh()" oninput="updateDatePh()" title="点击选择指定日期">
-          <span id="datePh" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:12px;pointer-events:none">选择日期</span>
+        <button class="btn btn-ghost btn-sm" @click="filterDate=dayOffset(-2)">前天</button>
+        <button class="btn btn-ghost btn-sm" @click="filterDate=dayOffset(-1)">昨天</button>
+        <button class="btn btn-ghost btn-sm" @click="filterDate=dayOffset(0)">今天</button>
+        <span style="font-size:12px;color:var(--text-muted);margin:0 2px 0 6px">指定:</span>
+        <div class="date-input-wrapper">
+          <input type="date" v-model="filterDate" placeholder="选择日期">
         </div>
       </div>
-      <span class="filter-chip" id="filterChip">
-        <span id="filterChipText"></span>
-        <span class="x" onclick="clearFilter()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg></span>
+      <span class="filter-chip" v-if="filterDate">
+        <span>{{ filterDate }}</span>
+        <span class="x" @click="filterDate=''">✕</span>
       </span>
-      <div class="status-filter-group">
-        <select class="status-filter-select" id="statusFilterSelect" onchange="setStatusFilter(this.value)">
-          <option value="all">全部状态</option>
-          <option value="normal">正常</option>
-          <option value="disabled">已禁用</option>
-          <option value="banned">已封禁</option>
-        </select>
+      <select class="status-filter-select" v-model="filterStatus">
+        <option value="all">全部状态</option>
+        <option value="normal">正常</option>
+        <option value="disabled">已禁用</option>
+        <option value="banned">已封禁</option>
+      </select>
+    </div>
+
+    <!-- Account Cards -->
+    <div class="account-grid" v-if="filteredAccounts.length">
+      <div class="card" v-for="a in filteredAccounts" :key="a.id" :class="{current:a.id===proxyCurrent, active:a.id===proxyCurrent&&proxyActive}">
+        <div class="card-header">
+          <div style="display:flex;align-items:center;flex:1;min-width:0">
+            <div class="card-avatar">{{ (a.nickname||a.email||'?')[0].toUpperCase() }}</div>
+            <div class="card-info">
+              <div class="card-name">{{ a.nickname || a.email || '未命名' }}</div>
+              <div class="card-email" v-if="a.email&&a.email!==(a.nickname||'')">{{ a.email }}</div>
+              <div class="card-meta">
+                <span class="current-badge" v-if="a.id===proxyCurrent">✓当前</span>
+                <span :class="'badge-status-'+ (a.status||'normal')">{{ statusText(a.status) }}</span>
+                <span :class="'badge badge-'+planBadge(a)">{{ planBadgeText(a) }}</span>
+                <span v-if="a.enterprise_name" style="font-size:11px;color:var(--text-muted)">🏢{{ a.enterprise_name }}</span>
+              </div>
+            </div>
+          </div>
+          <div class="checkin-status">
+            <template v-if="a._checkin!==null">
+              <span class="checkin-badge" :class="{done:a._checkin?.done, pending:!a._checkin?.done}">{{ a._checkin?.done ? '✓已签到' : '⏰未签到' }}</span>
+              <span class="streak-badge" v-if="a._checkin?.streak>0">🔥{{ a._checkin.streak }}天</span>
+            </template>
+            <span class="checkin-badge inactive" v-else>未开通</span>
+          </div>
+        </div>
+
+        <!-- Quota Bar (local deduction) -->
+        <div class="quota-section" v-if="quotaData(a)">
+          <div class="quota-header">
+            <span>已用 {{ fmt(quotaData(a).adjUsed) }} / 剩余 {{ fmt(Math.max(0, quotaData(a).adjRemain)) }}</span>
+            <span>{{ fmt(quotaData(a).total) }}</span>
+          </div>
+          <div class="quota-bar"><div class="quota-fill" :class="quotaData(a).cls" :style="{width:Math.min(quotaData(a).adjPct,100)+'%'}"></div></div>
+        </div>
+
+        <!-- Token Stats -->
+        <div v-if="statsRow(a)" style="display:flex;gap:4px;font-size:10px;color:var(--text-muted);padding:0 0 4px;flex-wrap:wrap;align-items:center;line-height:1.2">
+          <span>{{ statsRow(a).text }}</span>
+        </div>
+
+        <div class="card-footer">
+          <div class="card-actions">
+            <button class="btn btn-ghost btn-sm" @click="showQuotaDetail(a.id)">📊 详情</button>
+            <button class="btn btn-ghost btn-sm" @click="doCheckin(a.id)">✓ 签到</button>
+            <button class="btn btn-ghost btn-sm" @click="refreshOne(a.id)">🔄 刷新</button>
+            <button class="btn btn-ghost btn-sm btn-icon" v-if="(a.status||'normal')==='normal'" @click="setPriority(a.id)" title="设为优先调度">◎</button>
+            <button class="btn btn-ghost btn-sm" v-if="(a.status||'normal')!=='banned'" :style="{color:(a.status||'normal')==='disabled'?'#22c55e':'#f59e0b'}" @click="toggleAccountStatus(a.id)">
+              {{ (a.status||'normal')==='disabled' ? '▶ 启用' : '⏸ 禁用' }}
+            </button>
+            <button class="btn btn-danger btn-sm btn-icon" @click="deleteOne(a.id)" title="删除">🗑</button>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- Account Grid -->
-    <div class="account-grid" id="accountGrid"></div>
-  </div>
-
-  <!-- Shop Cards View -->
-  <div class="shop-cards" id="shopCardsView" style="display:none">
-    <div class="shop-cards-header">联营店铺</div>
-    <div class="shop-cards-desc">
-      <h4>关于流量卡</h4>
-      <p>市面上大多数便宜流量卡其实是<span class="desc-highlight">物联卡</span>——虚标流量、限速断网、充进去的钱说没就没了。<br>本店上架的华玥通讯和北极工坊，全是<span class="desc-highlight">正规运营商手机卡</span>，11 位手机号，官方 app 可查套餐，<span class="desc-highlight">不限速不虚标</span>，月租多少就是多少。觉得合适就办一张，不合适看看也无妨。</p>
+    <div class="empty-state" v-else-if="accounts.length===0">
+      <h3>暂无账号</h3>
+      <p>点击【OAuth 登录】或【文件导入】添加账号</p>
     </div>
-    <div class="shop-cards-grid">
-      <div class="shop-card" onclick="openShop('https://buy.bitlesu.com/', '奥瑞斯·星域')">
-        <img src="icons/kawang.png" class="shop-card-icon" alt="">
-        <span class="shop-card-name">奥瑞斯·星域</span>
-        <span class="shop-card-desc">WorkBuddy 等卡密自助秒发，寄卖即用</span>
-        <span class="shop-card-btn">进入店铺</span>
-      </div>
-      <div class="shop-card" onclick="openShop('https://sztc.rimian666.cn/ProductEn/Index/498fe9ed5fc34753', '华玥通讯')">
-        <img src="icons/liulaing1.png" class="shop-card-icon" alt="">
-        <span class="shop-card-name">华玥通讯</span>
-        <span class="shop-card-desc">正规运营商大流量套餐，官方可查，不限速不虚标</span>
-        <span class="shop-card-btn">进入店铺</span>
-      </div>
-      <div class="shop-card" onclick="openShop('https://h5.dandanhou.net/index?k=QlA1TGwvZVVFelk9', '北极工坊')">
-        <img src="icons/liuliang2.png" class="shop-card-icon" alt="">
-        <span class="shop-card-name">北极工坊</span>
-        <span class="shop-card-desc">多运营商套餐严选，11 位手机号，月租透明无套路</span>
-        <span class="shop-card-btn">进入店铺</span>
-      </div>
+    <div class="empty-state" v-else>
+      <h3>无匹配账号</h3>
+      <p>调整筛选条件试试</p>
     </div>
-  </div>
-
-  <!-- Shop iframe View -->
-  <div class="shop-view" id="shopView" style="display:none">
-    <div class="shop-toolbar">
-      <button class="btn btn-ghost btn-sm" onclick="showConsole()">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-        返回控制台
-      </button>
-      <span class="shop-name" id="shopName"></span>
-      <button class="btn btn-ghost btn-sm" onclick="openShopExternal()">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
-        浏览器打开
-      </button>
-    </div>
-    <iframe id="shopFrame" class="shop-frame"></iframe>
   </div>
 
   <!-- Logs View -->
-  <div class="logs-view" id="logsView" style="display:none">
+  <div class="logs-view" v-show="view==='logs'" style="flex:1">
     <div class="logs-toolbar">
       <span class="logs-title">运行日志</span>
       <div style="display:flex;gap:6px;align-items:center">
-        <label class="btn btn-ghost btn-sm" for="logEnabledToggle" style="cursor:pointer;user-select:none;white-space:nowrap;flex-shrink:0;background:var(--bg-tertiary);margin:0">
-          <input type="checkbox" id="logEnabledToggle" onchange="toggleLogEnabled()" checked style="cursor:pointer;margin:0;padding:0;width:13px;height:13px"> 记录
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer;user-select:none;white-space:nowrap;flex-shrink:0;background:var(--bg-tertiary);margin:0">
+          <input type="checkbox" v-model="logEnabled" @change="toggleLogEnabled" style="cursor:pointer;margin:0;padding:0;width:13px;height:13px"> 记录
         </label>
-        <select id="logEventFilter" onchange="refreshLogs()" style="font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-tertiary);color:var(--text-primary)">
+        <select v-model="logFilter" @change="loadLogs" style="font-size:12px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-tertiary);color:var(--text)">
           <option value="">全部类型</option>
           <option value="request">请求</option>
           <option value="success">成功</option>
           <option value="warning">警告</option>
           <option value="error">错误</option>
         </select>
-        <button class="btn btn-ghost btn-sm" onclick="clearLogs()" title="清除日志">清空</button>
-        <button class="btn btn-ghost btn-sm" onclick="refreshLogs()" title="刷新">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
-        </button>
+        <button class="btn btn-ghost btn-sm" @click="clearLogs">清空</button>
+        <button class="btn btn-ghost btn-sm" @click="loadLogs">🔄</button>
       </div>
     </div>
-    <div class="logs-list" id="logsList">
-      <div class="logs-empty">暂无日志，启动代理后请求会产生日志</div>
-    </div>
-  </div>
-</div>
-
-<!-- OAuth Modal -->
-<div class="modal-overlay" id="oauthModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>OAuth 授权登录</h2>
-      <p>请在浏览器中打开授权链接完成配置</p>
-    </div>
-    <div class="modal-body">
-      <div class="oauth-url-box" id="oauthUrl" style="background:var(--bg);padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;word-break:break-all;margin-bottom:14px;">加载中...</div>
-      <div id="oauthStatus">
-        <div style="text-align:center;padding:24px 0;color:var(--text-secondary);font-size:13px;">
-          <div class="spinner"></div>
-          <div>等待浏览器授权完成...</div>
-        </div>
+    <div class="logs-list">
+      <div class="logs-empty" v-if="!logs.length">暂无日志</div>
+      <div class="log-row" :class="'log-'+l.event" v-for="l in logs" :key="l.id">
+        <span class="log-time">{{ l._time }}</span>
+        <span class="log-badge" :class="'log-'+l.event">{{ logEventLabel(l.event) }}</span>
+        <span class="log-acct">{{ l.account_name || l.account_id || '-' }}</span>
+        <span class="log-model">{{ l.model||'' }}</span>
+        <span class="log-msg">{{ l.message||'' }}</span>
       </div>
     </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="cancelOAuth();closeModal('oauthModal')">取消</button>
-    </div>
   </div>
-</div>
 
-<!-- Import Modal -->
-<div class="modal-overlay" id="importModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>粘贴 Token / JSON 导入</h2>
-      <p>支持粘贴 access_token 字符串，或 JSON 账号数组对象</p>
-    </div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label>Token / JSON 内容</label>
-        <textarea id="importJson" placeholder='粘贴 access_token，例如：&#10;123456+eyJhbGciOi...&#10;&#10;也支持 JSON：&#10;{ "access_token": "...", "email": "..." }&#10;[{ "access_token": "..." }]'></textarea>
+  <!-- Shop Cards -->
+  <div class="shop-cards" v-show="view==='shop'" style="flex:1;overflow-y:auto">
+    <div class="shop-card" @click="openShop('https://www.kawang.com','奥瑞斯·星域')">
+      <div class="shop-card-img" style="background:linear-gradient(135deg,#667eea,#764ba2)">✦</div>
+      <div class="shop-card-body">
+        <div class="shop-card-title">奥瑞斯·星域</div>
+        <div class="shop-card-desc">流量卡代理平台，高性价比套餐任选</div>
+        <div class="shop-card-btn">进入店铺 →</div>
       </div>
     </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeModal('importModal')">取消</button>
-      <button class="btn btn-primary" onclick="doImport()">开始导入</button>
+    <div class="shop-card" @click="openShop('https://ka.weibo.com','华玥通讯')">
+      <div class="shop-card-img" style="background:linear-gradient(135deg,#f093fb,#f5576c)">♚</div>
+      <div class="shop-card-body">
+        <div class="shop-card-title">华玥通讯</div>
+        <div class="shop-card-desc">全网低价流量卡，稳定可靠</div>
+        <div class="shop-card-btn">进入店铺 →</div>
+      </div>
+    </div>
+    <div class="shop-card" @click="openShop('https://hk.yunhaoka.cn','北极工坊')">
+      <div class="shop-card-img" style="background:linear-gradient(135deg,#4facfe,#00f2fe)">❄</div>
+      <div class="shop-card-body">
+        <div class="shop-card-title">北极工坊</div>
+        <div class="shop-card-desc">多运营商套餐严选，月租透明</div>
+        <div class="shop-card-btn">进入店铺 →</div>
+      </div>
     </div>
   </div>
-</div>
 
-<!-- Confirm Modal -->
-<div class="modal-overlay" id="confirmModal">
-  <div class="modal" style="max-width:400px">
-    <div class="modal-header">
-      <h2 id="confirmTitle">确认操作</h2>
-      <p id="confirmMessage" style="white-space:pre-line"></p>
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" id="confirmCancelBtn">取消</button>
-      <button class="btn btn-danger" id="confirmOkBtn">确定</button>
-    </div>
+  <!-- Shop iframe -->
+  <div class="shop-toolbar" v-if="shopUrl" style="border-bottom:1px solid var(--border);padding:10px 16px">
+    <button class="btn btn-ghost btn-sm" @click="shopUrl=''">← 返回</button>
+    <span class="shop-name">{{ shopName }}</span>
+    <button class="btn btn-ghost btn-sm" @click="pywebview.api.open_external(shopUrl)">浏览器打开</button>
   </div>
+  <iframe v-if="shopUrl" class="shop-frame" :src="shopUrl"></iframe>
+
+</div>
 </div>
 
-<!-- Quota Detail Modal -->
-<div class="modal-overlay" id="quotaModal">
+<!-- Modals -->
+<div class="modal-overlay" v-if="showImport" @click.self="showImport=false">
   <div class="modal">
-    <div class="modal-header">
-      <h2>额度使用详情</h2>
-      <p id="quotaAccountName"></p>
+    <div class="modal-header"><h2>粘贴 Token</h2><button class="modal-close" @click="showImport=false">✕</button></div>
+    <div class="modal-body">
+      <textarea style="width:100%;height:120px;padding:8px;border-radius:6px;border:1px solid var(--border);font-size:12px;background:var(--bg);color:var(--text);resize:vertical" placeholder="粘贴 JSON 或 Token..." v-model="importText"></textarea>
     </div>
-    <div class="modal-body" id="quotaContent"></div>
     <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeModal('quotaModal')">关闭</button>
-      <button class="btn btn-primary" onclick="refreshQuota()">刷新配额</button>
+      <button class="btn btn-ghost btn-sm" @click="showImport=false">取消</button>
+      <button class="btn btn-primary btn-sm" @click="doImport">导入</button>
     </div>
   </div>
 </div>
 
-<!-- Changelog Modal -->
-<div class="modal-overlay" id="changelogModal">
-  <div class="modal changelog-modal">
-    <div class="modal-header">
-      <h2>更新日志</h2>
-      <button class="modal-close" onclick="closeModal('changelogModal')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-    </div>
+<div class="modal-overlay" v-if="showOAuth" @click.self="showOAuth=false">
+  <div class="modal">
+    <div class="modal-header"><h2>OAuth 登录</h2><button class="modal-close" @click="showOAuth=false">✕</button></div>
     <div class="modal-body">
-      <div class="changelog-version">v1.0.3</div>
-      <div class="changelog-date">2026-07-26</div>
+      <p style="margin-bottom:8px">点击下方按钮在浏览器中完成登录授权</p>
+      <input style="width:100%;padding:6px 8px;border-radius:4px;border:1px solid var(--border);font-size:12px;margin-bottom:8px;background:var(--bg);color:var(--text)" placeholder="协议（默认 https）" v-model="oauthProtocol">
+      <input style="width:100%;padding:6px 8px;border-radius:4px;border:1px solid var(--border);font-size:12px;margin-bottom:8px;background:var(--bg);color:var(--text)" placeholder="域名（默认 www.codebuddy.cn）" v-model="oauthDomain">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-primary btn-sm" @click="doOAuth">打开授权页面</button>
+    </div>
+  </div>
+</div>
 
+<div class="modal-overlay" v-if="showQuotaModal" @click.self="showQuotaModal=false">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header"><h2>额度详情</h2><button class="modal-close" @click="showQuotaModal=false">✕</button></div>
+    <div class="modal-body" v-html="quotaDetailHtml"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" v-if="showConfirm" @click.self="dismissConfirm">
+  <div class="modal">
+    <div class="modal-header"><h2>{{ confirmTitle }}</h2></div>
+    <div class="modal-body"><p>{{ confirmMsg }}</p></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" @click="dismissConfirm">取消</button>
+      <button class="btn btn-danger btn-sm" @click="confirmOK">确认</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" v-if="showChangelog" @click.self="showChangelog=false">
+  <div class="modal">
+    <div class="modal-header"><h2>更新日志</h2><button class="modal-close" @click="showChangelog=false">✕</button></div>
+    <div class="modal-body">
+      <div class="changelog-version">v1.0.3</div><div class="changelog-date">2026-07-26</div>
       <div class="changelog-section-title">🔧 额度计算修复</div>
-      <ul class="changelog-list">
-        <li>修复个人体验版等套餐额度显示为 0 的问题</li>
-        <li>对齐官方计算逻辑，正确合并多个资源包</li>
-        <li>仪表盘统计和卡片显示同步修正</li>
-      </ul>
-
+      <ul class="changelog-list"><li>修复个人体验版等套餐额度显示为 0 的问题</li><li>对齐官方计算逻辑，正确合并多个资源包</li><li>仪表盘统计和卡片显示同步修正</li></ul>
       <div class="changelog-section-title">📋 运行日志</div>
-      <ul class="changelog-list">
-        <li>新增运行日志面板，记录每次请求的账号和状态</li>
-        <li>支持按类型筛选（请求 / 成功 / 错误）</li>
-        <li>可一键清空，可关闭记录节省性能</li>
-      </ul>
-
+      <ul class="changelog-list"><li>新增运行日志面板，记录每次请求的账号和状态</li><li>支持按类型筛选（请求/成功/警告/错误）</li><li>可一键清空，可关闭记录节省性能</li></ul>
       <div class="changelog-section-title">⚡ 调度优化</div>
-      <ul class="changelog-list">
-        <li>冷却状态重启不丢失，到期自动恢复</li>
-        <li>区分额度耗尽、非法请求、临时错误的不同冷却策略</li>
-        <li>手动启用账号时自动清除运行时冷却</li>
-      </ul>
-
-      <div class="changelog-version" style="margin-top:24px">v1.0.2</div>
-      <div class="changelog-date">2026-07-26</div>
-
+      <ul class="changelog-list"><li>冷却状态重启不丢失，到期自动恢复</li><li>区分额度耗尽、非法请求、临时错误的不同冷却策略</li><li>手动启用账号时自动清除运行时冷却</li><li>换号阈值自动切换，无备用号时不切不弹死循环</li></ul>
+      <div class="changelog-version" style="margin-top:24px">v1.0.2</div><div class="changelog-date">2026-07-26</div>
       <div class="changelog-section-title">🎯 账号调度</div>
-      <ul class="changelog-list">
-        <li>实时显示当前正在使用的账号，排在列表第一位</li>
-        <li>请求处理中绿色光效提示，处理完自动消失</li>
-        <li>可手动指定优先使用的账号，重启后仍然记住</li>
-        <li>可手动禁用账号，禁用后不再参与调度</li>
-        <li>自动选择最优账号，无需手动干预</li>
-      </ul>
-
-      <div class="changelog-section-title">🛡️ 安全防护</div>
-      <ul class="changelog-list">
-        <li>自动检测被封禁的账号，标记后不再使用</li>
-        <li>封禁状态永久保存，避免重复尝试</li>
-        <li>封禁账号红色醒目标识</li>
-      </ul>
-
+      <ul class="changelog-list"><li>实时显示当前正在使用的账号</li><li>请求处理中绿色光效提示</li><li>可手动指定优先使用的账号，重启后仍然记住</li></ul>
       <div class="changelog-section-title">🎨 体验优化</div>
-      <ul class="changelog-list">
-        <li>账号状态筛选（全部 / 正常 / 禁用 / 封禁）</li>
-        <li>签到状态移至卡片右上角，一目了然</li>
-        <li>日期筛选器中文化</li>
-        <li>界面细节打磨，整体更清爽</li>
-      </ul>
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-primary" onclick="closeModal('changelogModal')">知道了</button>
+      <ul class="changelog-list"><li>账号状态筛选、签到状态优化</li></ul>
     </div>
   </div>
 </div>
 
 <!-- Toast -->
-<div class="toast" id="toast"></div>
+<transition name="fade">
+  <div class="toast" v-if="toast.msg" :class="toast.type">{{ toast.msg }}</div>
+</transition>
 
+</div>
+</div>
+
+<script src="vue.global.prod.js"></script>
 <script>
-let currentPlatform = 'workbuddy';
-let currentAccounts = [];
-let oauthTimer = null;
-let quotaAccountId = null;
-let proxyCurrentAccount = null;
-let proxyActive = false;
-let proxyInfoTimer = null;
-let statusFilter = 'all';
+const { createApp, ref, computed, reactive, onMounted, onUnmounted, watch, nextTick } = Vue;
 
-// ===== Platform Switch =====
-function switchPlatform(platform) {
-  currentPlatform = platform;
-  loadAccounts();
-}
-
-// ===== Shop / Console View Switch =====
-let currentShopUrl = '';
-
-function showConsole() {
-  document.getElementById('consoleHeader').style.display = '';
-  document.getElementById('main').style.display = '';
-  document.getElementById('shopCardsView').style.display = 'none';
-  document.getElementById('shopView').style.display = 'none';
-  document.getElementById('logsView').style.display = 'none';
-  const frame = document.getElementById('shopFrame');
-  if (frame) frame.src = '';
-  document.querySelectorAll('.sidebar .nav-item').forEach(t => t.classList.toggle('active', t.dataset.view === 'console'));
-}
-
-function showShopCards() {
-  document.getElementById('consoleHeader').style.display = 'none';
-  document.getElementById('main').style.display = 'none';
-  document.getElementById('shopView').style.display = 'none';
-  document.getElementById('logsView').style.display = 'none';
-  document.getElementById('shopCardsView').style.display = '';
-  document.querySelectorAll('.sidebar .nav-item').forEach(t => t.classList.toggle('active', t.dataset.view === 'shop-cards'));
-}
-
-function showLogs() {
-  document.getElementById('consoleHeader').style.display = 'none';
-  document.getElementById('main').style.display = 'none';
-  document.getElementById('shopCardsView').style.display = 'none';
-  document.getElementById('shopView').style.display = 'none';
-  document.getElementById('logsView').style.display = '';
-  document.querySelectorAll('.sidebar .nav-item').forEach(t => t.classList.toggle('active', t.dataset.view === 'logs'));
-  (async () => {
-    try {
-      const r = JSON.parse(await pywebview.api.get_log_enabled());
-      document.getElementById('logEnabledToggle').checked = r.enabled;
-    } catch(e) {}
-    refreshLogs();
-  })();
-}
-
-async function exportAccounts() {
-  try {
-    const data = await pywebview.api.export_accounts(currentPlatform);
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `accounts_${currentPlatform}_${new Date().toISOString().slice(0,10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('导出成功', 'success');
-  } catch(e) { showToast('导出失败', 'error'); }
-}
-
-async function saveQuotaThreshold(val) {
-  try {
-    await pywebview.api.set_quota_threshold(parseFloat(val) || 0);
-    showToast(`换号阈值已设为 ${parseFloat(val) || 0}`, 'success');
-  } catch(e) {}
-}
-
-async function loadQuotaThreshold() {
-  try {
-    const r = JSON.parse(await pywebview.api.get_quota_threshold());
-    const el = document.getElementById('quotaThresholdInput');
-    if (el) el.value = r.threshold || 0;
-  } catch(e) {}
-}
-
-async function toggleLogEnabled() {
-  const cb = document.getElementById('logEnabledToggle');
-  try {
-    await pywebview.api.set_log_enabled(cb.checked);
-  } catch(e) { console.error(e); }
-}
-
-async function refreshLogs() {
-  const ev = document.getElementById('logEventFilter').value;
-  try {
-    const data = await pywebview.api.get_logs("workbuddy", 200, 0, ev);
-    if (!data) return;
-    const r = JSON.parse(data);
-    const list = document.getElementById('logsList');
-    if (!r.logs || r.logs.length === 0) {
-      list.innerHTML = '<div class="logs-empty">暂无日志，启动代理后请求会产生日志</div>';
-      return;
-    }
-    list.innerHTML = r.logs.map(l => {
-      const cls = l.event === 'success' ? 'log-success' : l.event === 'error' ? 'log-error' : 'log-request';
-      const badge = l.event === 'success' ? '成功' : l.event === 'error' ? '错误' : '请求';
-      const name = l.account_name || l.account_id || '-';
-      return `<div class="log-row ${cls}">
-        <span class="log-time">${l._time}</span>
-        <span class="log-badge ${cls}">${badge}</span>
-        <span class="log-acct">${name}</span>
-        <span class="log-model">${l.model || ''}</span>
-        <span class="log-msg">${l.message || ''}</span>
-      </div>`;
-    }).join('');
-  } catch(e) { console.error(e); }
-}
-
-async function clearLogs() {
-  if (!await showConfirm('确定清空所有运行日志？')) return;
-  try {
-    await pywebview.api.clear_logs("workbuddy");
-    document.getElementById('logsList').innerHTML = '<div class="logs-empty">日志已清空</div>';
-  } catch(e) { console.error(e); }
-}
-
-function openShop(url, name) {
-  document.getElementById('shopCardsView').style.display = 'none';
-  document.getElementById('shopView').style.display = 'flex';
-  document.getElementById('shopName').textContent = name;
-  document.getElementById('shopFrame').src = url;
-  currentShopUrl = url;
-}
-
-function openShopExternal() {
-  if (currentShopUrl) pywebview.api.open_external(currentShopUrl);
-}
-
-// ===== Toast =====
-function showToast(msg, type = 'info') {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = `toast ${type === 'warning' ? 'warning' : type === 'error' ? 'error' : type === 'success' ? 'success' : 'info'} show`;
-  setTimeout(() => el.classList.remove('show'), 3000);
-}
-
-// ===== Button Loading =====
-function btnLoading(btn) {
-  if (!btn || btn.tagName !== 'BUTTON') return;
-  btn._origHTML = btn.innerHTML;
-  btn.disabled = true;
-  btn.classList.add('btn-loading');
-  btn.innerHTML = '<span class="spinner-sm"></span>';
-}
-function btnDone(btn) {
-  if (!btn || btn.tagName !== 'BUTTON') return;
-  btn.disabled = false;
-  btn.classList.remove('btn-loading');
-  if (btn._origHTML) btn.innerHTML = btn._origHTML;
-}
-
-// ===== Modal Helpers =====
-function showModal(id) { document.getElementById(id).classList.add('show'); }
-function closeModal(id) {
-  document.getElementById(id).classList.remove('show');
-  if (id === 'oauthModal') cancelOAuth();
-}
-function showConfirm(msg, title) {
-  title = title || '确认操作';
-  var isLight = document.documentElement.getAttribute('data-theme') === 'light';
-  return new Promise(function(resolve) {
-    var ov = document.createElement('div');
-    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;';
-    var box = document.createElement('div');
-    var bg = isLight ? '#ffffff' : '#141b2d';
-    var fg = isLight ? '#0f172a' : '#f8fafc';
-    var sub = isLight ? '#475569' : '#cbd5e1';
-    var bd = isLight ? '#d0d7de' : 'rgba(255,255,255,0.12)';
-    box.style.cssText = 'background:' + bg + ';color:' + fg + ';border:1px solid ' + bd + ';padding:24px;border-radius:12px;max-width:380px;min-width:280px;box-shadow:0 8px 24px rgba(0,0,0,0.3)';
-    var h = document.createElement('div');
-    h.textContent = title;
-    h.style.cssText = 'font-size:16px;font-weight:700;margin-bottom:8px;color:' + fg;
-    var p = document.createElement('div');
-    p.textContent = msg;
-    p.style.cssText = 'white-space:pre-line;margin-bottom:20px;font-size:13px;line-height:1.5;color:' + sub;
-    var row = document.createElement('div');
-    row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
-    var bNo = document.createElement('button');
-    bNo.textContent = '取消';
-    bNo.style.cssText = 'padding:7px 16px;background:transparent;color:' + fg + ';border:1px solid ' + bd + ';border-radius:6px;cursor:pointer;font-size:13px';
-    var bYes = document.createElement('button');
-    bYes.textContent = '确定';
-    bYes.style.cssText = 'padding:7px 16px;background:#ef4444;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px';
-    row.appendChild(bNo); row.appendChild(bYes);
-    box.appendChild(h); box.appendChild(p); box.appendChild(row);
-    ov.appendChild(box);
-    document.body.appendChild(ov);
-    function done(v) { document.body.removeChild(ov); resolve(v); }
-    bYes.onclick = function() { done(true); };
-    bNo.onclick = function() { done(false); };
-  });
-}
-
-// ===== Load Accounts =====
-async function loadAccountsLight() {
-  try {
-    const raw = await pywebview.api.list_accounts(currentPlatform);
-    const fresh = JSON.parse(raw);
-    const freshMap = {};
-    fresh.forEach(a => freshMap[a.id] = a);
-    currentAccounts = currentAccounts.map(a => freshMap[a.id] || a).filter(a => freshMap[a.id]);
-    fresh.forEach(a => { if (!currentAccounts.find(x => x.id === a.id)) currentAccounts.push(a); });
-    renderStats();
-    buildFilter();
-    renderAccounts();
-  } catch (e) {}
-}
-
-let accountStats = {};
-
-async function loadAccounts() {
-  try {
-    const [raw, statsRaw] = await Promise.all([
-      pywebview.api.list_accounts(currentPlatform),
-      pywebview.api.get_all_stats(currentPlatform),
-    ]);
-    currentAccounts = JSON.parse(raw);
-    try {
-      const sd = JSON.parse(statsRaw);
-      accountStats = {};
-      (sd.stats || []).forEach(s => { accountStats[s.account_id] = s; });
-    } catch {}
-    renderStats();
-    buildFilter();
-    loadQuotaThreshold();
-    // 网关未运行时，从 DB 恢复优先账号标注
-    if (!proxyRunning) {
-      try {
-        const pr = await pywebview.api.get_priority_account();
-        const pd = JSON.parse(pr);
-        if (pd.priority) proxyCurrentAccount = pd.priority;
-      } catch {}
-    }
-    renderAccounts();
-    if (currentAccounts.length > 0) {
-      pywebview.api.batch_checkin_status(currentPlatform).then(() => loadAccountsLight()).catch(() => {});
-    }
-  } catch (e) {
-    currentAccounts = [];
-    renderStats();
-    buildFilter();
-    loadQuotaThreshold();
-    renderAccounts();
-  }
-}
-
-function renderStats() {
-  const el = document.getElementById('stats');
-  el.innerHTML = `
-    <div class="stat-card">
-      <div class="stat-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div>
-      <div class="stat-text"><div class="stat-label">总账号</div><div class="stat-value" id="statTotal">-</div></div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg></div>
-      <div class="stat-text"><div class="stat-label">已用 / 总量</div><div class="stat-value" id="statQuota">-</div></div>
-    </div>
-    <!-- 今日签到卡片保留代码，不渲染显示 -->
-    <div class="stat-card" style="display:none">
-      <div class="stat-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></div>
-      <div class="stat-text"><div class="stat-label">今日签到</div><div class="stat-value" id="statCheckin">-</div></div>
-    </div>
-  `;
-  pywebview.api.get_stats(currentPlatform).then(raw => {
-    const d = JSON.parse(raw);
-    const qStr = `${fmt(d.total_used)} / ${fmt(d.total_quota)}`;
-    const totalEl = document.getElementById('statTotal');
-    if (totalEl) totalEl.textContent = d.total_accounts;
-    const quotaEl = document.getElementById('statQuota');
-    if (quotaEl) {
-      quotaEl.textContent = qStr;
-      quotaEl.title = qStr;
-    }
-    const checkinEl = document.getElementById('statCheckin');
-    if (checkinEl) checkinEl.textContent = d.checked_in_today;
-  }).catch(() => {});
-}
-
-function dateStr(d) {
-  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-}
-
-function friendlyDate(val) {
-  if (!val) return '';
-  const p = val.split('-');
-  if (p.length !== 3) return val;
-  return `${p[0]}年${parseInt(p[1],10)}月${parseInt(p[2],10)}日`;
-}
-
-function updateFilterChip() {
-  const val = document.getElementById('filterDate').value;
-  const chip = document.getElementById('filterChip');
-  if (val) {
-    document.getElementById('filterChipText').textContent = friendlyDate(val);
-    chip.classList.add('show');
-  } else {
-    chip.classList.remove('show');
-  }
-}
-
-function buildFilter() {
-  document.getElementById('filterBar').style.display = currentAccounts.length ? 'flex' : 'none';
-  updateDatePh();
-}
-
-function setFilterDate(offset) {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  document.getElementById('filterDate').value = dateStr(d);
-  applyFilter();
-  updateDatePh();
-}
-
-function applyFilter() {
-  updateFilterChip();
-  updateDatePh();
-  renderAccounts();
-}
-
-function clearFilter() {
-  document.getElementById('filterDate').value = '';
-  updateFilterChip();
-  updateDatePh();
-  renderAccounts();
-}
-
-function updateDatePh() {
-  const input = document.getElementById('filterDate');
-  const ph = document.getElementById('datePh');
-  if (!input || !ph) return;
-  if (input.value) {
-    input.classList.remove('empty');
-    ph.style.display = 'none';
-  } else {
-    input.classList.add('empty');
-    ph.style.display = '';
-  }
-}
-
-function getFilteredAccounts() {
-  let result = currentAccounts;
-  if (statusFilter !== 'all') {
-    result = result.filter(a => (a.status || 'normal') === statusFilter);
-  }
-  const val = document.getElementById('filterDate').value;
-  if (val) {
-    result = result.filter(a => {
-      if (!a.created_at) return false;
-      const d = new Date(a.created_at * 1000);
-      return dateStr(d) === val;
-    });
-  }
-  if (proxyCurrentAccount) {
-    result = [...result].sort((a, b) => {
-      if (a.id === proxyCurrentAccount) return -1;
-      if (b.id === proxyCurrentAccount) return 1;
-      return 0;
-    });
-  }
-  return result;
-}
-
-function renderAccounts() {
-  const filtered = getFilteredAccounts();
-  const el = document.getElementById('accountGrid');
-  if (!filtered.length) {
-    if (currentAccounts.length) {
-      el.innerHTML = `
-        <div class="empty-state">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-          <h3>无匹配账号</h3>
-          <p>尝试调整日期筛选条件</p>
-        </div>
-      `;
-    } else {
-      el.innerHTML = `
-        <div class="empty-state">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/></svg>
-          <h3>暂无配置账号</h3>
-          <p>请点击右上角【OAuth 登录】或【文件导入】添加账号</p>
-        </div>
-      `;
-    }
-    return;
-  }
-
-  el.innerHTML = filtered.map(a => {
-    const avatarChar = (a.nickname || a.email || '?')[0].toUpperCase();
-    const planBadge = getPlanBadge(a);
-    const quotaData = parseQuota(a);
-    const checkinData = parseCheckin(a);
-    const displayName = a.nickname || a.email || '未命名';
-    const showEmail = a.email && a.email !== displayName;
-
-    return `
-      <div class="card" data-account-id="${a.id}">
-        <div class="card-header">
-          <div style="display:flex;align-items:center;flex:1;min-width:0">
-            <div class="card-avatar">${avatarChar}</div>
-            <div class="card-info">
-              <div class="card-name">${escapeHtml(displayName)}</div>
-              ${showEmail ? `<div class="card-email">${escapeHtml(a.email)}</div>` : ''}
-              <div class="card-meta">
-                ${a.id === proxyCurrentAccount ? '<span class="current-badge"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg>当前</span>' : ''}
-                ${getStatusBadge(a)}
-                ${planBadge}
-                ${a.enterprise_name ? `<span style="font-size:11px;color:var(--text-muted)"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 6h2M13 6h2M9 10h2M13 10h2M9 14h2M13 14h2"/></svg> ${escapeHtml(a.enterprise_name)}</span>` : ''}
-              </div>
-            </div>
-          </div>
-          <div class="checkin-status">
-            ${checkinData !== null ? `
-              <span class="checkin-badge ${checkinData.done ? 'done' : 'pending'}">
-                ${checkinData.done
-                  ? '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-1px"><path d="M5 13l4 4L19 7"/></svg> 已签到'
-                  : '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> 未签到'}
-              </span>
-              ${checkinData.streak > 0 ? `<span class="streak-badge"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><path d="M8 2c0 4-3 6-3 9 0 4 3 7 7 7s7-3 7-7c0-3-2-5-3-7 0 3-2 5-4 5s-4-3-4-7z"/><path d="M12 22v-4"/></svg> ${checkinData.streak}天</span>` : ''}
-            ` : `<span class="checkin-badge inactive">未开通</span>`}
-          </div>
-        </div>
-
-        ${quotaData ? `
-        ${(() => {
-          const pc = accountStats[a.id]?.total_credit || 0;
-          const adjUsed = quotaData.used + pc;
-          const adjRemain = quotaData.total - adjUsed;
-          const adjPct = quotaData.total > 0 ? Math.round(adjUsed / quotaData.total * 100) : 0;
-          return `<div class="quota-section">
-            <div class="quota-header">
-              <span>已用 ${fmt(adjUsed)} / 剩余 ${fmt(Math.max(0, adjRemain))}</span>
-              <span>${fmt(quotaData.total)}</span>
-            </div>
-            <div class="quota-bar"><div class="quota-fill ${adjPct >= 80 ? 'danger' : adjPct >= 50 ? 'warning' : ''}" style="width:${Math.min(adjPct, 100)}%"></div></div>
-          </div>`;
-        })()}` : ''}
-
-        ${(() => {
-          const s = accountStats[a.id];
-          if (!s || !s.request_count) return '';
-          const hits = s.cache_hits || 0, misses = s.cache_misses || 0;
-          const hitRate = (hits + misses) > 0 ? (hits / (hits + misses) * 100).toFixed(1) : 0;
-          return `<div style="display:flex;gap:4px;font-size:10px;color:var(--text-muted);padding:0 0 4px;flex-wrap:wrap;align-items:center;line-height:1.2">
-            <span>次数:${s.request_count}</span>
-            <span>·</span>
-            <span>Token:↑${fmtK(s.prompt_tokens)} ↓${fmtK(s.completion_tokens)}</span>
-            <span>·</span>
-            <span>消耗:${fmtL(s.lifetime_credit)}</span>
-            <span>·</span>
-            <span>缓存命中率:${hitRate}%</span>
-          </div>`;
-        })()}
-
-        <div class="card-footer">
-          <div class="card-actions">
-            <button class="btn btn-ghost btn-sm" onclick="showQuotaDetail('${a.id}')" title="额度详情"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M4 16l4-8 4 4 4-6 4 8"/></svg> 详情</button>
-            <button class="btn btn-ghost btn-sm" onclick="doCheckin('${a.id}')" title="签到"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> 签到</button>
-            <button class="btn btn-ghost btn-sm" onclick="refreshOne('${a.id}')" title="刷新"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg> 刷新</button>
-            ${(a.status || 'normal') === 'normal' ? `<button class="btn btn-ghost btn-sm btn-icon" onclick="setPriorityAccount('${a.id}')" title="设为优先调度"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></button>` : ''}
-            ${(a.status || 'normal') === 'banned' ? '' : `<button class="btn btn-ghost btn-sm" style="color:${(a.status || 'normal') === 'disabled' ? '#22c55e' : '#f59e0b'}" onclick="toggleAccountStatus('${a.id}')">${(a.status || 'normal') === 'disabled' ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg> 启用' : '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> 禁用'}</button>`}
-            <button class="btn btn-danger btn-sm btn-icon" onclick="deleteOne('${a.id}')" title="删除"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
-  updateAccountHighlight();
-}
-
-// ===== Helpers =====
-function escapeHtml(s) {
-  if (!s) return '';
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
-
-function getStatusBadge(a) {
-  const s = a.status || 'normal';
-  if (s === 'banned') return '<span class="badge-status-banned">封禁</span>';
-  if (s === 'disabled') return '<span class="badge-status-disabled">已禁用</span>';
-  return '<span class="badge-status-normal">正常</span>';
-}
-
-async function toggleAccountStatus(id) {
-  const acc = currentAccounts.find(a => a.id === id);
-  if (!acc) return;
-  const newStatus = (acc.status === 'normal') ? 'disabled' : 'normal';
-  try {
-    const raw = await pywebview.api.set_account_status(currentPlatform, id, newStatus);
-    const r = JSON.parse(raw);
-    if (r.ok) {
-      acc.status = newStatus;
-      await refreshProxyStatus();
-      await loadAccounts();
-      showToast(newStatus === 'disabled' ? '已禁用' : '已启用', 'success');
-    } else {
-      showToast(r.error || '操作失败', 'error');
-    }
-  } catch (e) {}
-}
-
-async function setPriorityAccount(id) {
-  try {
-    const raw = await pywebview.api.set_priority_account(currentPlatform, id);
-    const r = JSON.parse(raw);
-    if (r.ok) {
-      proxyCurrentAccount = id;
-      updateAccountHighlight();
-      renderAccounts();
-      showToast('已设为优先调度', 'success');
-    }
-  } catch (e) {}
-}
-
-function setStatusFilter(s) {
-  statusFilter = s;
-  renderAccounts();
-}
-
-function showChangelog() { showModal('changelogModal'); }
-
-function getPlanBadge(a) {
-  const code = a.dosage_notify_code || a.plan_type || '';
-  const pkg = a.quota_raw?.userResource?.data?.Response?.Data?.Accounts;
-  let isPro = false, isEnterprise = false, isTrial = false;
-  if (pkg) {
-    for (const r of pkg) {
-      const pc = r.PackageCode || '';
-      if (['TCACA_code_002_AkiJS3ZHF5', 'TCACA_code_003_FAnt7lcmRT'].includes(pc)) isPro = true;
-      if (pc === 'TCACA_code_006_DbXS0lrypC' || pc === 'TCACA_code_007_nzdH5h4Nl0') isTrial = true;
-    }
-  }
-  if (a.enterprise_id || a.enterprise_name) isEnterprise = true;
-
-  if (isEnterprise) return '<span class="badge badge-enterprise">企业版</span>';
-  if (isPro) return '<span class="badge badge-pro">Pro</span>';
-  if (isTrial) return '<span class="badge badge-trial">Free</span>';
-  return '<span class="badge badge-free">Free</span>';
-}
-
-function _n(v) {
-  if (v == null) return 0;
-  if (typeof v === 'number') return v;
-  const n = Number(v);
-  return isNaN(n) ? 0 : n;
-}
-function _pickN(item, keys) {
-  for (const k of keys) {
-    if (item[k] != null) return _n(item[k]);
-  }
-  return 0;
-}
-function fmt(n) {
-  return _n(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
-}
-function fmtK(n) {
-  const v = _n(n);
-  if (v >= 100000000) return (v / 100000000).toFixed(1) + '亿';
-  if (v >= 10000) return (v / 10000).toFixed(1) + 'w';
-  if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
-  return String(v);
-}
-function fmtL(n) {
-  const v = _n(n);
-  if (v >= 10000) return (v / 10000).toFixed(1) + 'w';
-  if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
-  return v.toFixed(2);
-}
-
-function parseQuota(a) {
-  try {
-    const qr = a.quota_raw;
-    if (!qr) return null;
-    const ur = qr.userResource || a.usage_raw;
-    if (!ur) return null;
-    const accts = ur.data?.Response?.Data?.Accounts || [];
-    if (!accts.length) return null;
-    let total = 0, used = 0;
-    for (const r of accts) {
-      const st = _n(r.Status);
-      if (st !== 0 && st !== 3) continue;
-      const t = _pickN(r, ['CycleCapacitySizePrecise', 'CycleCapacitySize', 'CapacitySizePrecise', 'CapacitySize']);
-      const remain = _pickN(r, ['CycleCapacityRemainPrecise', 'CycleCapacityRemain', 'CapacityRemainPrecise', 'CapacityRemain']);
-      if (t <= 0) continue;
-      total += t;
-      used += Math.max(0, t - remain);
-    }
-    if (total === 0) return null;
-    return { total, used, pct: Math.round((used / total) * 100) };
-  } catch { return null; }
-}
-
-function parseCheckin(a) {
-  const today = Math.floor(Date.now() / 1000);
-  const dayStart = today - (today % 86400);
-  const lt = a.last_checkin_time;
-  const done = lt ? lt >= dayStart : false;
-  return { done, streak: a.checkin_streak || 0 };
-}
-
-// ===== Actions =====
-async function refreshAll() {
-  const btn = event?.currentTarget;
-  btnLoading(btn);
-  try {
-    const raw = await pywebview.api.refresh_all(currentPlatform);
-    const r = JSON.parse(raw);
-    showToast(`刷新完成: ${r.success}/${r.total}`, r.success > 0 ? 'success' : 'info');
-    await loadAccounts();
-  } catch (e) { showToast('刷新失败: ' + e, 'error'); }
-  finally { btnDone(btn); }
-}
-
-async function refreshOne(id) {
-  const btn = event?.currentTarget;
-  btnLoading(btn);
-  try {
-    const raw = await pywebview.api.refresh_token(currentPlatform, id);
-    const r = JSON.parse(raw);
-    if (r.error) { showToast(r.error, 'error'); return; }
-    showToast('刷新成功', 'success');
-    await loadAccountsLight();
-    await refreshAccountStats();
-  } catch (e) { showToast('刷新失败: ' + e, 'error'); }
-  finally { btnDone(btn); }
-}
-
-async function deleteOne(id) {
-  if (!await showConfirm('确认删除该账号？', '删除账号')) return;
-  const btn = event?.currentTarget;
-  btnLoading(btn);
-  try {
-    await pywebview.api.delete_account(currentPlatform, id);
-    showToast('已删除', 'success');
-    await loadAccountsLight();
-  } catch (e) { showToast('删除失败: ' + e, 'error'); }
-  finally { btnDone(btn); }
-}
-
-// ===== OAuth =====
-async function showOAuthModal() {
-  showModal('oauthModal');
-  document.getElementById('oauthUrl').textContent = '正在获取登录链接...';
-  document.getElementById('oauthStatus').innerHTML = `
-    <div style="text-align:center;padding:24px 0;color:var(--text-secondary);font-size:13px;">
-      <div class="spinner"></div>
-      <div style="margin-top:8px;">等待授权完成...</div>
-    </div>
-  `;
-
-  try {
-    const raw = await pywebview.api.oauth_start(currentPlatform);
-    const r = JSON.parse(raw);
-    if (r.error) { showToast(r.error, 'error'); closeModal('oauthModal'); return; }
-
-    document.getElementById('oauthUrl').textContent = r.verification_uri;
-
-    document.getElementById('oauthStatus').innerHTML = `
-      <div style="margin-bottom:14px;display:flex;gap:8px;justify-content:center;">
-        <button class="btn btn-primary btn-sm" onclick="window.open('${r.verification_uri}', '_blank')">打开浏览器链接</button>
-        <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${r.verification_uri}')">复制链接</button>
-      </div>
-      <div style="text-align:center;padding:16px 0;color:var(--text-secondary);font-size:13px;">
-        <div class="spinner"></div>
-        <div style="margin-top:8px;">等待浏览器授权完成...</div>
-      </div>
-    `;
-
-    startOAuthPolling(r.login_id);
-  } catch (e) {
-    showToast('启动 OAuth 失败: ' + e, 'error');
-    closeModal('oauthModal');
-  }
-}
-
-function startOAuthPolling(loginId) {
-  if (oauthTimer) clearInterval(oauthTimer);
-  oauthTimer = setInterval(async () => {
-    try {
-      const raw = await pywebview.api.oauth_poll(loginId);
-      const r = JSON.parse(raw);
-      if (r.status === 'completed') {
-        clearInterval(oauthTimer);
-        oauthTimer = null;
-        await completeOAuth(r.data);
-      } else if (r.error) {
-        clearInterval(oauthTimer);
-        oauthTimer = null;
-        showToast(r.error, 'error');
-        closeModal('oauthModal');
+createApp({
+  data() { return {
+    platform: 'workbuddy',
+    view: 'console',
+    accounts: [],
+    accountStats: {},
+    stats: { total_accounts: 0, total_quota: 0, total_used: 0, checked_in_today: 0 },
+    proxyRunning: false, proxyPort: 8001, proxyPass: '', proxyActive: false, proxyCurrent: null,
+    proxyUrl: 'http://127.0.0.1:8001/v1',
+    threshold: 0,
+    filterDate: '', filterStatus: 'all',
+    toast: reactive({ msg: '', type: 'success' }),
+    logs: [], logFilter: '', logEnabled: true,
+    showImport: false, showOAuth: false, showQuotaModal: false, showConfirm: false, showChangelog: false,
+    confirmTitle: '', confirmMsg: '', confirmCb: null,
+    importText: '', oauthProtocol: 'https', oauthDomain: 'www.codebuddy.cn',
+    quotaDetailHtml: '',
+    shopUrl: '', shopName: '',
+    proxyPollTimer: null,
+  }},
+  computed: {
+    filteredAccounts() {
+      let list = this.accounts;
+      if (this.filterStatus !== 'all') list = list.filter(a => (a.status||'normal') === this.filterStatus);
+      if (this.filterDate) {
+        const d = this.filterDate;
+        list = list.filter(a => a.created_at && new Date(a.created_at*1000).toISOString().slice(0,10) === d);
       }
-    } catch (e) {}
-  }, 1500);
-}
+      if (this.proxyCurrent) list.sort((a,b) => (a.id===this.proxyCurrent?-1:0)-(b.id===this.proxyCurrent?-1:0));
+      return list;
+    },
+  },
+  methods: {
+    // helpers
+    _n(v) { if (v==null) return 0; if (typeof v==='number') return v; let n=Number(v); return isNaN(n)?0:n; },
+    fmt(n) { return this._n(n).toLocaleString('en-US',{maximumFractionDigits:2}); },
+    fmtK(n) { let v=this._n(n); if(v>=1e8)return (v/1e8).toFixed(1)+'亿'; if(v>=1e4)return (v/1e4).toFixed(1)+'w'; if(v>=1e3)return (v/1e3).toFixed(1)+'k'; return String(v); },
+    fmtL(n) { let v=this._n(n); if(v>=1e4)return (v/1e4).toFixed(1)+'w'; if(v>=1e3)return (v/1e3).toFixed(1)+'k'; return v.toFixed(2); },
+    dayOffset(d) { let dt=new Date(); dt.setDate(dt.getDate()+d); return dt.toISOString().slice(0,10); },
+    escapeHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; },
+    async api(method, ...args) {
+      try { const r=await pywebview.api[method](...args); return JSON.parse(r); } catch(e) { return null; }
+    },
 
-async function completeOAuth(data) {
-  try {
-    const raw = await pywebview.api.complete_oauth_and_save(currentPlatform, JSON.stringify(data));
-    const r = JSON.parse(raw);
-    if (r.error) { showToast(r.error, 'error'); return; }
-    showToast(`登录成功: ${r.email}`, 'success');
-    closeModal('oauthModal');
-    await loadAccounts();
-  } catch (e) {
-    showToast('保存账号失败: ' + e, 'error');
-  }
-}
+    statusText(s) { return s==='banned'?'封禁':s==='disabled'?'已禁用':'正常'; },
+    planBadge(a) {
+      let pkg=a.quota_raw?.userResource?.data?.Response?.Data?.Accounts, isPro=false, isTrial=false;
+      if(pkg) for(let r of pkg) {
+        let pc=r.PackageCode||'';
+        if(['TCACA_code_002_AkiJS3ZHF5','TCACA_code_003_FAnt7lcmRT'].includes(pc)) isPro=true;
+        if(pc==='TCACA_code_006_DbXS0lrypC'||pc==='TCACA_code_007_nzdH5h4Nl0') isTrial=true;
+      }
+      if(a.enterprise_id||a.enterprise_name) return 'enterprise';
+      if(isPro) return 'pro';
+      if(isTrial) return 'trial';
+      return 'free';
+    },
+    planBadgeText(a) { let b=this.planBadge(a); return b==='enterprise'?'企业版':b==='pro'?'Pro':'Free'; },
 
-function cancelOAuth() {
-  if (oauthTimer) { clearInterval(oauthTimer); oauthTimer = null; }
-  try { pywebview.api.oauth_cancel(); } catch(e) {}
-}
+    quotaData(a) {
+      if(!a.quota_raw) return null;
+      let ur=a.quota_raw.userResource||a.usage_raw; if(!ur) return null;
+      let accts=ur.data?.Response?.Data?.Accounts||[]; if(!accts.length) return null;
+      let total=0, used=0;
+      for(let r of accts) {
+        let st=this._n(r.Status); if(st!==0&&st!==3) continue;
+        let t=this._pickN(r,['CycleCapacitySizePrecise','CycleCapacitySize','CapacitySizePrecise','CapacitySize']);
+        let rem=this._pickN(r,['CycleCapacityRemainPrecise','CycleCapacityRemain','CapacityRemainPrecise','CapacityRemain']);
+        if(t<=0) continue;
+        total+=t; used+=Math.max(0,t-rem);
+      }
+      if(total===0) return null;
+      let pc=this.accountStats[a.id]?.total_credit||0;
+      let adjUsed=used+pc, adjRemain=total-adjUsed, adjPct=total>0?Math.round(adjUsed/total*100):0;
+      return {total,used,pc,adjUsed,adjRemain,adjPct,cls:adjPct>=80?'danger':adjPct>=50?'warning':''};
+    },
+    _pickN(item,keys){ for(let k of keys){ if(item[k]!=null) return this._n(item[k]); } return 0; },
 
-// ===== Import =====
-function showImportModal() {
-  document.getElementById('importJson').value = '';
-  showModal('importModal');
-}
+    statsRow(a) {
+      let s=this.accountStats[a.id]; if(!s||!s.request_count) return null;
+      let h=s.cache_hits||0, m=s.cache_misses||0, hr=(h+m)>0?(h/(h+m)*100).toFixed(1):0;
+      return {text:`次数:${s.request_count} · Token:↑${this.fmtK(s.prompt_tokens)} ↓${this.fmtK(s.completion_tokens)} · 消耗:${this.fmtL(s.lifetime_credit)} · 缓存命中率:${hr}%`};
+    },
 
-function doImport() {
-  var json = document.getElementById('importJson').value.trim();
-  if (!json) { showToast('请粘贴 Token 或 JSON', 'error'); return; }
-  var btn = event && event.currentTarget;
-  btnLoading(btn);
-  pywebview.api.import_from_json(currentPlatform, json).then(function(raw) {
-    var r = JSON.parse(raw);
-    if (r.error) { showToast(r.error, 'error'); return; }
-    showToast('导入成功: ' + (r.accounts ? r.accounts.length : 0) + ' 个账号', 'success');
-    closeModal('importModal');
-    loadAccounts();
-  }).catch(function(e) { showToast('导入失败: ' + e, 'error'); }).finally(function() { btnDone(btn); });
-}
+    // data loading
+    async loadAccounts() {
+      let [r,sr]=await Promise.all([this.api('list_accounts',this.platform),this.api('get_all_stats',this.platform)]);
+      if(r) this.accounts=r;
+      if(sr&&sr.stats) { this.accountStats={}; sr.stats.forEach(s=>this.accountStats[s.account_id]=s); }
+      if(!this.proxyRunning) try { this.proxyCurrent=(await this.api('get_priority_account'))?.priority; } catch(e){}
+      await this.loadStats();
+    },
+    async loadStats() {
+      let s=await this.api('get_stats',this.platform); if(s) Object.assign(this.stats,s);
+      await this.loadThreshold();
+    },
+    async loadThreshold() {
+      let t=await this.api('get_quota_threshold'); if(t!=null) this.threshold=t.threshold;
+    },
+    async loadLogs() {
+      let r=await this.api('get_logs',this.platform,200,0,this.logFilter); if(r) this.logs=r.logs||[];
+      let r2=await this.api('get_log_enabled'); if(r2) this.logEnabled=r2.enabled;
+    },
+    logEventLabel(e){ return e==='success'?'成功':e==='request'?'请求':e==='warning'?'警告':'错误'; },
 
-// ===== File Import =====
-function handleFileImport(event) {
-  var file = event.target.files && event.target.files[0];
-  if (!file) return;
-  showToast('正在读取文件...', 'info');
-  file.text().then(function(text) {
-    return pywebview.api.import_from_json(currentPlatform, text).then(function(raw) {
-      var r = JSON.parse(raw);
-      if (r.error) { showToast(r.error, 'error'); return; }
-      showToast('文件导入成功: ' + (r.accounts ? r.accounts.length : 0) + ' 个账号', 'success');
-      loadAccounts();
-    });
-  }).catch(function(e) { showToast('文件导入失败: ' + e, 'error'); });
-  event.target.value = '';
-}
+    // proxy
+    async checkProxy() { try { this.proxyRunning=(await this.api('proxy_status')).running; } catch(e){} },
+    async toggleProxy() {
+      let m=this.proxyRunning?'proxy_stop':'proxy_start';
+      let r=await this.api(m,this.platform,this.proxyPort||8001,this.proxyPass||'');
+      if(r&&r.ok) {
+        this.proxyRunning=!this.proxyRunning;
+        this.showToast(this.proxyRunning?'网关已启动':'网关已停止','success');
+        if(this.proxyRunning) this.startPoll(); else { this.proxyActive=false; clearInterval(this.proxyPollTimer); }
+      }
+    },
+    startPoll() {
+      this.pollProxy(); this.proxyPollTimer=setInterval(()=>this.pollProxy(),2000);
+    },
+    async pollProxy() {
+      if(!this.proxyRunning) return;
+      try { let r=await fetch(`${this.proxyUrl.replace('/v1','')}/proxy/info`); let info=await r.json();
+        let wasActive=this.proxyActive;
+        this.proxyCurrent=info.current_account; this.proxyActive=info.active;
+        if(wasActive&&!this.proxyActive) { await this.loadAccounts(); }
+        if(info.threshold_switch) {
+          this.showToast(info.threshold_switch.startsWith('__nofallback__')
+            ?`账号 ${info.threshold_switch.replace('__nofallback__','')} 额度低于阈值，无可用备选号`:'账号 '+info.threshold_switch+' 额度低于阈值，已自动切换','warning');
+        }
+      } catch(e){}
+    },
+    copyEndpoint(){ navigator.clipboard.writeText(this.proxyUrl).then(()=>this.showToast('已复制','success')); },
 
-// ===== Check-in =====
-async function checkinAll() {
-  const btn = event?.currentTarget;
-  btnLoading(btn);
-  try {
-    const raw = await pywebview.api.checkin_all(currentPlatform);
-    const r = JSON.parse(raw);
-    showToast(`签到完成: ${r.success}成功 / ${r.already}已签 / ${r.failed}失败`, r.failed > 0 ? 'warning' : 'success');
-    await loadAccountsLight();
-  } catch (e) { showToast('批量签到失败: ' + e, 'error'); }
-  finally { btnDone(btn); }
-}
+    // actions
+    async refreshAll() { let r=await this.api('refresh_all',this.platform); if(r) this.showToast(`刷新 ${r.success}/${r.total}`,'success'); await this.loadAccounts(); },
+    async refreshOne(id) { await this.api('refresh_token',this.platform,id); await this.loadAccounts(); this.showToast('刷新成功','success'); },
+    async doCheckin(id) { let r=await this.api('checkin',this.platform,id); if(r&&r.ok) { this.showToast('签到成功','success'); await this.loadAccounts(); } },
+    async checkinAll() { let r=await this.api('checkin_all',this.platform); if(r) this.showToast(`签到 ${r.success}/${r.total}`,'success'); await this.loadAccounts(); },
+    async setPriority(id) { await this.api('set_priority_account',this.platform,id); this.proxyCurrent=id; await this.loadAccounts(); this.showToast('已设为优先调度','success'); },
+    async toggleAccountStatus(id) {
+      let a=this.accounts.find(x=>x.id===id); if(!a) return;
+      let ns=(a.status||'normal')==='normal'?'disabled':'normal';
+      let r=await this.api('set_account_status',this.platform,id,ns);
+      if(r&&r.ok) { await this.checkProxy(); await this.loadAccounts(); this.showToast(ns==='disabled'?'已禁用':'已启用','success'); }
+      else if(r) this.showToast(r.error||'操作失败','error');
+    },
+    async deleteOne(id){ let ok=await this.api('delete_account',this.platform,id); if(ok) { await this.loadAccounts(); this.showToast('已删除','success'); } },
+    async exportAccounts() {
+      let data=await pywebview.api.export_accounts(this.platform);
+      let b=new Blob([data],{type:'application/json'}), u=URL.createObjectURL(b), a=document.createElement('a');
+      a.href=u; a.download=`accounts_${this.platform}_${new Date().toISOString().slice(0,10)}.json`; a.click();
+      URL.revokeObjectURL(u); this.showToast('导出成功','success');
+    },
 
-async function doCheckin(id) {
-  const btn = event?.currentTarget;
-  btnLoading(btn);
-  try {
-    const raw = await pywebview.api.checkin(currentPlatform, id);
-    const r = JSON.parse(raw);
-    if (r.error) { showToast(r.error, 'error'); return; }
-    if (r.success) {
-      showToast(`签到成功! ${r.credit ? '+'+r.credit+' 积分' : ''}`, 'success');
-    } else {
-      showToast(r.message || '签到失败(可能已签到)', 'info');
-    }
-    await loadAccountsLight();
-  } catch (e) { showToast('签到失败: ' + e, 'error'); }
-  finally { btnDone(btn); }
-}
+    async saveThreshold() { await this.api('set_quota_threshold',this.threshold); this.showToast(`阈值已设为 ${this.threshold}`,'success'); },
+    async toggleLogEnabled(){ await this.api('set_log_enabled',this.logEnabled); },
+    async clearLogs() { await this.api('clear_logs',this.platform); this.logs=[]; },
 
-// ===== Quota Detail =====
-async function showQuotaDetail(id) {
-  quotaAccountId = id;
-  const account = currentAccounts.find(a => a.id === id);
-  document.getElementById('quotaAccountName').textContent = account?.email || '额度详情';
-  document.getElementById('quotaContent').innerHTML = '<div style="text-align:center;padding:30px 0"><div class="spinner"></div><div style="color:var(--text-muted);font-size:13px;margin-top:8px">加载中...</div></div>';
-  showModal('quotaModal');
+    // import
+    async doImport() {
+      if(!this.importText.trim()) return;
+      let r=await this.api('add_token',this.platform,this.importText.trim());
+      if(r&&r.id) { this.showImport=false; this.importText=''; await this.loadAccounts(); this.showToast('导入成功','success'); }
+      else this.showToast('导入失败','error');
+    },
 
-  try {
-    const [quotaRaw, statsRaw] = await Promise.all([
-      pywebview.api.get_quota(currentPlatform, id),
-      pywebview.api.get_all_stats(currentPlatform),
-    ]);
-    const r = JSON.parse(quotaRaw);
-    const statsData = JSON.parse(statsRaw);
-    const myStats = statsData.stats?.find(s => s.account_id === id);
-    if (r.error) {
-      document.getElementById('quotaContent').innerHTML = `<p style="color:var(--danger)">${r.error}</p>`;
-    } else {
-      renderQuotaContent(r, myStats);
-    }
-  } catch (e) {
-    document.getElementById('quotaContent').innerHTML = `<p style="color:var(--danger)">查询失败: ${e}</p>`;
-  }
-}
+    // OAuth
+    async doOAuth() {
+      let protocol=this.oauthProtocol||'https', domain=this.oauthDomain||'www.codebuddy.cn';
+      let r=await this.api('get_oauth_url',protocol,domain);
+      if(r&&r.url) { pywebview.api.open_external(r.url); this.showOAuth=false; this.showToast('请在浏览器中完成授权','success'); }
+    },
 
-function renderQuotaContent(data, stats) {
-  let html = '';
+    // file import
+    async handleFileImport(e) {
+      let f=e.target.files[0]; if(!f) return;
+      let t=await f.text();
+      let r=await this.api('add_token',this.platform,t);
+      if(r&&r.id) { await this.loadAccounts(); this.showToast('导入成功','success'); }
+      else this.showToast('导入失败','error');
+      e.target.value='';
+    },
 
-  if (stats && stats.request_count > 0) {
-    const totalReq = stats.request_count;
-    const hits = stats.cache_hits || 0;
-    const misses = stats.cache_misses || 0;
-    const hitRate = (hits + misses) > 0 ? (hits / (hits + misses) * 100).toFixed(1) : 0;
-    html += `<div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;margin-bottom:12px;">
-      <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;">使用统计（本代理）</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px;">
-        <div><span style="color:var(--text-muted)">请求次数</span><br><span style="font-weight:600">${totalReq.toLocaleString()}</span></div>
-        <div><span style="color:var(--text-muted)">输入Token</span><br><span style="font-weight:600">${(stats.prompt_tokens||0).toLocaleString()}</span></div>
-        <div><span style="color:var(--text-muted)">输出Token</span><br><span style="font-weight:600">${(stats.completion_tokens||0).toLocaleString()}</span></div>
-        <div><span style="color:var(--text-muted)">总Token</span><br><span style="font-weight:600">${(stats.total_tokens||0).toLocaleString()}</span></div>
-        <div><span style="color:var(--text-muted)">消耗积分</span><br><span style="font-weight:600">${(stats.total_credit||0).toFixed(2)}</span></div>
-        <div><span style="color:var(--text-muted)">缓存命中</span><br><span style="font-weight:600;color:${hitRate>=50?'var(--success)':'var(--text)'}">${hitRate}%</span></div>
-      </div>
-    </div>`;
-  }
-
-  if (data.dosage_notify_zh || data.dosage_notify_en) {
-    html += `<div style="background:var(--warning-light);border:1px solid rgba(234,179,8,0.3);border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:var(--warning);">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M12 9v4M12 17h.01M10.3 3.86l-8.1 14c-.6 1.1.1 2.5 1.3 2.5h16.8c1.2 0 1.9-1.4 1.3-2.5l-8.1-14c-.6-1.1-2.1-1.1-2.7 0z"/></svg> ${data.dosage_notify_zh || data.dosage_notify_en || ''}
-    </div>`;
-  }
-
-  if (data.payment_type) {
-    html += `<div class="quota-item"><span class="label">付费方式</span><span class="value">${data.payment_type}</span></div>`;
-  }
-
-  if (data.resources?.length) {
-    let allTotal = 0, allUsed = 0, allRemain = 0;
-    for (const r of data.resources) {
-      allTotal += _n(r.total);
-      allUsed += _n(r.used);
-      allRemain += _n(r.remain);
-    }
-    const allPct = allTotal > 0 ? Math.round((allUsed / allTotal) * 100) : 0;
-    const allCls = allPct >= 80 ? 'danger' : allPct >= 50 ? 'warning' : '';
-    html += `<div style="margin-bottom:12px;">
-      <div class="quota-item" style="border-bottom:none;padding-bottom:4px;">
-        <span class="label">总计配额</span>
-        <span class="value">已用 ${fmt(allUsed)} / 剩余 ${fmt(allRemain)}</span>
-      </div>
-      <div class="quota-bar"><div class="quota-fill ${allCls}" style="width:${Math.min(allPct, 100)}%"></div></div>
-    </div>`;
-
-    html += '<div class="quota-list">';
-    for (const r of data.resources) {
-      const total = _n(r.total);
-      const used = _n(r.used);
-      const remain = _n(r.remain);
-      const pct = total > 0 ? Math.round((used / total) * 100) : 0;
-      const cls = pct >= 80 ? 'danger' : pct >= 50 ? 'warning' : '';
-      const isBase = r.packageCode !== 'TCACA_code_009_0XmEQc2xOf';
-      html += `
-        <div style="padding:8px 0;border-bottom:1px solid var(--border);">
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px;">
-            <span style="color:var(--text-secondary)">${r.packageName || r.packageCode || '资源包'}${isBase ? ' (基础包)' : ''}</span>
-            <span style="font-weight:600">${fmt(remain)}</span>
+    // quota detail
+    async showQuotaDetail(id) {
+      let a=this.accounts.find(x=>x.id===id);
+      let [qr,statsData]=await Promise.all([this.api('get_quota',this.platform,id),this.api('get_all_stats',this.platform)]);
+      let myStats=statsData?.stats?.find(s=>s.account_id===id);
+      if(!qr||qr.error) { this.quotaDetailHtml=`<p style="color:var(--danger)">${qr?.error||'加载失败'}</p>`; this.showQuotaModal=true; return; }
+      let html='';
+      if(myStats&&myStats.request_count>0) {
+        let h=myStats.cache_hits||0,m=myStats.cache_misses||0,hr=(h+m)>0?(h/(h+m)*100).toFixed(1):0;
+        html+=`<div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;margin-bottom:12px">
+          <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px">使用统计（本代理）</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px">
+            <div><span style="color:var(--text-muted)">请求次数</span><br><span style="font-weight:600">${(myStats.request_count||0).toLocaleString()}</span></div>
+            <div><span style="color:var(--text-muted)">输入Token</span><br><span style="font-weight:600">${(myStats.prompt_tokens||0).toLocaleString()}</span></div>
+            <div><span style="color:var(--text-muted)">输出Token</span><br><span style="font-weight:600">${(myStats.completion_tokens||0).toLocaleString()}</span></div>
+            <div><span style="color:var(--text-muted)">总Token</span><br><span style="font-weight:600">${(myStats.total_tokens||0).toLocaleString()}</span></div>
+            <div><span style="color:var(--text-muted)">消耗积分</span><br><span style="font-weight:600">${(myStats.total_credit||0).toFixed(2)}</span></div>
+            <div><span style="color:var(--text-muted)">缓存命中</span><br><span style="font-weight:600;color:${hr>=50?'var(--success)':'var(--text)'}">${hr}%</span></div>
           </div>
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:2px;">
-            <span>已用 ${fmt(used)}</span>
-            <span>${fmt(total)}</span>
-          </div>
-          <div class="quota-bar"><div class="quota-fill ${cls}" style="width:${Math.min(pct, 100)}%"></div></div>
         </div>`;
-    }
-    html += '</div>';
-  }
-
-  if (!html) {
-    html = '<p style="color:var(--text-muted);text-align:center;padding:20px 0;">暂无配额数据</p>';
-  }
-
-  document.getElementById('quotaContent').innerHTML = html;
-}
-
-async function refreshQuota() {
-  if (quotaAccountId) await showQuotaDetail(quotaAccountId);
-}
-
-// ===== Proxy =====
-let proxyRunning = false;
-
-function setProxyBtnState(running) {
-  const dot = document.getElementById('proxyBtnDot');
-  const btn = document.getElementById('proxyBtn');
-  if (dot) dot.className = 'proxy-btn-dot ' + (running ? 'on' : 'off');
-  if (btn) btn.classList.toggle('online', running);
-}
-
-const PROXY_GATEWAY_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>';
-
-async function toggleProxy() {
-  const btn = document.getElementById('proxyToggleBtn');
-  const panel = document.getElementById('proxyPanel');
-  const statusText = document.getElementById('proxyStatusText');
-
-  if (proxyRunning) {
-    const raw = await pywebview.api.proxy_stop();
-    const r = JSON.parse(raw);
-    if (r.success) {
-      proxyRunning = false;
-      btn.className = 'btn btn-primary btn-sm';
-      btn.innerHTML = `${PROXY_GATEWAY_SVG} 启动网关`;
-      panel.classList.remove('online');
-      panel.dataset.port = document.getElementById('proxyPortInput').value || '8001';
-      statusText.textContent = '离线';
-      setProxyBtnState(false);
-      hideChatCard();
-      stopProxyInfoPolling();
-    }
-    return;
-  }
-
-  const port = document.getElementById('proxyPortInput').value || '8001';
-  const pass = document.getElementById('proxyPassInput').value || '';
-  btn.innerHTML = '<span class="spinner-sm"></span> 启动中...';
-
-  const raw = await pywebview.api.proxy_start(port, pass);
-  const r = JSON.parse(raw);
-  if (r.success) {
-    proxyRunning = true;
-    btn.className = 'btn btn-ghost btn-sm btn-proxy-on';
-    btn.innerHTML = `${PROXY_GATEWAY_SVG} <span class="proxy-btn-dot on"></span> 关闭网关`;
-    panel.classList.add('online');
-    panel.dataset.port = r.port;
-    statusText.textContent = '运行中';
-    document.getElementById('proxyEndpointUrl').textContent = `http://127.0.0.1:${r.port}/v1`;
-    setProxyBtnState(true);
-    showChatCard();
-    startProxyInfoPolling();
-  } else {
-    btn.className = 'btn btn-primary btn-sm';
-    btn.innerHTML = `${PROXY_GATEWAY_SVG} 启动网关`;
-    showToast(r.error || '启动失败', 'warning');
-  }
-}
-
-async function refreshProxyStatus() {
-  const raw = await pywebview.api.proxy_status();
-  const r = JSON.parse(raw);
-  proxyRunning = r.running;
-  const btn = document.getElementById('proxyToggleBtn');
-  const panel = document.getElementById('proxyPanel');
-  const statusText = document.getElementById('proxyStatusText');
-  if (r.running) {
-    btn.className = 'btn btn-ghost btn-sm btn-proxy-on';
-    btn.innerHTML = `${PROXY_GATEWAY_SVG} <span class="proxy-btn-dot on"></span> 关闭网关`;
-    panel.classList.add('online');
-    panel.dataset.port = r.port;
-    statusText.textContent = '运行中';
-    document.getElementById('proxyEndpointUrl').textContent = `http://127.0.0.1:${r.port}/v1`;
-    setProxyBtnState(true);
-    showChatCard();
-    startProxyInfoPolling();
-  } else {
-    btn.className = 'btn btn-primary btn-sm';
-    btn.innerHTML = `${PROXY_GATEWAY_SVG} 启动网关`;
-    panel.classList.remove('online');
-    statusText.textContent = '离线';
-    setProxyBtnState(false);
-    stopProxyInfoPolling();
-  }
-}
-
-function startProxyInfoPolling() {
-  if (proxyInfoTimer) return;
-  proxyInfoTimer = setInterval(pollProxyInfo, 2000);
-  pollProxyInfo();
-}
-
-function stopProxyInfoPolling() {
-  if (proxyInfoTimer) { clearInterval(proxyInfoTimer); proxyInfoTimer = null; }
-  proxyCurrentAccount = null;
-  proxyActive = false;
-  updateAccountHighlight();
-}
-
-async function pollProxyInfo() {
-  if (!proxyRunning) return;
-  try {
-    const r = await fetch(`${getProxyBaseUrl()}/proxy/info`);
-    const info = await r.json();
-    const newCurrent = info.current_account;
-    const newActive = info.active;
-    if (newCurrent !== proxyCurrentAccount || newActive !== proxyActive) {
-      const wasActive = proxyActive;
-      const prevAccount = proxyCurrentAccount;
-      proxyCurrentAccount = newCurrent;
-      proxyActive = newActive;
-      updateAccountHighlight();
-      if (wasActive && !newActive) {
-        refreshAccountStats();
       }
-    }
-    if (info.threshold_switch) {
-      if (info.threshold_switch.startsWith('__nofallback__')) {
-        const name = info.threshold_switch.replace('__nofallback__','');
-        showToast(`账号 ${name} 额度低于阈值，池中无可用账号可换`, 'warning');
-      } else {
-        showToast(`账号 ${info.threshold_switch} 额度低于阈值，已自动切换`, 'warning');
-      }
-    }
-  } catch {}
-}
-
-async function refreshAccountStats() {
-  try {
-    const statsRaw = await pywebview.api.get_all_stats(currentPlatform);
-    const sd = JSON.parse(statsRaw);
-    accountStats = {};
-    (sd.stats || []).forEach(s => { accountStats[s.account_id] = s; });
-    renderAccounts();
-  } catch {}
-}
-
-function updateAccountHighlight() {
-  document.querySelectorAll('.card[data-account-id]').forEach(card => {
-    const id = card.dataset.accountId;
-    card.classList.toggle('current', id === proxyCurrentAccount);
-    card.classList.toggle('active', id === proxyCurrentAccount && proxyActive);
-  });
-}
-
-// ===== Proxy Chat Card =====
-
-const MODEL_ICONS = {
-  deepseek: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#4D6BFE"/><path d="M12 5c-3.9 0-7 2.8-7 6.5 0 2 .9 3.7 2.4 4.9-.1.8-.5 1.8-1.2 2.7-.2.3 0 .7.4.6 1.8-.3 3.2-1 4.2-1.7.4.1.8.1 1.2.1 3.9 0 7-2.8 7-6.5S15.9 5 12 5z" fill="#fff"/><circle cx="9.5" cy="11.5" r="1" fill="#4D6BFE"/><circle cx="14.5" cy="11.5" r="1" fill="#4D6BFE"/></svg>',
-  kimi: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#7C5CFC"/><path d="M16 8a5 5 0 00-5 5v6c0 .6.4 1 1 1h2c.6 0 1-.4 1-1v-6a1 1 0 012 0v3c0 .6.4 1 1 1h1c.6 0 1-.4 1-1v-3a5 5 0 00-5-5z" fill="#fff" transform="translate(-3,-1)"/></svg>',
-  glm: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#00B894"/><path d="M8 7v10M8 7c0-1 1-2 2-2M8 12h4M16 7v10M16 7c0-1-1-2-2-2M16 12h-4" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>',
-  hunyuan: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#0053E0"/><path d="M7 12c0-2.8 2.2-5 5-5s5 2.2 5 5-2.2 5-5 5M17 12c0 2.8-2.2 5-5 5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" transform="rotate(45 12 12)"/><path d="M7 12c0-2.8 2.2-5 5-5s5 2.2 5 5-2.2 5-5 5M17 12c0 2.8-2.2 5-5 5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.5" transform="rotate(-45 12 12)"/></svg>',
-  minimax: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#FF6B35"/><path d="M6 16V8l3 4 3-4v8M15 16V8l3 4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>',
-  qwen: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#615CED"/><circle cx="12" cy="10" r="4" stroke="#fff" stroke-width="2" fill="none"/><path d="M12 14v5M9 19h6" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>',
-  auto: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="url(#autoGrad)"/><defs><linearGradient id="autoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs><path d="M12 5l1.8 4.5L18 11l-4.2 1.5L12 17l-1.8-4.5L6 11l4.2-1.5z" fill="#fff"/></svg>',
-};
-
-const PRESET_MODELS = [
-  { id: 'auto', provider: 'auto', name: 'Auto' },
-  { id: 'hy3', provider: 'hunyuan', name: 'Hy3' },
-  { id: 'glm-5.2', provider: 'glm', name: 'GLM-5.2' },
-  { id: 'glm-5.1', provider: 'glm', name: 'GLM-5.1' },
-  { id: 'glm-5v-turbo', provider: 'glm', name: 'GLM-5v-Turbo' },
-  { id: 'minimax-m3', provider: 'minimax', name: 'MiniMax-M3' },
-  { id: 'kimi-k3-1', provider: 'kimi', name: 'Kimi-K3' },
-  { id: 'kimi-k2.7', provider: 'kimi', name: 'Kimi-K2.7-Code' },
-  { id: 'kimi-k2.6', provider: 'kimi', name: 'Kimi-K2.6' },
-  { id: 'deepseek-v4-flash', provider: 'deepseek', name: 'Deepseek-V4-Flash' },
-  { id: 'deepseek-v4-pro', provider: 'deepseek', name: 'Deepseek-V4-Pro' },
-];
-
-function getProxyBaseUrl() {
-  const port = document.getElementById('proxyPanel').dataset.port || document.getElementById('proxyPortInput').value || '8001';
-  return `http://127.0.0.1:${port}`;
-}
-
-function getProxyPassword() {
-  return document.getElementById('proxyPassInput').value || '';
-}
-
-function copyEndpoint() {
-  const el = document.getElementById('proxyEndpointUrl');
-  const text = el ? el.textContent : '';
-  if (!text) return;
-
-  function doSuccess() {
-    showToast('已复制 ' + text, 'success');
-  }
-
-  function fallbackCopy() {
-    try {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.style.position = 'fixed';
-      textarea.style.left = '-9999px';
-      textarea.style.top = '-9999px';
-      document.body.appendChild(textarea);
-      textarea.focus();
-      textarea.select();
-      const res = document.execCommand('copy');
-      document.body.removeChild(textarea);
-      if (res) doSuccess();
-      else showToast('复制失败', 'error');
-    } catch (e) {
-      showToast('复制失败: ' + e, 'error');
-    }
-  }
-
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(text).then(doSuccess).catch(fallbackCopy);
-  } else {
-    fallbackCopy();
-  }
-}
-
-function renderModelSelect(models) {
-  const dropdown = document.getElementById('modelDropdown');
-  dropdown.innerHTML = '';
-  let firstModel = models[0];
-  for (const m of models) {
-    const icon = MODEL_ICONS[m.provider] || MODEL_ICONS.auto;
-    const div = document.createElement('div');
-    div.className = 'model-option';
-    div.setAttribute('data-model', m.id);
-    div.innerHTML = `${icon}<span>${m.name}</span>`;
-    div.onclick = (e) => { e.stopPropagation(); selectModel(m.id, m.name, icon); };
-    dropdown.appendChild(div);
-  }
-  if (firstModel) {
-    const icon = MODEL_ICONS[firstModel.provider] || MODEL_ICONS.auto;
-    selectModel(firstModel.id, firstModel.name, icon);
-  }
-}
-
-function selectModel(id, name, icon) {
-  document.getElementById('modelCurrentId').textContent = id;
-  document.getElementById('modelCurrentName').textContent = name;
-  document.getElementById('modelCurrentIcon').innerHTML = icon;
-  document.getElementById('modelDropdown').classList.remove('open');
-  document.querySelectorAll('.model-option').forEach(o => {
-    o.classList.toggle('active', o.getAttribute('data-model') === id);
-  });
-}
-
-function toggleModelDropdown() {
-  document.getElementById('modelDropdown').classList.toggle('open');
-}
-
-document.addEventListener('click', () => {
-  document.getElementById('modelDropdown')?.classList.remove('open');
-});
-
-function toggleChatCard() {
-  const card = document.getElementById('proxyChatCard');
-  const icon = document.getElementById('chatCollapseIcon');
-  if (!card) return;
-  card.classList.toggle('collapsed');
-  if (icon) icon.textContent = card.classList.contains('collapsed') ? '▼' : '▲';
-}
-
-function showChatCard() {
-  const chatCard = document.getElementById('proxyChatCard');
-  if (chatCard) chatCard.style.display = 'block';
-  const port = document.getElementById('proxyPanel').dataset.port || document.getElementById('proxyPortInput').value || '8001';
-  const urlEl = document.getElementById('chatHeaderUrl');
-  if (urlEl) urlEl.textContent = `http://127.0.0.1:${port}/v1`;
-  renderModelSelect(PRESET_MODELS);
-  const input = document.getElementById('chatInput');
-  if (input) input.disabled = false;
-  const btn = document.getElementById('chatSendBtn');
-  if (btn) btn.disabled = false;
-}
-
-function hideChatCard() {
-  const chatCard = document.getElementById('proxyChatCard');
-  if (chatCard) chatCard.style.display = 'none';
-}
-
-function exportToWorkBuddy() {
-  showConfirm('确定导入配置吗？\n\n这将会覆盖您自己已经配置的模型。\n请导入前进行重要备份。', '导入确认').then(function(ok) {
-    if (!ok) return;
-    _exportToWorkBuddyActual();
-  });
-}
-
-function _exportToWorkBuddyActual() {
-  const btn = document.getElementById('exportBtn');
-  if (!btn) return;
-  const origHTML = btn.innerHTML;
-  const port = document.getElementById('proxyPanel').dataset.port || document.getElementById('proxyPortInput').value || '8001';
-  const pass = document.getElementById('proxyPassInput').value || '';
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-sm"></span> 导入中...';
-  pywebview.api.export_to_workbuddy(port, pass).then(function(raw) {
-    const r = JSON.parse(raw);
-    if (r.success) {
-      btn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg> 已导入 ${r.count}个`;
-      let msg = `已写入 ${r.path}`;
-      if (r.backup) msg += `\n备份: ${r.backup}`;
-      showToast(msg, 'success');
-    } else {
-      throw new Error(r.error);
-    }
-  }).catch(function(e) {
-    btn.innerHTML = '导入失败';
-    showToast('导入失败: ' + e.message, 'error');
-  }).finally(function() {
-    setTimeout(function() {
-      btn.innerHTML = origHTML;
-      btn.disabled = false;
-    }, 2500);
-  });
-}
-
-async function syncModels() {
-  const btn = document.getElementById('syncModelsBtn');
-  if (!btn) return;
-  const origHTML = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-sm"></span> 同步中...';
-  try {
-    const resp = await fetch(`${getProxyBaseUrl()}/v1/models`, {
-      headers: { 'Authorization': `Bearer ${getProxyPassword()}` }
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    const ids = (data.data || []).map(m => m.id);
-    const synced = ids.map(id => {
-      let provider = 'auto';
-      const lower = id.toLowerCase();
-      if (lower.includes('deepseek')) provider = 'deepseek';
-      else if (lower.includes('kimi')) provider = 'kimi';
-      else if (lower.includes('glm')) provider = 'glm';
-      else if (lower.includes('hy') || lower.includes('hunyuan')) provider = 'hunyuan';
-      else if (lower.includes('minimax')) provider = 'minimax';
-      else if (lower.includes('qwen')) provider = 'qwen';
-      return { id, provider, name: id };
-    });
-    renderModelSelect(synced);
-    showToast(`已同步 ${synced.length} 个官方模型`, 'success');
-    btn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg> 已同步 ${synced.length}个`;
-  } catch (e) {
-    showToast('同步模型失败: ' + e.message, 'error');
-    btn.innerHTML = '同步失败';
-  } finally {
-    setTimeout(() => {
-      btn.innerHTML = origHTML;
-      btn.disabled = false;
-    }, 2000);
-  }
-}
-
-let chatBusy = false;
-
-async function sendTestChat() {
-  if (chatBusy) return;
-  const input = document.getElementById('chatInput');
-  const btn = document.getElementById('chatSendBtn');
-  const model = document.getElementById('modelCurrentId').textContent;
-  const msg = input.value.trim();
-  if (!msg) return;
-  if (!proxyRunning) { showToast('请先启动网关', 'warning'); return; }
-
-  chatBusy = true;
-  btn.disabled = true;
-  btn.textContent = '...';
-  input.value = '';
-  input.disabled = true;
-
-  const container = document.getElementById('chatMessages');
-  const empty = container.querySelector('.chat-empty');
-  if (empty) empty.remove();
-
-  const userDiv = document.createElement('div');
-  userDiv.className = 'chat-msg user';
-  userDiv.textContent = msg;
-  container.appendChild(userDiv);
-
-  const assistantDiv = document.createElement('div');
-  assistantDiv.className = 'chat-msg assistant';
-  assistantDiv.textContent = '思考中...';
-  container.appendChild(assistantDiv);
-  container.scrollTop = container.scrollHeight;
-
-  try {
-    const resp = await fetch(`${getProxyBaseUrl()}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${getProxyPassword()}`,
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [{ role: 'user', content: msg }],
-        stream: true,
-      }),
-    });
-
-    if (!resp.ok) throw new Error((await resp.text()).slice(0, 200));
-
-    assistantDiv.textContent = '';
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let fullText = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let idx;
-      while ((idx = buffer.indexOf('\n\n')) !== -1) {
-        const event = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        for (const line of event.split('\n')) {
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6).trim();
-          if (data === '[DONE]') continue;
-          try {
-            const obj = JSON.parse(data);
-            const delta = obj.choices && obj.choices[0] && obj.choices[0].delta;
-            if (delta && delta.content) {
-              fullText += delta.content;
-              assistantDiv.textContent = fullText;
-              container.scrollTop = container.scrollHeight;
-            }
-          } catch {}
+      if(qr.dosage_notify_zh||qr.dosage_notify_en) html+=`<div style="background:var(--warning-light);border:1px solid rgba(234,179,8,0.3);border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:var(--warning)">⚠ ${qr.dosage_notify_zh||qr.dosage_notify_en||''}</div>`;
+      if(qr.payment_type) html+=`<div class="quota-item"><span class="label">付费方式</span><span class="value">${qr.payment_type}</span></div>`;
+      if(qr.resources?.length) {
+        let allT=0,allU=0,allR=0;
+        for(let r of qr.resources){ let t=this._n(r.total),u=this._n(r.used),rm=this._n(r.remain); allT+=t; allU+=u; allR+=rm; }
+        let ap=allT>0?Math.round(allU/allT*100):0, cls=ap>=80?'danger':ap>=50?'warning':'';
+        html+=`<div style="margin-bottom:12px">
+          <div style="border-bottom:none;padding-bottom:4px;display:flex;justify-content:space-between;font-size:13px">
+            <span>总计配额</span><span>已用 ${this.fmt(allU)} / 剩余 ${this.fmt(allR)}</span>
+          </div>
+          <div class="quota-bar"><div class="quota-fill ${cls}" style="width:${Math.min(ap,100)}%"></div></div>
+        </div><div>`;
+        for(let r of qr.resources) {
+          let t=this._n(r.total),u=this._n(r.used),rm=this._n(r.remain),p=t>0?Math.round(u/t*100):0,c=p>=80?'danger':p>=50?'warning':'';
+          let isBase=r.packageCode!=='TCACA_code_009_0XmEQc2xOf';
+          html+=`<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:2px"><span style="color:var(--text-secondary)">${r.packageName||r.packageCode||'资源包'}${isBase?' (基础包)':''}</span><span style="font-weight:600">${this.fmt(rm)}</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:2px"><span>已用 ${this.fmt(u)}</span><span>${this.fmt(t)}</span></div>
+            <div class="quota-bar"><div class="quota-fill ${c}" style="width:${Math.min(p,100)}%"></div></div>
+          </div>`;
         }
+        html+='</div>';
       }
-    }
+      if(!html) html='<p style="color:var(--text-muted)">暂无额度数据</p>';
+      this.quotaDetailHtml=html; this.showQuotaModal=true;
+    },
 
-    if (!fullText) assistantDiv.textContent = '(空响应)';
-  } catch (e) {
-    assistantDiv.className = 'chat-msg error';
-    assistantDiv.textContent = '错误: ' + e.message;
-  } finally {
-    chatBusy = false;
-    btn.disabled = false;
-    btn.textContent = '发送';
-    input.disabled = false;
-    input.focus();
-  }
-}
+    // shops
+    openShop(url,name){ this.shopUrl=url; this.shopName=name; this.view='console'; },
 
-// ===== Theme =====
-function setThemeUI(theme) {
-  const html = document.documentElement;
-  const isLight = theme === 'light';
-  html.setAttribute('data-theme', isLight ? 'light' : '');
-  const btn = document.getElementById('themeBtn');
-  btn.innerHTML = isLight
-    ? '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg> 切换主题'
-    : '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> 切换主题';
-}
+    // confirm dialog
+    showConfirmDialog(title,msg,cb){ this.confirmTitle=title; this.confirmMsg=msg; this.confirmCb=cb; this.showConfirm=true; },
+    confirmOK(){ if(this.confirmCb) this.confirmCb(); this.showConfirm=false; },
+    dismissConfirm(){ this.showConfirm=false; },
 
-async function toggleTheme() {
-  const html = document.documentElement;
-  const isDark = html.getAttribute('data-theme') !== 'light';
-  const theme = isDark ? 'light' : 'dark';
-  setThemeUI(theme);
-  await pywebview.api.set_theme(theme);
-}
+    // theme
+    toggleTheme() {
+      let h=document.documentElement, t=h.getAttribute('data-theme')==='dark'?'light':'dark';
+      h.setAttribute('data-theme',t); pywebview?.api?.save_theme?.(t);
+    },
 
-// ===== Init =====
-// ===== License =====
-let appStarted = false;
-const _LICENSE_ENABLED = false;
-function showLicenseOverlay(msg) {
-  document.getElementById('licenseSub').textContent = msg || '请输入激活码以继续使用';
-  document.getElementById('licenseError').textContent = '';
-  document.getElementById('licenseOverlay').classList.add('show');
-  const inp = document.getElementById('licenseInput');
-  inp.value = '';
-  setTimeout(() => inp.focus(), 100);
-}
-function hideLicenseOverlay() {
-  document.getElementById('licenseOverlay').classList.remove('show');
-}
-async function doActivate() {
-  const code = document.getElementById('licenseInput').value.trim();
-  if (!code) { document.getElementById('licenseError').textContent = '请输入激活码'; return; }
-  try {
-    const raw = await pywebview.api.activate(code);
-    const r = JSON.parse(raw);
-    if (r.success) {
-      hideLicenseOverlay();
-      showToast('激活成功，有效期至 ' + (r.expiry_str || ''), 'success');
-      if (!appStarted) startApp();
-    } else {
-      document.getElementById('licenseError').textContent = r.message || '激活失败';
-    }
-  } catch (e) { document.getElementById('licenseError').textContent = '激活失败: ' + e; }
-}
-function startApp() {
-  if (appStarted) return;
-  appStarted = true;
-  const tryLoad = (attempt = 0) => {
-    try {
-      loadAccounts().catch(() => { if (attempt < 10) setTimeout(() => tryLoad(attempt + 1), 500); });
-    } catch(e) { if (attempt < 10) setTimeout(() => tryLoad(attempt + 1), 500); }
-  };
-  tryLoad();
-  try { refreshProxyStatus(); } catch(e) {}
-  if (_LICENSE_ENABLED) {
-    setInterval(() => {
-      pywebview.api.check_license().then(raw => {
-        const r = JSON.parse(raw);
-        if (!r.licensed) {
-          appStarted = false;
-          showLicenseOverlay(r.message);
-        }
-      }).catch(() => {});
-    }, 10000);
-  }
-}
+    // toast
+    showToast(msg,type='success'){ Object.assign(this.toast,{msg,type}); setTimeout(()=>this.toast.msg='',2000); },
 
-function init() {
-  const tryTheme = () => {
-    try {
-      pywebview.api.get_theme().then(raw => { setThemeUI(raw === 'dark' ? 'dark' : 'light'); }).catch(() => {});
-    } catch(e) { setTimeout(tryTheme, 200); }
-  };
-  tryTheme();
-  if (_LICENSE_ENABLED) {
-    const tryLicense = (attempt = 0) => {
-      try {
-        pywebview.api.check_license().then(raw => {
-          const r = JSON.parse(raw);
-          if (r.licensed) { hideLicenseOverlay(); startApp(); }
-          else { showLicenseOverlay(r.message); }
-        }).catch(() => { if (attempt < 10) setTimeout(() => tryLicense(attempt + 1), 300); });
-      } catch(e) { if (attempt < 10) setTimeout(() => tryLicense(attempt + 1), 300); }
-    };
-    tryLicense();
-  } else {
-    hideLicenseOverlay();
-    startApp();
-  }
-}
-document.addEventListener('DOMContentLoaded', init);
+    // logs view
+    async switchToLogs() { this.view='logs'; await this.loadLogs(); },
+  },
+  async mounted() {
+    document.documentElement.setAttribute('data-theme',(await this.api('get_theme'))||'light');
+    await this.loadAccounts();
+    await this.checkProxy(); if(this.proxyRunning) this.startPoll();
+  },
+  beforeUnmount() { clearInterval(this.proxyPollTimer); },
+  watch: {
+    view(v){ if(v==='logs') this.loadLogs(); },
+    proxyPort(v){ this.proxyUrl=`http://127.0.0.1:${v||8001}/v1`; },
+  },
+}).mount('#app');
 </script>
 </body>
 </html>
