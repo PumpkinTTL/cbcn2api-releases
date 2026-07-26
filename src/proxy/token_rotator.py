@@ -38,7 +38,7 @@ class TokenRotator:
         self._accounts: list[Account] = []
         self._index = 0
         self._current_id: Optional[str] = None  # 当前粘性锁定的账号
-        self._active: bool = False  # 是否正在处理请求
+        self._active_count: int = 0  # 并发请求计数
         # id -> {"reason": str, "until": float}
         self._disabled: dict[str, dict] = {}
         # id -> 估算剩余额度（从 quota_raw 初始化，每次请求扣减）
@@ -140,7 +140,10 @@ class TokenRotator:
     def set_active(self, active: bool):
         """标记网关是否正在处理请求（用于 UI 边框动画）。"""
         with self._lock:
-            self._active = active
+            if active:
+                self._active_count += 1
+            else:
+                self._active_count = max(0, self._active_count - 1)
 
     def set_priority(self, account_id: str):
         """手动设置优先调度账号，下次 get_next 优先使用它。"""
@@ -194,13 +197,12 @@ class TokenRotator:
             if not has_fallback:
                 if not self._threshold_no_fallback:
                     self._threshold_no_fallback = True
-                    self._threshold_switch = acc.nickname or account_id
+                    self._threshold_switch = "__nofallback__" + (acc.nickname or account_id)
                     try:
                         store.add_log("warning", self._platform, account_id, acc.nickname or "",
                                       "", "额度低于阈值但无可用备选账号，继续使用当前号", "")
                     except Exception:
                         pass
-                self._threshold_switch = "__nofallback__" + (acc.nickname or account_id)
                 return
 
             acc.status = "disabled"
@@ -242,8 +244,9 @@ class TokenRotator:
 
     def _refresh_estimates(self):
         for acc in self._accounts:
-            total, used = calc_totals(acc.quota_raw, acc.usage_raw)
-            self._estimated_remain[acc.id] = max(0, total - used)
+            if acc.id not in self._estimated_remain:
+                total, used = calc_totals(acc.quota_raw, acc.usage_raw)
+                self._estimated_remain[acc.id] = max(0, total - used)
 
     def _persist_cooldowns(self):
         now = time.time()
@@ -276,7 +279,7 @@ class TokenRotator:
                 "total": len(self._accounts),
                 "usable": sum(1 for a in self._accounts if self._is_usable(a)),
                 "current": self._current_id,
-                "active": self._active,
+                "active": self._active_count > 0,
                 "threshold_switch": sw,
                 "disabled": [
                     {"id": aid, "reason": s.get("reason"), "until": s.get("until")}

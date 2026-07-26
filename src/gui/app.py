@@ -342,6 +342,11 @@ class GuiApi:
                 store.reset_account_credit(platform, account_id)
             except Exception:
                 pass
+            try:
+                from src.proxy.token_rotator import token_rotator
+                token_rotator.reload(platform)
+            except Exception:
+                pass
             return json.dumps(saved.to_dict())
         except Exception as e:
             return json.dumps({"error": str(e)})
@@ -585,6 +590,11 @@ class GuiApi:
         if server:
             server.should_exit = True
             self._proxy_server = None
+            try:
+                from src.proxy.token_rotator import token_rotator
+                token_rotator._active_count = 0
+            except Exception:
+                pass
             return json.dumps({"success": True})
         return json.dumps({"error": "网关未运行"})
 
@@ -611,15 +621,15 @@ class GuiApi:
         acc = store.load_account(platform, account_id)
         if not acc:
             return _json.dumps({"ok": False, "error": "账号不存在"})
-        acc.status = status
-        store.upsert_account(platform, acc)
         try:
             from src.proxy.token_rotator import token_rotator
-            if status == "normal":
-                token_rotator.clear_disabled(account_id)
             if status == "disabled":
                 if not token_rotator.on_disable(account_id):
                     return _json.dumps({"ok": False, "error": "至少保留一个可用账号"})
+            acc.status = status
+            store.upsert_account(platform, acc)
+            if status == "normal":
+                token_rotator.clear_disabled(account_id)
             token_rotator.reload(platform)
         except Exception:
             pass

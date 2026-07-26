@@ -917,6 +917,7 @@ async function toggleAccountStatus(id) {
       await loadAccounts();
       showToast(newStatus === 'disabled' ? '已禁用' : '已启用', 'success');
     } else {
+      await loadAccountsLight();
       showToast(r.error || '操作失败', 'error');
     }
   } catch (e) {}
@@ -1423,6 +1424,9 @@ async function pollProxyInfo() {
       if (wasActive && !newActive) {
         refreshAccountStats();
       }
+      if (newCurrent !== prevAccount) {
+        loadAccountsLight();
+      }
     }
     if (info.threshold_switch) {
       if (info.threshold_switch.startsWith('__nofallback__')) {
@@ -1448,8 +1452,18 @@ async function refreshAccountStats() {
 function updateAccountHighlight() {
   document.querySelectorAll('.card[data-account-id]').forEach(card => {
     const id = card.dataset.accountId;
-    card.classList.toggle('current', id === proxyCurrentAccount);
-    card.classList.toggle('active', id === proxyCurrentAccount && proxyActive);
+    const isCurrent = id === proxyCurrentAccount;
+    card.classList.toggle('current', isCurrent);
+    card.classList.toggle('active', isCurrent && proxyActive);
+    const meta = card.querySelector('.card-meta');
+    if (meta) {
+      let badge = meta.querySelector('.current-badge');
+      if (isCurrent && !badge) {
+        meta.insertAdjacentHTML('afterbegin', '<span class="current-badge"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg>当前</span>');
+      } else if (!isCurrent && badge) {
+        badge.remove();
+      }
+    }
   });
 }
 
@@ -1806,11 +1820,12 @@ function startApp() {
   appStarted = true;
   const tryLoad = (attempt = 0) => {
     try {
-      loadAccounts().catch(() => { if (attempt < 10) setTimeout(() => tryLoad(attempt + 1), 500); });
+      loadAccounts().then(async () => {
+        try { await refreshProxyStatus(); } catch(e) {}
+      }).catch(() => { if (attempt < 10) setTimeout(() => tryLoad(attempt + 1), 500); });
     } catch(e) { if (attempt < 10) setTimeout(() => tryLoad(attempt + 1), 500); }
   };
   tryLoad();
-  try { refreshProxyStatus(); } catch(e) {}
   if (_LICENSE_ENABLED) {
     setInterval(() => {
       pywebview.api.check_license().then(raw => {

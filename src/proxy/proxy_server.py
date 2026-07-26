@@ -312,20 +312,19 @@ async def _stream_inner(
                     yield c
 
             logger.info("[调度] 账号=%s 请求成功", acc.nickname)
-            add_log("success", platform, acc.id, acc.nickname, model, "请求成功", "")
             usage_box = {}
             try:
                 async for piece in _normalize_text_stream(_combined(), usage_box):
                     yield piece
             finally:
                 await resp.aclose()
-            if usage_box.get("usage"):
-                u = usage_box["usage"]
-                consumed = _extract_consumed(u)
-                if consumed > 0:
-                    token_rotator.deduct_quota(acc.id, consumed)
-                update_account_stats(platform, acc.id, u)
-                add_log("success", platform, acc.id, acc.nickname, model, f"消耗 {consumed}" if consumed > 0 else "请求成功", "")
+                if usage_box.get("usage"):
+                    u = usage_box["usage"]
+                    consumed = _extract_consumed(u)
+                    if consumed > 0:
+                        token_rotator.deduct_quota(acc.id, consumed)
+                    update_account_stats(platform, acc.id, u)
+                    add_log("success", platform, acc.id, acc.nickname, model, f"消耗 {consumed}" if consumed > 0 else "请求成功", "")
             return
         except httpx.TimeoutException as e:
             await resp.aclose()
