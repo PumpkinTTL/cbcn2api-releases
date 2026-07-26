@@ -238,28 +238,17 @@ body {
   display: flex;
   flex-direction: column;
 }
+/* 图标已移除 —— 标题栏左上角已有同一个图标，重复出现反而分散注意力 */
 .sidebar-logo {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 4px 6px 18px 6px;
+  gap: 8px;
+  padding: 2px 6px 14px 6px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 16px;
-}
-.sidebar-logo-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: var(--primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(218, 119, 86, 0.25);
+  margin-bottom: 12px;
 }
 .sidebar-logo-title {
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 700;
   color: var(--text);
   letter-spacing: -0.2px;
@@ -387,24 +376,30 @@ body {
 /* Content Area */
 .content { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
 
-/* Header Top */
+/* Header Top —— 分两组：左边低频录入，右边高频批量动作 */
 .header-top {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 12px;
-  padding: 12px 24px;
+  gap: 16px;
+  padding: 11px 20px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.header-right {
+.header-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
-  width: 100%;
-  justify-content: flex-start;
+  min-width: 0;
+}
+/* 靠右并加一道竖分隔，把「读」和「写」两类动作在视觉上断开 */
+.header-group-end {
+  margin-left: auto;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
 }
 
 /* Buttons */
@@ -442,28 +437,29 @@ body {
 .btn:disabled { opacity: 0.5; pointer-events: none; }
 .btn-loading { pointer-events: none; opacity: 0.8; }
 
-/* Main Content Container */
+/* Main Content Container —— 左右内边距与顶栏/网关栏的 20px 对齐，
+   原先 24px 与它们的 18~24px 不一致，边缘看着是错开的 */
 .main {
   flex: 1;
-  padding: 20px 24px;
+  padding: 18px 20px;
   overflow-y: auto;
 }
 
-/* Stats Bar */
+/* Stats Bar —— 两张卡等分整行宽度 */
 .stats {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 14px;
-  margin-bottom: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
 }
 .stat-card {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px 18px;
+  padding: 13px 15px;
   transition: var(--transition);
   min-width: 0;
   box-shadow: var(--shadow);
@@ -471,9 +467,9 @@ body {
 .stat-card:hover { border-color: var(--border-hover); box-shadow: var(--shadow-lg); }
 .stat-icon {
   display: flex; align-items: center; justify-content: center;
-  width: 42px; height: 42px; border-radius: 10px; flex-shrink: 0;
+  width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
 }
-.stat-icon svg { width: 20px; height: 20px; }
+.stat-icon svg { width: 18px; height: 18px; }
 .stat-icon.blue { background: var(--primary-light); color: var(--primary); border: 1px solid var(--primary-border); }
 .stat-icon.purple { background: rgba(168, 85, 247, 0.15); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.25); }
 .stat-icon.green { background: var(--success-light); color: var(--success); border: 1px solid rgba(56, 142, 60, 0.25); }
@@ -501,8 +497,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 8px 18px;
+  gap: 16px;
+  padding: 10px 20px;
   flex-wrap: nowrap;
 }
 
@@ -543,15 +539,76 @@ body {
 .copy-btn svg { width: 13px; height: 13px; }
 
 .proxy-input-group { display: flex; gap: 10px; align-items: center; flex-shrink: 0; margin-left: auto; }
-.proxy-field { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
-.proxy-field span { font-size: 12px; font-weight: 500; color: var(--text-secondary); padding-right: 1px; }
-.proxy-input-group input {
-  padding: 4px 7px; background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); color: var(--text); font-size: 12px; font-family: inherit; outline: none; transition: var(--transition);
-  width: 68px;
+
+/* 端口/密码/阈值合成一个分段控件：外面一圈边框，内部用细线分隔。
+   原先三个各带边框的输入框 + 三个浮动标签 = 九个视觉元素，是这一排最挤的地方。 */
+/* 固定高度是关键：原先靠 input 的默认行高撑开，number 和 password 的
+   固有高度不一样，各列基线就对不齐、看着都没垂直居中。 */
+.proxy-fields {
+  display: flex;
+  align-items: stretch;
+  height: 30px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  transition: var(--transition);
 }
-.proxy-input-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light); }
-.proxy-input-group input[type="password"] { width: 85px; }
+.proxy-fields:hover { border-color: var(--border-hover); }
+/* 聚焦只改容器描边色，不再加 2px 外扩光环 ——
+   那圈光环紧贴内容、又和右侧按钮的 10px 间距打架，看着就像内容顶到边框上了。 */
+.proxy-fields:focus-within { border-color: var(--primary); }
+
+.proxy-field {
+  display: flex;
+  align-items: center;      /* 标签与输入框在这条 30px 的轴上共同居中 */
+  height: 100%;
+  gap: 6px;
+  padding: 0 11px;
+  white-space: nowrap;
+  cursor: text;
+  transition: background var(--transition);
+}
+.proxy-field + .proxy-field { border-left: 1px solid var(--border); }
+/* 高亮落在真正被聚焦的那一格，比整组描边更能说明「现在改的是哪个」 */
+.proxy-field:focus-within { background: var(--primary-light); }
+.proxy-field:focus-within span { color: var(--primary); }
+.proxy-field span {
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  user-select: none;
+}
+.proxy-fields input {
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+  width: 52px;
+}
+.proxy-fields input[type="password"] { width: 68px; }
+/* WebView2 会给聚焦的 input 补一圈自己的 focus ring，必须显式压掉，
+   否则和容器描边叠成双层边框 */
+.proxy-fields input:focus,
+.proxy-fields input:focus-visible {
+  outline: none;
+  border: none;
+  box-shadow: none;
+}
+/* 去掉 number 输入的上下箭头 —— 它们在这个尺寸下只会挤占字符宽度 */
+.proxy-fields input[type="number"] { -moz-appearance: textfield; }
+.proxy-fields input[type="number"]::-webkit-outer-spin-button,
+.proxy-fields input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
 .proxy-btn-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; transition: var(--transition); display: inline-block; vertical-align: middle; margin-right: 4px; }
 .proxy-btn-dot.off { background: var(--text-muted); }
@@ -631,13 +688,22 @@ body {
 
 /* Filter Bar */
 .filter-bar {
-  display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;
-  padding: 10px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  display: flex; gap: 12px; align-items: center; margin-bottom: 14px; flex-wrap: wrap;
+  padding: 8px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
-.filter-label { font-size: 12px; color: var(--text-secondary); font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+.filter-label {
+  font-size: 11px; color: var(--text-muted); font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px;
+  text-transform: uppercase; letter-spacing: 0.3px; flex-shrink: 0;
+}
 .filter-label svg { width: 14px; height: 14px; color: var(--text-muted); }
 .filter-date-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+/* 替代原来那句「指定日期:」—— 一道竖线就够，少一段文字少一次阅读 */
+.filter-sep {
+  width: 1px; height: 16px; background: var(--border);
+  margin: 0 4px; flex-shrink: 0;
+}
 
 .date-input-wrapper {
   display: inline-flex;
@@ -645,23 +711,26 @@ body {
   position: relative;
 }
 .filter-bar input[type="date"] {
-  padding: 6px 12px;
-  background: var(--surface-hover);
-  border: 1px solid var(--border-hover);
+  height: 28px;
+  padding: 0 8px 0 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text) !important;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;              /* 与下拉一致，原来的 600 比同排控件都重 */
   font-family: inherit;
+  font-variant-numeric: tabular-nums;
   outline: none;
   cursor: pointer;
-  min-width: 140px;
+  min-width: 132px;
   transition: var(--transition);
 }
 .filter-bar input[type="date"]:hover {
-  border-color: var(--primary);
-  background: var(--surface-active);
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
 }
+.filter-bar input[type="date"]:focus { border-color: var(--primary); }
 .filter-bar input[type="date"].empty::-webkit-datetime-edit,
 .filter-bar input[type="date"].empty::-webkit-datetime-edit-fields-wrapper,
 .filter-bar input[type="date"].empty::-webkit-datetime-edit-text,
@@ -771,13 +840,41 @@ body {
 .badge-status-banned { font-size: 10px; padding: 2px 7px; border-radius: 4px; background: var(--danger-light); color: var(--danger); border: 1px solid rgba(217,83,79,0.25); }
 .badge-status-disabled { font-size: 10px; padding: 2px 7px; border-radius: 4px; background: var(--warning-light); color: var(--warning); border: 1px solid rgba(217,119,6,0.25); }
 .status-filter-group { display: flex; gap: 4px; margin-left: auto; }
+
+/* 统一的下拉样式。原先用系统原生箭头，配色和圆角都由 OS 决定，
+   在暖米色界面里显得是外来控件。这里换成内嵌 SVG 箭头自己画。 */
+.select-styled,
 .status-filter-select {
-  padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
-  background: var(--surface); color: var(--text-secondary); font-size: 12px;
-  cursor: pointer; font-family: inherit; outline: none; transition: var(--transition);
+  -webkit-appearance: none;
+  appearance: none;
+  height: 28px;
+  padding: 0 28px 0 11px;   /* 右侧留出箭头位置 */
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background-color: var(--bg);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e867c' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 13px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  line-height: 28px;
+  cursor: pointer;
+  outline: none;
+  transition: var(--transition);
 }
-.status-filter-select:hover { border-color: var(--border-hover); }
-.status-filter-select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light); }
+.select-styled:hover,
+.status-filter-select:hover { border-color: var(--border-hover); background-color: var(--surface-hover); }
+.select-styled:focus,
+.status-filter-select:focus { border-color: var(--primary); }
+/* 下拉展开的列表项由系统渲染，只能定底色和前景色 */
+.select-styled option,
+.status-filter-select option {
+  background: var(--surface);
+  color: var(--text);
+}
 .version-link { color: var(--text-tertiary); cursor: pointer; transition: var(--transition); }
 .version-link:hover { color: var(--primary); text-decoration: underline; }
 .changelog-modal { max-width: 480px; width: 90%; }
@@ -794,20 +891,8 @@ body {
   justify-content: space-between;
   margin-bottom: 12px;
 }
-.card-avatar {
-  width: 40px; height: 40px;
-  border-radius: 10px;
-  background: var(--primary-light);
-  border: 1px solid var(--primary-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--primary);
-  flex-shrink: 0;
-}
-.card-info { flex: 1; min-width: 0; padding-left: 12px; }
+/* 头像已移除 —— 首字母方块不携带信息，却占掉 40px 宽和一圈边距 */
+.card-info { flex: 1; min-width: 0; }
 .card-name { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.3; }
 .card-email { font-size: 12px; color: var(--text-secondary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-meta { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
@@ -917,16 +1002,78 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
 .form-group { margin-bottom: 16px; }
 
 /* Toast */
+/* Toast —— 改为与卡片一致的 surface 底 + 彩色图标点。
+   原先是整块实色填充（--danger / --success）配白字，在暖米色体系里过于抢眼，
+   而且四种类型的色块面积一样大，反倒分不出轻重。 */
 .toast {
-  position: fixed; top: 20px; left: 50%; transform: translateX(-50%) translateY(-20px);
-  padding: 10px 22px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 500; z-index: 9999;
-  opacity: 0; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); pointer-events: none; white-space: nowrap; box-shadow: var(--shadow-lg);
+  position: fixed; top: 48px; left: 50%;
+  transform: translateX(-50%) translateY(-8px) scale(0.97);
+  display: flex; align-items: flex-start; gap: 10px;
+  max-width: min(460px, calc(100vw - 48px));
+  padding: 11px 15px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  font-size: 13px; font-weight: 500; color: var(--text);
+  z-index: 9999; opacity: 0; pointer-events: none;
+  transition: opacity 0.18s cubic-bezier(0.4,0,0.2,1),
+              transform 0.18s cubic-bezier(0.4,0,0.2,1);
 }
-.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-.toast.error { background: var(--danger); color: #fff; }
-.toast.success { background: var(--success); color: #fff; }
-.toast.info { background: var(--primary); color: #fff; }
-.toast.warning { background: var(--warning); color: #fff; }
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+
+.toast-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%;
+  flex-shrink: 0; margin-top: 1px;
+  background: currentColor;
+}
+.toast-icon svg { width: 11px; height: 11px; color: var(--surface); }
+
+.toast-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.toast-msg { color: var(--text); line-height: 1.45; }
+/* 路径这类内容用等宽字体并允许换行，方便核对 */
+.toast-detail {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px; font-weight: 400; line-height: 1.5;
+  color: var(--text-secondary); word-break: break-all;
+}
+
+/* 只给图标上色，文字保持正常前景色。类型区分靠图标形状 + 颜色就够了 */
+.toast.success { color: var(--success); }
+.toast.error   { color: var(--danger); }
+.toast.warning { color: var(--warning); }
+.toast.info    { color: var(--primary); }
+
+/* Confirm Dialog —— 与 .modal 同一套视觉语言 */
+.confirm-overlay {
+  position: fixed; inset: 0; z-index: 9998;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+  background: var(--modal-overlay);
+  opacity: 0; transition: opacity 0.16s cubic-bezier(0.4,0,0.2,1);
+}
+.confirm-overlay.show { opacity: 1; }
+.confirm-box {
+  width: 100%; max-width: 380px;
+  padding: 22px 24px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  transform: translateY(8px) scale(0.97);
+  transition: transform 0.16s cubic-bezier(0.4,0,0.2,1);
+}
+.confirm-overlay.show .confirm-box { transform: translateY(0) scale(1); }
+.confirm-title {
+  font-size: 15px; font-weight: 700; color: var(--text);
+  letter-spacing: -0.2px; margin-bottom: 7px;
+}
+.confirm-msg {
+  font-size: 13px; line-height: 1.6; color: var(--text-secondary);
+  white-space: pre-line; margin-bottom: 20px;
+}
+.confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.confirm-actions .btn { padding: 7px 15px; }
 
 /* License */
 .license-overlay { position: fixed; inset: 0; z-index: 5000; display: none; align-items: center; justify-content: center; background: var(--bg); }
@@ -947,10 +1094,18 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
 .quota-item .value { font-weight: 600; color: var(--text); }
 
 /* Responsive */
+@media (max-width: 1100px) {
+  /* 窗口收窄时先让顶栏两组换行，而不是把按钮压扁 */
+  .header-top { flex-wrap: wrap; }
+  .header-group-end { padding-left: 0; border-left: none; }
+  .proxy-panel-main { flex-wrap: wrap; }
+  .proxy-input-group { margin-left: 0; }
+}
 @media (max-width: 768px) {
   .sidebar { display: none; }
-  .stats { grid-template-columns: 1fr; }
-  .header-top { flex-wrap: wrap; }
+  .stats { grid-template-columns: minmax(0, 1fr); }
   .proxy-panel-main { flex-direction: column; align-items: stretch; }
   .proxy-input-group { justify-content: space-between; flex-wrap: wrap; }
+  .proxy-fields { flex: 1; }
+  .proxy-fields input { width: 100%; }
 }

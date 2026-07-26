@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 import threading
 from typing import Optional
@@ -6,6 +7,8 @@ from typing import Optional
 from src.storage import store
 from src.models.account import Account
 from src.api.quota import calc_totals
+
+logger = logging.getLogger(__name__)
 
 # 冷却时长（秒）
 QUOTA_COOLDOWN = 3600   # 额度耗尽（429）：1 小时后重试
@@ -99,6 +102,21 @@ class TokenRotator:
             self._disabled.pop(acc.id, None)
         return True
 
+    def ensure_loaded(self, platform: str):
+        """池为空时先加载。
+
+        给调用方在 count_usable() 之前用 —— 否则「池未加载」和「全部不可用」
+        都返回 0，重试次数会被算成 1，明明有 N 个号也只试一次。
+        """
+        with self._lock:
+            if not self._accounts:
+                self.reload(platform)
+
+    def count(self) -> int:
+        """池内账号总数（不判断可用性）。"""
+        with self._lock:
+            return len(self._accounts)
+
     def get_next(self, platform: str) -> Optional[Account]:
         """粘性优先：优先返回当前锁定账号；不可用时才找下一个可用账号。"""
         with self._lock:
@@ -182,9 +200,15 @@ class TokenRotator:
     def deduct_quota(self, account_id: str, amount: float):
         """请求成功后扣减估算额度，低于阈值则自动禁用并切号。
         若池中无可换的号则不切号不禁用，只第一次弹出 warn/prompt。"""
+        # 锁内只做内存状态判定，落库放到锁外 —— store.* 是同步 sqlite，
+        # 默认 timeout=5s，GUI 线程并发写库时会连带把这把锁和事件循环一起卡住。
+        to_persist = None    # 需要落库的 Account
+        log_row = None       # (level, account_id, nickname, message)
+
         with self._lock:
+            # 缺失估算值时按 0 兜底而不是 return，否则这个账号永不扣减、永不触发阈值
             if account_id not in self._estimated_remain:
-                return
+                self._estimated_remain[account_id] = 0.0
             self._estimated_remain[account_id] = max(0, self._estimated_remain[account_id] - amount)
             if self._threshold <= 0 or self._estimated_remain[account_id] >= self._threshold:
                 return
@@ -193,7 +217,7 @@ class TokenRotator:
             if not acc or acc.status != "normal":
                 return
 
-            # 备选必须"可用且剩余额度>=阈值"，否则切过去又触发阈值→死循环
+            # 备选必须"可用且剩余额度>=阈值"，否则切过去又触发阈值→来回震荡
             good = [a for a in self._accounts
                     if a.id != account_id
                     and self._is_usable(a)
@@ -202,23 +226,28 @@ class TokenRotator:
                 if not self._threshold_no_fallback:
                     self._threshold_no_fallback = True
                     self._threshold_switch = "__nofallback__" + (acc.nickname or account_id)
-                    try:
-                        store.add_log("warning", self._platform, account_id, acc.nickname or "",
-                                      "", "额度低于阈值且无额度充足的备选账号，继续使用当前号", "")
-                    except Exception:
-                        pass
-                return
+                    log_row = ("warning", account_id, acc.nickname or "",
+                               "额度低于阈值且无额度充足的备选账号，继续使用当前号")
+            else:
+                acc.status = "disabled"
+                to_persist = acc
+                self._current_id = good[0].id
+                self._threshold_switch = acc.nickname or account_id
+                # 成功换号说明又有可用备选了，复位标志，
+                # 否则第一次 nofallback 之后所有后续提示都会被静默吃掉
+                self._threshold_no_fallback = False
+                log_row = ("warning", account_id, acc.nickname or "",
+                           f"额度低于阈值({self._threshold})，已自动禁用并切换")
 
-            acc.status = "disabled"
+        if to_persist is not None:
             try:
-                store.upsert_account(self._platform, acc)
-            except Exception:
-                pass
-            self._current_id = good[0].id
-            self._threshold_switch = acc.nickname or account_id
+                store.upsert_account(self._platform, to_persist)
+            except Exception as e:
+                logger.warning("[调度] 阈值换号持久化失败: %r", e)
+        if log_row:
+            level, aid, nick, msg = log_row
             try:
-                store.add_log("warning", self._platform, account_id, acc.nickname or "",
-                              "", f"额度低于阈值({self._threshold})，已自动禁用并切换", "")
+                store.add_log(level, self._platform, aid, nick, "", msg, "")
             except Exception:
                 pass
 
@@ -243,9 +272,20 @@ class TokenRotator:
             self._threshold = 0.0
 
     def _refresh_estimates(self):
+        """重算每个账号的估算剩余额度。
+
+        每个账号单独 try —— calc_totals 会对 quota_raw 里 {"data": null} 这类
+        形状抛 AttributeError（配额接口报错时完全可能）。原先整个循环裸奔，
+        一个账号解析失败就会让它后面所有账号缺失估算值，而 deduct_quota 对
+        缺失的 key 直接 return，那些账号从此永不扣减、永不触发阈值。
+        """
         for acc in self._accounts:
-            total, used = calc_totals(acc.quota_raw, acc.usage_raw)
-            self._estimated_remain[acc.id] = max(0, total - used)
+            try:
+                total, used = calc_totals(acc.quota_raw, acc.usage_raw)
+                self._estimated_remain[acc.id] = max(0, total - used)
+            except Exception as e:
+                logger.warning("[调度] 账号=%s 额度估算失败: %r", acc.nickname or acc.id, e)
+                self._estimated_remain.setdefault(acc.id, 0.0)
 
     def _persist_cooldowns(self):
         now = time.time()

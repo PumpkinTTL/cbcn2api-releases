@@ -209,15 +209,6 @@ class GuiApi:
         )
         return account
 
-    def export_accounts(self, platform: str, account_ids_json: str) -> str:
-        ids = json.loads(account_ids_json) if account_ids_json else []
-        accounts = []
-        for aid in ids:
-            a = store.load_account(platform, aid)
-            if a:
-                accounts.append(a.to_dict())
-        return json.dumps(accounts, ensure_ascii=False, indent=2)
-
     def update_tags(self, platform: str, account_id: str, tags_json: str) -> str:
         tags = json.loads(tags_json) if tags_json else []
         account = store.load_account(platform, account_id)
@@ -306,6 +297,11 @@ class GuiApi:
         return json.dumps(saved.to_dict())
 
     def export_accounts(self, platform: str) -> str:
+        """弹原生保存对话框让用户选路径，写入后回报真实落盘位置。
+
+        原先是把 JSON 抛给前端，用 Blob + <a download> 触发下载 —— 在 WebView2 里
+        会静默落到系统下载目录，用户无从得知文件在哪，只看到一句「导出成功」。
+        """
         accounts = store.list_accounts(platform)
         data = []
         for a in accounts:
@@ -317,7 +313,41 @@ class GuiApi:
                 "token_type": a.token_type, "expires_at": a.expires_at,
                 "domain": a.domain, "status": a.status,
             })
-        return json.dumps(data, ensure_ascii=False, indent=2)
+
+        if not data:
+            return json.dumps({"error": "当前没有账号可导出"})
+
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+
+        if not self._window:
+            return json.dumps({"error": "窗口未就绪"})
+
+        default_name = f"accounts_{platform}_{time.strftime('%Y-%m-%d')}.json"
+        try:
+            import webview
+            result = self._window.create_file_dialog(
+                webview.FileDialog.SAVE,
+                directory=str(Path.home() / "Downloads"),
+                save_filename=default_name,
+                file_types=("JSON 文件 (*.json)",),
+            )
+        except Exception as e:
+            return json.dumps({"error": f"打开保存对话框失败: {e}"})
+
+        # 用户取消时返回 None 或空序列
+        if not result:
+            return json.dumps({"cancelled": True})
+
+        path = result if isinstance(result, str) else result[0]
+        if not path.lower().endswith(".json"):
+            path += ".json"
+
+        try:
+            Path(path).write_text(payload, encoding="utf-8")
+        except Exception as e:
+            return json.dumps({"error": f"写入失败: {e}"})
+
+        return json.dumps({"ok": True, "path": path, "count": len(data)})
 
     def get_quota_threshold(self) -> str:
         from src.proxy.token_rotator import token_rotator
