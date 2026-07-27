@@ -118,15 +118,16 @@ def upsert_account(platform: str, account: Account) -> Account:
                 created_at, last_used
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(id) DO UPDATE SET
-                email=excluded.email, uid=excluded.uid,
-                nickname=excluded.nickname,
-                enterprise_id=excluded.enterprise_id,
-                enterprise_name=excluded.enterprise_name,
+                email=COALESCE(NULLIF(excluded.email, ''), accounts.email),
+                uid=COALESCE(NULLIF(excluded.uid, ''), accounts.uid),
+                nickname=COALESCE(NULLIF(excluded.nickname, ''), accounts.nickname),
+                enterprise_id=COALESCE(NULLIF(excluded.enterprise_id, ''), accounts.enterprise_id),
+                enterprise_name=COALESCE(NULLIF(excluded.enterprise_name, ''), accounts.enterprise_name),
                 access_token=excluded.access_token,
                 refresh_token=excluded.refresh_token,
                 token_type=excluded.token_type,
                 expires_at=excluded.expires_at,
-                domain=excluded.domain,
+                domain=COALESCE(NULLIF(excluded.domain, ''), accounts.domain),
                 status=excluded.status,
                 tags=excluded.tags,
                 last_checkin_time=excluded.last_checkin_time,
@@ -193,8 +194,11 @@ def _row_to_account(row: sqlite3.Row) -> Account:
 def list_accounts(platform: str) -> list[Account]:
     conn = _get_conn()
     try:
+        # 按创建时间倒序（新导入的在前）。
+        # 不用 last_used —— upsert 每次都无脑刷 last_used=now，导致禁用/启用/刷新 token
+        # 后卡片飘走。created_at 稳定不变，顺序才稳。当前调度号的置顶在前端 filteredAccounts 里做。
         rows = conn.execute(
-            "SELECT * FROM accounts WHERE platform=? ORDER BY last_used DESC", (platform,)
+            "SELECT * FROM accounts WHERE platform=? ORDER BY created_at DESC, id ASC", (platform,)
         ).fetchall()
         return [_row_to_account(r) for r in rows]
     finally:
@@ -215,6 +219,7 @@ def remove_account(platform: str, account_id: str):
 def find_duplicate(platform: str, uid: Optional[str], email: str) -> Optional[str]:
     conn = _get_conn()
     try:
+        # 1. uid 精确匹配（最可靠，OAuth 必返回 uid）
         if uid:
             row = conn.execute(
                 "SELECT id FROM accounts WHERE platform=? AND uid=?",
@@ -222,14 +227,19 @@ def find_duplicate(platform: str, uid: Optional[str], email: str) -> Optional[st
             ).fetchone()
             if row:
                 return row["id"]
+        # 2. email 匹配 —— 不再要求「必须含 @」。
+        # 官方没绑邮箱时，email 字段就是手机号或昵称（18775642907、又是一年冬）。
+        # 旧代码 if "@" in norm 把所有手机号账号挡在外面，导致重复登录同号去重失败。
+        # 手机号当 email 用时也要匹配。
         if email:
             norm = email.strip().lower()
-            if "@" in norm:
+            if norm:
                 rows = conn.execute(
                     "SELECT id, uid, email FROM accounts WHERE platform=? AND LOWER(email)=?",
                     (platform, norm)
                 ).fetchall()
                 for r in rows:
+                    # uid 不一致就跳过（避免不同账号碰巧 email 相同误判）
                     if uid and r["uid"] and r["uid"].strip().lower() != uid.strip().lower():
                         continue
                     return r["id"]

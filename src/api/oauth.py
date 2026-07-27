@@ -80,7 +80,14 @@ def poll_token(login_id: str) -> Optional[dict]:
                 data.get("accessToken") or data.get("access_token") or ""
             )
             if access_token:
-                _pending_oauth.pop(login_id, None)
+                # 不在这里 pop pending！旧代码 _pending_oauth.pop(login_id, None) 是竞态根因：
+                # setInterval 每 1.5s 触发一次 async 回调，如果某次 session.get 卡超过 1.5s，
+                # 下一个回调会和它并发。A 拿到 token 并 pop 掉 pending 后，B 进 poll_token
+                # 第 58 行 _pending_oauth.get 返回 None → raise「没有待处理的登录请求」。
+                # 前端先弹错误再弹登录成功。
+                # 改为只读：拿到 token 就返回，pending 留着，由 complete_oauth_and_save
+                # 的 reset_pending() 在最终完成时统一清理。并发 poll 都能拿到同一个 token，
+                # 不会有人因为 pending 被提前删而报错。
                 return {
                     "access_token": access_token,
                     "refresh_token": data.get("refreshToken") or data.get("refresh_token"),
@@ -97,6 +104,15 @@ def cancel_login(login_id: str):
     if pending:
         pending["cancelled"] = True
         _pending_oauth.pop(login_id, None)
+
+
+def reset_pending():
+    """清空所有待处理的 OAuth 登录。
+
+    每次 oauth_start 调用一次，保证「重复登录」「删了再登录」都从干净状态开始，
+    避免上一次登录残留的 _pending_oauth 条目（成功后 poll_token 已 pop，但失败/超时/
+    用户中途取消的会留下）干扰新一轮轮询。"""
+    _pending_oauth.clear()
 
 
 def fetch_account_info(access_token: str, state: str,

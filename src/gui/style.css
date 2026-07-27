@@ -1342,9 +1342,8 @@ body {
 
 /* Modal */
 .modal-overlay {
-  display: none; position: fixed; inset: 0; background: var(--modal-overlay, rgba(35,31,28,0.45));
+  display: flex; position: fixed; inset: 0; background: var(--modal-overlay, rgba(35,31,28,0.45));
   z-index: 1000; align-items: center; justify-content: center; padding: 20px;
-  backdrop-filter: blur(2px);
 }
 .modal-overlay.show { display: flex; }
 .modal {

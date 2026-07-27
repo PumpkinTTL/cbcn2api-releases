@@ -297,7 +297,11 @@ class GuiApi:
     # ========== OAuth Login ==========
 
     def oauth_start(self, platform: str) -> str:
+        # 每次开始新登录，彻底重置 OAuth 状态机：
+        # 清掉所有残留的 _pending_oauth（上一次登录成功/失败/取消都可能留下脏条目），
+        # 复位 _current_oauth_login_id。这样「重复登录同号」「删了再登录」都从干净状态开始。
         try:
+            oauth_api.reset_pending()
             result = oauth_api.start_login(platform)
             self._current_oauth_login_id = result["login_id"]
             return json.dumps(result)
@@ -345,6 +349,7 @@ class GuiApi:
         account_id = Account.generate_id(identity_seed)
 
         dup_id = store.find_duplicate(platform, uid, email)
+        is_update = bool(dup_id)   # 已存在 = 覆盖更新；前端据此提示「已更新」而非「新增」
         if dup_id:
             account_id = dup_id
 
@@ -369,13 +374,31 @@ class GuiApi:
         )
 
         saved = store.upsert_account(platform, account)
+        # 登录即刷新额度：复用 refresh_token 的完整逻辑拉 dosage/payment/userResource。
+        # 否则新登录的号额度条为空，用户还得手动点刷新（与 import_from_json 保持一致）。
+        # 失败不影响账号已保存，只是额度暂缺。
+        try:
+            refreshed = json.loads(self.refresh_token(platform, saved.id))
+            if "error" not in refreshed:
+                saved = store.load_account(platform, saved.id) or saved
+        except Exception:
+            pass
         # OAuth 新增账号，同步调度器内存池让它立即可被调度。
         try:
             from src.proxy.token_rotator import token_rotator
             token_rotator.reload(platform)
         except Exception:
             pass
-        return json.dumps(saved.to_dict())
+        # 登录完成后彻底重置 OAuth 状态机：清掉所有 pending + 复位 _current_oauth_login_id。
+        # 否则下次登录时，残留的 pending 条目 / _current_oauth_login_id 会和新流程串味，
+        # 触发「没有待处理的登录」（poll_token 找不到 pending 就抛这个错）。
+        # 这是「重启网关才好」的根因——重启清空进程内存，但单次登录后内存没清。
+        oauth_api.reset_pending()
+        self._current_oauth_login_id = None
+        # 返回带上 is_update 标志：前端据此提示「账号已更新」而非「登录成功」（重复登录同号时）
+        result = saved.to_dict()
+        result["is_update"] = is_update
+        return json.dumps(result)
 
     def export_accounts(self, platform: str) -> str:
         """弹原生保存对话框让用户选路径，写入后回报真实落盘位置。
