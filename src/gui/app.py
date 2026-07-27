@@ -177,7 +177,15 @@ class GuiApi:
             try:
                 account = self._payload_to_account(item, platform)
                 saved = store.upsert_account(platform, account)
-                results.append(saved.to_dict())
+                # 导入即刷新额度：复用 refresh_token 的完整逻辑（拉 dosage/payment/
+                # userResource）。否则裸 token 走 build_payload_from_token 拉额度可能
+                # 失败/不全，导致额度条不显示，用户还要手动点一次刷新。
+                # refresh_token 失败不影响账号已导入，只是那个号额度暂缺。
+                try:
+                    refreshed = json.loads(self.refresh_token(platform, saved.id))
+                    results.append(refreshed if "error" not in refreshed else saved.to_dict())
+                except Exception:
+                    results.append(saved.to_dict())
             except Exception as e:
                 return json.dumps({"error": f"第 {idx + 1} 条解析失败: {e}"})
 
