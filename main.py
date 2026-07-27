@@ -32,10 +32,11 @@ _HTML_URL = pathlib.Path(_GUI_HTML).as_uri()
 _ICO_PATH = _resource("gateway.ico")
 
 def _apply_window_chrome():
-    """窗口出现后补上原生装饰：图标、拉伸边框、去框架亮边、圆角。
+    """窗口出现后补上图标和圆角。
 
-    每一步各自 try —— 之前它们共享一个提前 return，窗口晚出现一点就会
-    同时失效，而且被 except pass 吞掉、毫无提示。
+    frameless 窗口本身没有非客户区，干净无白边，不需要任何样式补丁。resize 走
+    前端 delta + SetWindowPos（见 win_chrome.resize_delta），也不依赖窗口样式。
+    所以这里只做两件不影响外观的事：设任务栏图标、显式声明 Win11 圆角。
     """
     if sys.platform != "win32":
         return
@@ -52,14 +53,9 @@ def _apply_window_chrome():
         pass
 
     try:
-        # 顺序有意义：先补样式拿到拉伸，再清掉非客户区去亮边，
-        # 最后显式声明圆角（前两步改过样式，系统的圆角推断可能已变）。
-        r1 = win_chrome.enable_resize_border(hwnd)
-        r2 = win_chrome.suppress_nc_frame(hwnd)
-        r3 = win_chrome.set_rounded_corners(hwnd)
-        print(f"[chrome] resize={r1} nc_frame={r2} rounded={r3}")
+        win_chrome.set_rounded_corners(hwnd)
     except Exception as e:
-        print(f"[chrome] 窗口装饰失败: {e!r}")
+        print(f"[chrome] 圆角设置失败: {e!r}")
 
 
 def main():
@@ -78,8 +74,7 @@ def main():
         # 必须关掉。shadow=True 时 pywebview 会调
         # DwmExtendFrameIntoClientArea(MARGINS 1,1,1,1)（winforms.py:169-184），
         # 把 DWM 框架往客户区里延伸 1px 并由 DWM 渲染 —— 这就是非最大化状态下
-        # 顶部那条 1px 白线。之前单独试 shadow=False 没效果，是因为当时更粗的
-        # WS_THICKFRAME 非客户区还在，把这条细线盖住了。
+        # 顶部那条 1px 白线。
         # 圆角不受影响：win_chrome.set_rounded_corners() 已显式设置 DWMWCP_ROUND。
         shadow=False,
     )
