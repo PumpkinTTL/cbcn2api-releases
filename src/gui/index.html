@@ -91,29 +91,29 @@
 <!-- Content -->
 <div class="content">
   <div class="header-top" id="consoleHeader">
-    <!-- 左组：与网关参数栏对称的融合分段图标工具栏 -->
-    <div class="header-toolbar-strip">
-      <button class="btn-icon-strip" onclick="showOAuthModal()" title="OAuth 授权登录">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
+    <!-- 左组：平整凸起的精致图标工具栏容器（非内凹） -->
+    <div class="header-toolbar-container">
+      <button class="btn-toolbar-item" onclick="showOAuthModal()" title="OAuth 授权登录">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
       </button>
-      <button class="btn-icon-strip" onclick="showImportModal()" title="粘贴 Token 录入">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><path d="M9 12h6M9 16h4"/></svg>
+      <button class="btn-toolbar-item" onclick="showImportModal()" title="粘贴 Token 录入">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><path d="M9 12h6M9 16h4"/></svg>
       </button>
-      <button class="btn-icon-strip" onclick="document.getElementById('fileInput').click()" title="JSON 文件批量导入">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/></svg>
+      <button class="btn-toolbar-item" onclick="document.getElementById('fileInput').click()" title="JSON 文件批量导入">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/></svg>
       </button>
       <input type="file" id="fileInput" accept=".json" style="display:none" onchange="handleFileImport(event)">
-      <button class="btn-icon-strip" onclick="exportAccounts()" title="导出账号 JSON 配置">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/></svg>
+      <button class="btn-toolbar-item" onclick="exportAccounts()" title="导出账号 JSON 配置">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/></svg>
       </button>
 
-      <span class="strip-divider"></span>
+      <span class="toolbar-v-divider"></span>
 
-      <button class="btn-icon-strip accent" onclick="checkinAll()" title="一键签到全量账号">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4"/></svg>
+      <button class="btn-toolbar-item accent" onclick="checkinAll()" title="一键签到全量账号">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4"/></svg>
       </button>
-      <button class="btn-icon-strip primary" onclick="refreshAll()" title="一键刷新数据与额度">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>
+      <button class="btn-toolbar-item primary" onclick="refreshAll()" title="一键刷新数据与额度">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>
       </button>
     </div>
 

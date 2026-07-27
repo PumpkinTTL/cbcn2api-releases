@@ -428,29 +428,27 @@ body {
   flex-wrap: nowrap;
 }
 
-/* Segmented Icon Toolbar Strip (Left Side) */
-.header-toolbar-strip {
+/* Refined Flat Elevated Toolbar Container (No sunken effect) */
+.header-toolbar-container {
   display: inline-flex;
   align-items: center;
-  height: 28px;
-  background: var(--bg);
+  gap: 2px;
+  height: 32px;
+  padding: 0 4px;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  overflow: hidden;
-  box-sizing: border-box;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
   flex-shrink: 0;
-  transition: var(--transition);
-}
-.header-toolbar-strip:hover {
-  border-color: var(--border-hover);
 }
 
-.btn-icon-strip {
+.btn-toolbar-item {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 29px;
-  height: 100%;
+  width: 28px;
+  height: 26px;
+  border-radius: 4px;
   border: none;
   background: transparent;
   color: var(--text-secondary);
@@ -458,33 +456,33 @@ body {
   transition: var(--transition);
   outline: none;
 }
-.btn-icon-strip + .btn-icon-strip {
-  border-left: 1px solid var(--border-light);
-}
-.btn-icon-strip:hover {
+
+.btn-toolbar-item:hover {
   color: var(--text);
   background: var(--surface-hover);
 }
-.btn-icon-strip.accent {
+
+.btn-toolbar-item.accent {
   color: var(--accent);
 }
-.btn-icon-strip.accent:hover {
+.btn-toolbar-item.accent:hover {
   background: var(--accent-light);
   color: var(--accent);
 }
-.btn-icon-strip.primary {
+
+.btn-toolbar-item.primary {
   color: var(--primary);
 }
-.btn-icon-strip.primary:hover {
+.btn-toolbar-item.primary:hover {
   background: var(--primary-light);
   color: var(--primary);
 }
 
-.strip-divider {
+.toolbar-v-divider {
   width: 1px;
   height: 14px;
   background: var(--border);
-  margin: 0 1px;
+  margin: 0 2px;
 }
 
 /* Buttons */
@@ -635,7 +633,7 @@ body {
 .proxy-fields {
   display: flex;
   align-items: stretch;
-  height: 28px;
+  height: 32px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
