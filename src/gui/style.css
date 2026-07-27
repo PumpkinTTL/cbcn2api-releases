@@ -1231,14 +1231,18 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
   .proxy-fields input { width: 100%; }
 }
 
-/* ===== 主题切换 View Transition（圆形扩散动画）===== */
+/* ===== 主题切换 View Transition（圆形扩散 / 收回动画）===== */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none;
   mix-blend-mode: normal;
 }
+/* 默认（切到深色 = 扩散）：新视图盖在上面，从按钮铺开。 */
 ::view-transition-old(root) { z-index: 1; }
 ::view-transition-new(root) { z-index: 9999; }
+/* 收回（切回浅色）：旧视图（深色）盖在上面，从全屏缩回按钮露出新视图。 */
+html.theme-reversing::view-transition-old(root) { z-index: 9999; }
+html.theme-reversing::view-transition-new(root) { z-index: 1; }
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(root),
   ::view-transition-new(root) { animation: none !important; }

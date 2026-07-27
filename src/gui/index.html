@@ -2083,11 +2083,23 @@ async function toggleTheme(event) {
   if (document.startViewTransition) {
     const t = document.startViewTransition(apply);
     t.ready.then(() => {
-      html.animate(
-        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${endRadius}px at ${x}px ${y}px)`] },
-        { duration: 420, easing: 'ease-in-out', pseudoElement: '::view-transition-new(root)' }
-      );
-    }).catch(() => {});
+      if (theme === 'dark') {
+        // 切到深色 = 扩散：新视图（深色）从按钮位置铺开盖住旧视图。
+        html.animate(
+          { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${endRadius}px at ${x}px ${y}px)`] },
+          { duration: 420, easing: 'ease-in-out', pseudoElement: '::view-transition-new(root)' }
+        );
+      } else {
+        // 切回浅色 = 收回：旧视图（深色）从全屏缩回按钮，露出底下的新视图（浅色）。
+        // 动画作用在 old 上，所以 old 必须盖在 new 之上（z-index 由 CSS 配合 class 控制）。
+        html.classList.add('theme-reversing');
+        html.animate(
+          { clipPath: [`circle(${endRadius}px at ${x}px ${y}px)`, `circle(0px at ${x}px ${y}px)`] },
+          { duration: 420, easing: 'ease-in-out', pseudoElement: '::view-transition-old(root)' }
+        );
+      }
+    }).then(() => html.classList.remove('theme-reversing'))
+      .catch(() => html.classList.remove('theme-reversing'));
   } else {
     apply();
   }
