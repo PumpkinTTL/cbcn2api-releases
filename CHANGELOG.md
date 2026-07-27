@@ -109,6 +109,23 @@
 阈值耗尽自动切号；重启 reload 恢复。返回 None 的唯一合法情况是池中所有账号均处于
 disabled / banned / 过期 / 冷却 / 无 token 状态。
 
+### 新增功能
+
+#### 账号卡片运行统计
+- 每张账号卡片底部新增统计行（`cardStatsHtml`）：请求次数、输入/输出 Token、
+  累计消耗积分、缓存命中率。数据来自 `account_stats` 表（`update_account_stats`
+  每次请求累加），前端通过 `get_all_stats` 拉取，`refreshAccountStats` 刷新。
+- 网关运行时每 ~10s 自动刷新（见「数据刷新与告警」段）。
+
+#### 应用内自动更新（`src/updater.py`）
+- 检查更新：通过 GitHub API / gh CLI 拉最新 release，比对版本号。
+- 下载更新：流式下载 exe 到临时目录。
+- 一键重启更新：生成 bat 脚本，等待当前进程退出后覆盖 exe 并重启。
+- 启动时自动检查，有新版本在「检查更新」旁显示下载图标 badge。
+
+#### 商店视图
+- 侧边栏新增商店入口（`showShopCards`），展示订阅方案。
+
 ### 其它
 
 - 账号卡片显示导入日期（`created_at`，重复导入保留首次值）（`d28da1b`）
