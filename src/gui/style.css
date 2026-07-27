@@ -1113,3 +1113,16 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
   .proxy-fields { flex: 1; }
   .proxy-fields input { width: 100%; }
 }
+
+/* ===== 主题切换 View Transition（圆形扩散动画）===== */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) { z-index: 1; }
+::view-transition-new(root) { z-index: 9999; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation: none !important; }
+}

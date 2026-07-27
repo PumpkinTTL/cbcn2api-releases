@@ -70,7 +70,7 @@
     </button>
   </nav>
   <div class="sidebar-footer">
-    <button class="btn btn-ghost btn-sm" onclick="toggleTheme()" id="themeBtn" title="切换主题" style="width:100%;justify-content:center">
+    <button class="btn btn-ghost btn-sm" onclick="toggleTheme(event)" id="themeBtn" title="切换主题" style="width:100%;justify-content:center">
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> 切换主题
     </button>
     <div style="text-align:center;font-size:11px;margin-top:8px">
@@ -719,7 +719,7 @@ async function loadAccountsLight() {
     fresh.forEach(a => { if (!currentAccounts.find(x => x.id === a.id)) currentAccounts.push(a); });
     renderStats();
     buildFilter();
-    renderAccounts();
+    updateCardsInPlace();
   } catch (e) {}
 }
 
@@ -877,6 +877,60 @@ function getFilteredAccounts() {
   return result;
 }
 
+function cardQuotaHtml(a) {
+  const quotaData = parseQuota(a);
+  if (!quotaData) return '';
+  const pc = accountStats[a.id]?.total_credit || 0;
+  const adjUsed = quotaData.used + pc;
+  const adjRemain = quotaData.total - adjUsed;
+  const adjPct = quotaData.total > 0 ? Math.round(adjUsed / quotaData.total * 100) : 0;
+  return `<div class="quota-section">
+            <div class="quota-header">
+              <span>已用 ${fmt(adjUsed)} / 剩余 ${fmt(Math.max(0, adjRemain))}</span>
+              <span>${fmt(quotaData.total)}</span>
+            </div>
+            <div class="quota-bar"><div class="quota-fill ${adjPct >= 80 ? 'danger' : adjPct >= 50 ? 'warning' : ''}" style="width:${Math.min(adjPct, 100)}%"></div></div>
+          </div>`;
+}
+
+function cardStatsHtml(a) {
+  const s = accountStats[a.id];
+  if (!s || !s.request_count) return '';
+  const hits = s.cache_hits || 0, misses = s.cache_misses || 0;
+  const hitRate = (hits + misses) > 0 ? (hits / (hits + misses) * 100).toFixed(1) : 0;
+  return `<div class="card-stats-row">
+            <span class="stat-pill" title="总请求次数">请求 ${s.request_count} 次</span>
+            <span class="stat-pill" title="输入/输出 Token">Token ↑${fmtK(s.prompt_tokens)} ↓${fmtK(s.completion_tokens)}</span>
+            <span class="stat-pill" title="累计消耗积分">消耗 ${fmtL(s.lifetime_credit)}</span>
+            <span class="stat-pill" title="缓存命中率">缓存 ${hitRate}%</span>
+          </div>`;
+}
+
+function updateCardsInPlace() {
+  currentAccounts.forEach(a => {
+    const card = document.querySelector(`.card[data-account-id="${a.id}"]`);
+    if (!card) return;
+    const newQuota = cardQuotaHtml(a);
+    const oldQuota = card.querySelector('.quota-section');
+    if (oldQuota) {
+      if (newQuota) oldQuota.outerHTML = newQuota;
+      else oldQuota.remove();
+    } else if (newQuota) {
+      const header = card.querySelector('.card-header');
+      if (header) header.insertAdjacentHTML('afterend', newQuota);
+    }
+    const newStats = cardStatsHtml(a);
+    const oldStats = card.querySelector('.card-stats-row');
+    if (oldStats) {
+      if (newStats) oldStats.outerHTML = newStats;
+      else oldStats.remove();
+    } else if (newStats) {
+      const quotaSec = card.querySelector('.quota-section');
+      if (quotaSec) quotaSec.insertAdjacentHTML('afterend', newStats);
+    }
+  });
+}
+
 function renderAccounts() {
   const filtered = getFilteredAccounts();
   const el = document.getElementById('accountGrid');
@@ -903,7 +957,6 @@ function renderAccounts() {
 
   el.innerHTML = filtered.map(a => {
     const planBadge = getPlanBadge(a);
-    const quotaData = parseQuota(a);
     const checkinData = parseCheckin(a);
     const displayName = a.nickname || a.email || '未命名';
     const showEmail = a.email && a.email !== displayName;
@@ -935,33 +988,9 @@ function renderAccounts() {
           </div>
         </div>
 
-        ${quotaData ? `
-        ${(() => {
-          const pc = accountStats[a.id]?.total_credit || 0;
-          const adjUsed = quotaData.used + pc;
-          const adjRemain = quotaData.total - adjUsed;
-          const adjPct = quotaData.total > 0 ? Math.round(adjUsed / quotaData.total * 100) : 0;
-          return `<div class="quota-section">
-            <div class="quota-header">
-              <span>已用 ${fmt(adjUsed)} / 剩余 ${fmt(Math.max(0, adjRemain))}</span>
-              <span>${fmt(quotaData.total)}</span>
-            </div>
-            <div class="quota-bar"><div class="quota-fill ${adjPct >= 80 ? 'danger' : adjPct >= 50 ? 'warning' : ''}" style="width:${Math.min(adjPct, 100)}%"></div></div>
-          </div>`;
-        })()}` : ''}
+        ${cardQuotaHtml(a)}
 
-        ${(() => {
-          const s = accountStats[a.id];
-          if (!s || !s.request_count) return '';
-          const hits = s.cache_hits || 0, misses = s.cache_misses || 0;
-          const hitRate = (hits + misses) > 0 ? (hits / (hits + misses) * 100).toFixed(1) : 0;
-          return `<div class="card-stats-row">
-            <span class="stat-pill" title="总请求次数">请求 ${s.request_count} 次</span>
-            <span class="stat-pill" title="输入/输出 Token">Token ↑${fmtK(s.prompt_tokens)} ↓${fmtK(s.completion_tokens)}</span>
-            <span class="stat-pill" title="累计消耗积分">消耗 ${fmtL(s.lifetime_credit)}</span>
-            <span class="stat-pill" title="缓存命中率">缓存 ${hitRate}%</span>
-          </div>`;
-        })()}
+        ${cardStatsHtml(a)}
 
         <div class="card-footer">
           <div class="card-actions">
@@ -1870,11 +1899,25 @@ function setThemeUI(theme) {
   }
 }
 
-async function toggleTheme() {
+async function toggleTheme(event) {
   const html = document.documentElement;
   const isDark = html.getAttribute('data-theme') === 'dark';
   const theme = isDark ? 'light' : 'dark';
-  setThemeUI(theme);
+  const x = event && event.clientX != null ? event.clientX : window.innerWidth / 2;
+  const y = event && event.clientY != null ? event.clientY : window.innerHeight / 2;
+  const endRadius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+  const apply = () => setThemeUI(theme);
+  if (document.startViewTransition) {
+    const t = document.startViewTransition(apply);
+    t.ready.then(() => {
+      html.animate(
+        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${endRadius}px at ${x}px ${y}px)`] },
+        { duration: 420, easing: 'ease-in-out', pseudoElement: '::view-transition-new(root)' }
+      );
+    }).catch(() => {});
+  } else {
+    apply();
+  }
   try {
     await pywebview.api.set_theme(theme);
   } catch(e) {}
