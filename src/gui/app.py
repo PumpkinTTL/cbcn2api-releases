@@ -77,6 +77,9 @@ class GuiApi:
         return json.dumps({"ok": True, "maximized": not was_max})
 
     def win_close(self) -> str:
+        # 销毁窗口前先停 uvicorn 并清理调度器状态，避免后台线程残留、端口占用。
+        # cleanup 会做 should_exit=True + _active_count 归零，和 proxy_stop 对齐。
+        self.cleanup()
         if self._window:
             self._window.destroy()
         return json.dumps({"ok": True})
@@ -118,12 +121,27 @@ class GuiApi:
 
     def delete_account(self, platform: str, account_id: str) -> str:
         store.remove_account(platform, account_id)
+        # 同步调度器内存池：否则被删账号（尤其是当前调度的号）会留在 _accounts
+        # 和 _current_id 里，get_next 仍会返回它发请求（幽灵调度）。
+        # reload 会清掉无效 _current_id 并自动选下一个可用号。
+        try:
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.reload(platform)
+        except Exception:
+            pass
         return json.dumps({"success": True})
 
     def delete_accounts(self, platform: str, account_ids_json: str) -> str:
         ids = json.loads(account_ids_json)
         for aid in ids:
             store.remove_account(platform, aid)
+        # 循环外只 reload 一次：每删一个都 reload 会反复重建内存池并竞争锁，
+        # 没必要；删完一次性同步即可。
+        try:
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.reload(platform)
+        except Exception:
+            pass
         return json.dumps({"success": True})
 
     def import_from_json(self, platform: str, json_content: str) -> str:
@@ -163,6 +181,12 @@ class GuiApi:
             except Exception as e:
                 return json.dumps({"error": f"第 {idx + 1} 条解析失败: {e}"})
 
+        # 新账号已落库，同步调度器内存池，否则要等下次 proxy_start/refresh 才进池。
+        try:
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.reload(platform)
+        except Exception:
+            pass
         return json.dumps({"success": True, "accounts": results})
 
     def _payload_to_account(self, data: dict, platform: str) -> Account:
@@ -317,6 +341,12 @@ class GuiApi:
         )
 
         saved = store.upsert_account(platform, account)
+        # OAuth 新增账号，同步调度器内存池让它立即可被调度。
+        try:
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.reload(platform)
+        except Exception:
+            pass
         return json.dumps(saved.to_dict())
 
     def export_accounts(self, platform: str) -> str:
@@ -733,6 +763,13 @@ class GuiApi:
         server = getattr(self, "_proxy_server", None)
         if server:
             server.should_exit = True
+            self._proxy_server = None
+        # 与 proxy_stop 对齐：归零 active_count，否则重启网关时边框动画状态会错乱。
+        try:
+            from src.proxy.token_rotator import token_rotator
+            token_rotator._active_count = 0
+        except Exception:
+            pass
 
     def open_external(self, url: str):
         import webbrowser
@@ -878,3 +915,19 @@ class GuiApi:
     def set_log_enabled(self, enabled: bool) -> str:
         store.save_setting("log_enabled", "1" if enabled else "0")
         return json.dumps({"ok": True, "enabled": enabled})
+
+    # ========== Auto Update ==========
+
+    def check_update(self) -> str:
+        from src.updater import check_latest
+        return json.dumps(check_latest())
+
+    def download_update(self, url: str) -> str:
+        from src.updater import download_update
+        result = download_update(url)
+        return json.dumps(result)
+
+    def apply_update(self, path: str) -> str:
+        from src.updater import apply_update
+        result = apply_update(path)
+        return json.dumps(result)
