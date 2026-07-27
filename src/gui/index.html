@@ -85,7 +85,7 @@
     <div style="text-align:center;font-size:11px;margin-top:8px">
       <span class="version-link" onclick="showChangelog()">v1.0.5</span>
       <span style="margin:0 4px;color:var(--text-muted)">|</span>
-      <span class="version-link" onclick="checkForUpdate()">检查更新<span id="updateBadge" style="display:none;margin-left:3px;color:var(--success, #22c55e)">●</span></span>
+      <span class="version-link" onclick="checkForUpdate()">检查更新<span id="updateBadge" style="display:none;margin-left:4px;color:var(--accent, #2563eb);vertical-align:-1px"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></span></span>
     </div>
   </div>
 </aside>
@@ -997,6 +997,22 @@ function cardStatsHtml(a) {
 }
 
 function updateCardsInPlace() {
+  // 增删兜底：DOM 卡片集合与 currentAccounts 不一致（有账号被删或新增）时，
+  // 局部 patch 会留下孤立卡片或漏渲染新卡片，直接降级为全量重建。
+  // 只在数量变化时触发，高频的额度/状态更新仍走下面的局部 patch。
+  const grid = document.getElementById('accountGrid');
+  if (grid) {
+    const existingIds = new Set();
+    grid.querySelectorAll('.card[data-account-id]').forEach(c => existingIds.add(c.dataset.accountId));
+    const currentIds = new Set(currentAccounts.map(a => a.id));
+    let mismatch = existingIds.size !== currentIds.size;
+    if (!mismatch) {
+      for (const id of currentIds) {
+        if (!existingIds.has(id)) { mismatch = true; break; }
+      }
+    }
+    if (mismatch) { renderAccounts(); return; }
+  }
   currentAccounts.forEach(a => {
     const card = document.querySelector(`.card[data-account-id="${a.id}"]`);
     if (!card) return;
@@ -1282,7 +1298,9 @@ async function deleteOne(id) {
   try {
     await pywebview.api.delete_account(currentPlatform, id);
     showToast('已删除', 'success');
-    await loadAccountsLight();
+    // 必须全量重建：loadAccountsLight 的 updateCardsInPlace 只更新现有卡片，
+    // 不会移除已删账号的卡片 DOM，导致「提示成功但卡片还在」。
+    await loadAccounts();
   } catch (e) { showToast('删除失败: ' + e, 'error'); }
   finally { btnDone(btn); }
 }
@@ -1634,11 +1652,17 @@ function stopProxyInfoPolling() {
   updateAccountHighlight();
 }
 
+// 网关崩溃检测：fetch 连续失败超过阈值即判定网关已死，同步真实状态。
+// 否则前端会一直显示「运行中」，用户以为网关还在跑实际已挂。
+let _proxyFetchFailCount = 0;
+let _statsRefreshCounter = 0;
+
 async function pollProxyInfo() {
   if (!proxyRunning) return;
   try {
     const r = await fetch(`${getProxyBaseUrl()}/proxy/info`);
     const info = await r.json();
+    _proxyFetchFailCount = 0;  // 成功，重置失败计数
     const newCurrent = info.current_account;
     const newActive = info.active;
     if (newCurrent !== proxyCurrentAccount || newActive !== proxyActive) {
@@ -1665,7 +1689,20 @@ async function pollProxyInfo() {
       // 让 updateCardsInPlace 刷新被禁用账号的徽章和按钮。不依赖「当前号是否变化」。
       loadAccountsLight();
     }
-  } catch {}
+    // 网关运行时额度/统计会随请求变化，每 ~10 秒（5 次轮询）刷一次 stats，
+    // 让卡片上的已用额度/请求次数跟着更新。避免一直显示旧数据。
+    if (++_statsRefreshCounter >= 5) {
+      _statsRefreshCounter = 0;
+      refreshAccountStats();
+    }
+  } catch {
+    // fetch 失败：网关可能已崩溃。连续失败超过阈值才判定，避免偶发网络抖动误报。
+    if (++_proxyFetchFailCount >= 3) {
+      _proxyFetchFailCount = 0;
+      showToast('网关连接失败，可能已停止', 'warning');
+      refreshProxyStatus();  // 重新拉 proxy_status，它会据实把 proxyRunning 改回 false
+    }
+  }
 }
 
 async function refreshAccountStats() {
@@ -2132,6 +2169,9 @@ async function checkForUpdate() {
     }
     _updateData = r;
     if (r.has_update) {
+      // 手动检查发现新版本也要亮 badge（不只启动时那次检查）。
+      const badge = document.getElementById('updateBadge');
+      if (badge) badge.style.display = '';
       document.getElementById('updateTitle').textContent = `发现新版本 ${r.latest_version}`;
       document.getElementById('updateStatus').innerHTML = `当前版本: ${r.current_version}<br>最新版本: ${r.latest_version}`;
       document.getElementById('updateActions').style.display = 'flex';
@@ -2140,8 +2180,8 @@ async function checkForUpdate() {
         document.getElementById('updateReleaseNotes').style.display = '';
       }
     } else {
+      // 已是最新：不自动关闭，让用户自己看完再关，避免一闪而过。
       document.getElementById('updateStatus').textContent = `已是最新版本 (${r.current_version})`;
-      setTimeout(() => closeModal('updateModal'), 1500);
     }
   } catch(e) {
     document.getElementById('updateStatus').textContent = '检查更新失败: ' + e.message;
