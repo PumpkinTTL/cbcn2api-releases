@@ -1423,7 +1423,9 @@ async function checkinAll() {
     const raw = await pywebview.api.checkin_all(currentPlatform);
     const r = JSON.parse(raw);
     showToast(`签到完成: ${r.success}成功 / ${r.already}已签 / ${r.failed}失败`, r.failed > 0 ? 'warning' : 'success');
-    await loadAccountsLight();
+    // 全量重建：签到徽章（.checkin-badge）不在 updateCardsInPlace 的 patch 范围，
+    // 用 loadAccountsLight 会导致「签到成功但徽章还显示未签到」。
+    await loadAccounts();
   } catch (e) { showToast('批量签到失败: ' + e, 'error'); }
   finally { btnDone(btn); }
 }
@@ -1440,7 +1442,8 @@ async function doCheckin(id) {
     } else {
       showToast(r.message || '签到失败(可能已签到)', 'info');
     }
-    await loadAccountsLight();
+    // 同 checkinAll：全量重建让签到徽章立即更新。
+    await loadAccounts();
   } catch (e) { showToast('签到失败: ' + e, 'error'); }
   finally { btnDone(btn); }
 }
@@ -1656,6 +1659,7 @@ function stopProxyInfoPolling() {
 // 否则前端会一直显示「运行中」，用户以为网关还在跑实际已挂。
 let _proxyFetchFailCount = 0;
 let _statsRefreshCounter = 0;
+let _noUsableWarned = false;  // 可用账号归 0 告警去重，避免每轮询都 toast
 
 async function pollProxyInfo() {
   if (!proxyRunning) return;
@@ -1694,6 +1698,15 @@ async function pollProxyInfo() {
     if (++_statsRefreshCounter >= 5) {
       _statsRefreshCounter = 0;
       refreshAccountStats();
+    }
+    // 可用账号归 0 告警：删光账号或全部被禁用/过期后，网关虽在跑但无号可调。
+    // 只在从「有可用」变「无可用」时提示一次，恢复时清标志，避免每 2 秒重复 toast。
+    const usable = info.accounts_usable || 0;
+    if (usable === 0 && !_noUsableWarned) {
+      _noUsableWarned = true;
+      showToast('没有可用账号，网关无法处理请求', 'warning');
+    } else if (usable > 0) {
+      _noUsableWarned = false;
     }
   } catch {
     // fetch 失败：网关可能已崩溃。连续失败超过阈值才判定，避免偶发网络抖动误报。
