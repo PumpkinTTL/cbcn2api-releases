@@ -1162,6 +1162,9 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
 .toast.error   { color: var(--danger); }
 .toast.warning { color: var(--warning); }
 .toast.info    { color: var(--primary); }
+.toast.loading { color: var(--primary); }
+.toast-spin svg { animation: toast-spin 0.8s linear infinite; }
+@keyframes toast-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 /* Confirm Dialog —— 与 .modal 同一套视觉语言 */
 .confirm-overlay {
