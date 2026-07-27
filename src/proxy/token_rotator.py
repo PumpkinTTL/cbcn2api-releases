@@ -193,6 +193,21 @@ class TokenRotator:
         with self._lock:
             return sum(1 for a in self._accounts if self._is_usable(a))
 
+    def has_usable_besides(self, account_ids) -> bool:
+        """删除/禁用前置检查：除了给定账号外，池中是否还有可用账号。
+
+        与 on_disable 共用同一套可用性判定（_is_usable），但只查不改 ——
+        删除路径要先把 DB 删掉再 reload，这里不能提前改内存状态。
+        返回 False 表示删完会没有任何可用账号，调用方应拒绝操作。
+        """
+        # ensure_loaded 让 count_usable / _is_usable 在池未加载时也能给出正确答案，
+        # 否则「池空」和「未加载」无法区分，会把 N 个号算成 0。
+        if not self._accounts:
+            return False
+        bad = set(account_ids) if not isinstance(account_ids, str) else {account_ids}
+        with self._lock:
+            return any(a.id not in bad and self._is_usable(a) for a in self._accounts)
+
     def deduct_quota(self, account_id: str, amount: float):
         """请求成功后扣减估算额度，低于阈值则自动禁用并切号。
         若池中无可换的号则不切号不禁用，只第一次弹出 warn/prompt。"""

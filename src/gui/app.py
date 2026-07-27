@@ -120,6 +120,15 @@ class GuiApi:
         return json.dumps({"error": "账号不存在"})
 
     def delete_account(self, platform: str, account_id: str) -> str:
+        # 最后号保护：删完若池中没有任何可用账号，拒绝删除。
+        # 与 set_account_status 的禁用保护同一套判定（has_usable_besides）。
+        try:
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.ensure_loaded(platform)
+            if not token_rotator.has_usable_besides(account_id):
+                return json.dumps({"success": False, "error": "至少保留一个可用账号"})
+        except Exception:
+            pass
         store.remove_account(platform, account_id)
         # 同步调度器内存池：否则被删账号（尤其是当前调度的号）会留在 _accounts
         # 和 _current_id 里，get_next 仍会返回它发请求（幽灵调度）。
@@ -133,6 +142,17 @@ class GuiApi:
 
     def delete_accounts(self, platform: str, account_ids_json: str) -> str:
         ids = json.loads(account_ids_json)
+        # 最后号保护：批量删完后若池中没有任何可用账号，拒绝整批删除。
+        # 注意是「删完整批之后」而不是「每删一个查一次」—— 用户批量选中
+        # 多个号时，只要删完还剩至少一个可用号就放行。
+        if ids:
+            try:
+                from src.proxy.token_rotator import token_rotator
+                token_rotator.ensure_loaded(platform)
+                if not token_rotator.has_usable_besides(ids):
+                    return json.dumps({"success": False, "error": "至少保留一个可用账号"})
+            except Exception:
+                pass
         for aid in ids:
             store.remove_account(platform, aid)
         # 循环外只 reload 一次：每删一个都 reload 会反复重建内存池并竞争锁，
@@ -364,26 +384,43 @@ class GuiApi:
         会静默落到系统下载目录，用户无从得知文件在哪，只看到一句「导出成功」。
         """
         accounts = store.list_accounts(platform)
-        data = []
-        for a in accounts:
-            data.append({
-                "id": a.id, "email": a.email, "uid": a.uid,
-                "nickname": a.nickname, "enterprise_id": a.enterprise_id,
-                "enterprise_name": a.enterprise_name,
-                "access_token": a.access_token, "refresh_token": a.refresh_token,
-                "token_type": a.token_type, "expires_at": a.expires_at,
-                "domain": a.domain, "status": a.status,
-            })
+        data = [self._account_export_dict(a) for a in accounts]
+        return self._save_accounts_json(platform, data, "accounts")
 
+    def export_selected_accounts(self, platform: str, ids_json: str) -> str:
+        """批量导出：只导出用户勾选的账号。与 export_accounts 共用落盘流程。"""
+        try:
+            ids = set(json.loads(ids_json or "[]"))
+        except (json.JSONDecodeError, TypeError):
+            return json.dumps({"error": "参数格式错误"})
+        if not ids:
+            return json.dumps({"error": "没有选中账号"})
+        accounts = store.list_accounts(platform)
+        data = [self._account_export_dict(a) for a in accounts if a.id in ids]
+        if not data:
+            return json.dumps({"error": "选中的账号都不存在"})
+        return self._save_accounts_json(platform, data, "accounts_selected")
+
+    @staticmethod
+    def _account_export_dict(a):
+        """账号 → 导出字典。全量导出和选中导出共用，保证字段一致。"""
+        return {
+            "id": a.id, "email": a.email, "uid": a.uid,
+            "nickname": a.nickname, "enterprise_id": a.enterprise_id,
+            "enterprise_name": a.enterprise_name,
+            "access_token": a.access_token, "refresh_token": a.refresh_token,
+            "token_type": a.token_type, "expires_at": a.expires_at,
+            "domain": a.domain, "status": a.status,
+        }
+
+    def _save_accounts_json(self, platform: str, data: list, name_prefix: str) -> str:
+        """共享：弹保存对话框 + 写盘。返回给前端的 JSON 结果。"""
         if not data:
             return json.dumps({"error": "当前没有账号可导出"})
-
         payload = json.dumps(data, ensure_ascii=False, indent=2)
-
         if not self._window:
             return json.dumps({"error": "窗口未就绪"})
-
-        default_name = f"accounts_{platform}_{time.strftime('%Y-%m-%d')}.json"
+        default_name = f"{name_prefix}_{platform}_{time.strftime('%Y-%m-%d')}.json"
         try:
             import webview
             result = self._window.create_file_dialog(
@@ -394,20 +431,16 @@ class GuiApi:
             )
         except Exception as e:
             return json.dumps({"error": f"打开保存对话框失败: {e}"})
-
         # 用户取消时返回 None 或空序列
         if not result:
             return json.dumps({"cancelled": True})
-
         path = result if isinstance(result, str) else result[0]
         if not path.lower().endswith(".json"):
             path += ".json"
-
         try:
             Path(path).write_text(payload, encoding="utf-8")
         except Exception as e:
             return json.dumps({"error": f"写入失败: {e}"})
-
         return json.dumps({"ok": True, "path": path, "count": len(data)})
 
     def get_quota_threshold(self) -> str:

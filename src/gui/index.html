@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="light">
+<html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,9 +7,15 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<!-- Vue 运行时:用本地 vue.prod.js(= vue.global.prod.js v3.5.40 同版本)。
+     不走在线 CDN —— pywebview 以 file:// 加载,断网/被墙会导致整个前端白屏。 -->
+<script src="vue.prod.js"></script>
 </head>
 <body>
-<!-- frameless 窗口边缘 resize 触发条（系统 hit-test 被 WebView2 吃掉，前端主动发起 sizing）-->
+
+<!-- ── 这些需要在 Vue app 初始化前工作，保持原生 JS ── -->
+
+<!-- frameless resize 边缘条 -->
 <div class="rz rz-t"  data-dir="top"></div>
 <div class="rz rz-b"  data-dir="bottom"></div>
 <div class="rz rz-l"  data-dir="left"></div>
@@ -18,28 +24,11 @@
 <div class="rz rz-tr" data-dir="topright"></div>
 <div class="rz rz-bl" data-dir="bottomleft"></div>
 <div class="rz rz-br" data-dir="bottomright"></div>
-<!-- Custom Titlebar (frameless window) -->
-<div class="titlebar" id="appTitlebar">
-  <div class="titlebar-drag pywebview-drag-region">
-    <div class="titlebar-icon">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
-    </div>
-    <span class="titlebar-title">AI Gateway</span>
-  </div>
-  <div class="titlebar-controls">
-    <button class="titlebar-btn" onclick="winMin()" title="最小化">
-      <svg viewBox="0 0 12 12" width="12" height="12"><rect x="1.5" y="5.5" width="9" height="1" rx="0.5" fill="currentColor"/></svg>
-    </button>
-    <button class="titlebar-btn" onclick="winMax()" title="最大化/还原" id="winMaxBtn">
-      <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="1.5" width="9" height="9" rx="1.5"/></svg>
-    </button>
-    <button class="titlebar-btn titlebar-close" onclick="winClose()" title="关闭">
-      <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg>
-    </button>
-  </div>
-</div>
 
-<!-- License Activation Gate -->
+<!-- Toast（全局，Vue app 外部，showToast 直接操作） -->
+<div class="toast" id="toast"></div>
+
+<!-- License Overlay（Vue app 挂载前就要能显示，保持原生） -->
 <div class="license-overlay" id="licenseOverlay">
   <div class="license-card">
     <div class="license-icon">
@@ -54,2085 +43,744 @@
   </div>
 </div>
 
-<!-- Sidebar -->
-<aside class="sidebar">
-  <div class="sidebar-logo">
-    <span class="sidebar-logo-title">AI模型网关</span>
-    <span class="sidebar-logo-badge">PRO</span>
-  </div>
-  <div class="sidebar-nav-section">控制台</div>
-  <nav class="sidebar-nav">
-    <button class="nav-item active" data-view="console" onclick="showConsole()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-      WorkBuddy
-    </button>
-    <button class="nav-item" data-view="logs" onclick="showLogs()">
-      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-      运行日志
-    </button>
-  </nav>
-  <div class="sidebar-nav-section">推荐</div>
-  <nav class="sidebar-nav">
-    <button class="nav-item shop-item" data-view="shop-cards" onclick="showShopCards()">
-      <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>
-      联营店铺
-    </button>
-  </nav>
-  <div class="sidebar-footer">
-    <button class="btn btn-ghost btn-sm" onclick="toggleTheme(event)" id="themeBtn" title="切换主题" style="width:100%;justify-content:center">
-      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> 切换主题
-    </button>
-    <div style="text-align:center;font-size:11px;margin-top:8px">
-      <span class="version-link" onclick="showChangelog()">v1.0.5</span>
-      <span style="margin:0 4px;color:var(--text-muted)">|</span>
-      <span class="version-link" onclick="checkForUpdate()">检查更新<span id="updateBadge" style="display:none;margin-left:4px;color:var(--accent, #2563eb);vertical-align:-1px"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></span></span>
+<!-- ── Vue 3 App Root ── -->
+<div id="app" style="display:contents">
+
+  <!-- Titlebar -->
+  <div class="titlebar" id="appTitlebar">
+    <div class="titlebar-drag pywebview-drag-region">
+      <div class="titlebar-icon">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
+      </div>
+      <span class="titlebar-title">AI Gateway</span>
+    </div>
+    <div class="titlebar-controls">
+      <button class="titlebar-btn" onclick="winMin()" title="最小化">
+        <svg viewBox="0 0 12 12" width="12" height="12"><rect x="1.5" y="5.5" width="9" height="1" rx="0.5" fill="currentColor"/></svg>
+      </button>
+      <button class="titlebar-btn" onclick="winMax()" title="最大化/还原" id="winMaxBtn">
+        <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="1.5" width="9" height="9" rx="1.5"/></svg>
+      </button>
+      <button class="titlebar-btn titlebar-close" onclick="winClose()" title="关闭">
+        <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg>
+      </button>
     </div>
   </div>
-</aside>
 
-<!-- Content -->
-<div class="content">
-  <div class="header-top" id="consoleHeader">
-    <!-- 左组：平整凸起的精致图标工具栏容器（非内凹） -->
-    <div class="header-toolbar-container">
-      <button class="btn-toolbar-item" onclick="showOAuthModal()" title="OAuth 授权登录">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
-      </button>
-      <button class="btn-toolbar-item" onclick="showImportModal()" title="粘贴 Token 录入">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><path d="M9 12h6M9 16h4"/></svg>
-      </button>
-      <button class="btn-toolbar-item" onclick="document.getElementById('fileInput').click()" title="JSON 文件批量导入">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/></svg>
-      </button>
-      <input type="file" id="fileInput" accept=".json" style="display:none" onchange="handleFileImport(event)">
-      <button class="btn-toolbar-item" onclick="exportAccounts()" title="导出账号 JSON 配置">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/></svg>
-      </button>
-
-      <span class="toolbar-v-divider"></span>
-
-      <button class="btn-toolbar-item accent" onclick="checkinAll()" title="一键签到全量账号">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4"/></svg>
-      </button>
-      <button class="btn-toolbar-item primary" onclick="refreshAll()" title="一键刷新数据与额度">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>
-      </button>
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <span class="sidebar-logo-title">AI模型网关</span>
+      <span class="sidebar-logo-badge">PRO</span>
     </div>
+    <div class="sidebar-nav-section">控制台</div>
+    <nav class="sidebar-nav">
+      <button class="nav-item" :class="{ active: currentView === 'console' }" @click="showConsole">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        WorkBuddy
+      </button>
+      <button class="nav-item" :class="{ active: currentView === 'logs' }" @click="showLogs">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        运行日志
+      </button>
+    </nav>
+    <div class="sidebar-nav-section">推荐</div>
+    <nav class="sidebar-nav">
+      <button class="nav-item shop-item" :class="{ active: currentView === 'shop-cards' }" @click="showShopCards">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>
+        联营店铺
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="btn btn-ghost btn-sm" id="themeBtn" @click="toggleTheme" style="width:100%;justify-content:center">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> 切换主题
+      </button>
+      <div style="text-align:center;font-size:11px;margin-top:8px">
+        <span class="version-link" @click="openModal('changelog')">v1.0.5</span>
+        <span style="margin:0 4px;color:var(--text-muted)">|</span>
+        <span class="version-link" @click="checkForUpdate">检查更新
+          <span v-if="hasUpdate" id="updateBadge" style="margin-left:4px;color:var(--accent,#2563eb);vertical-align:-1px">
+            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+          </span>
+        </span>
+      </div>
+    </div>
+  </aside>
 
-    <!-- 右侧：代理网关控制集成进 Header Top 单行 -->
-    <div class="proxy-panel" id="proxyPanel" data-port="8001">
-      <div class="proxy-panel-main">
-        <div class="proxy-input-group">
-          <div class="proxy-fields">
-            <!-- 融入分段控件的首位状态标识 -->
-            <div class="proxy-status-segment" id="proxyStatusPill">
-              <span class="ping-dot"></span>
-              <span id="proxyStatusText">离线</span>
+  <!-- Main Content -->
+  <div class="content">
+
+    <!-- ── Console Header ── -->
+    <div class="header-top" id="consoleHeader" v-show="currentView === 'console'">
+      <div class="header-toolbar-container">
+        <button class="btn-toolbar-item" @click="showOAuthModal" title="OAuth 授权登录">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
+        </button>
+        <button class="btn-toolbar-item" @click="showImportModal" title="粘贴 Token 录入">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><path d="M9 12h6M9 16h4"/></svg>
+        </button>
+        <button class="btn-toolbar-item" @click="$refs.fileInput.click()" title="JSON 文件批量导入">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/></svg>
+        </button>
+        <input type="file" ref="fileInput" accept=".json" style="display:none" @change="handleFileImport">
+        <button class="btn-toolbar-item" :disabled="exportLoading" @click="exportAccounts" title="导出账号 JSON 配置">
+          <span v-if="exportLoading" class="spinner-sm"></span>
+          <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/></svg>
+        </button>
+        <span class="toolbar-v-divider"></span>
+        <button class="btn-toolbar-item accent" :disabled="checkinAllLoading" @click="checkinAll" title="一键签到全量账号">
+          <span v-if="checkinAllLoading" class="spinner-sm"></span>
+          <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4"/></svg>
+        </button>
+        <button class="btn-toolbar-item primary" :disabled="refreshAllLoading" @click="refreshAll" title="一键刷新数据与额度">
+          <span v-if="refreshAllLoading" class="spinner-sm"></span>
+          <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>
+        </button>
+      </div>
+
+      <!-- Proxy Panel -->
+      <div class="proxy-panel" id="proxyPanel" :class="{ online: proxyRunning }">
+        <div class="proxy-panel-main">
+          <div class="proxy-input-group">
+            <div class="proxy-fields">
+              <div class="proxy-status-segment" id="proxyStatusPill">
+                <span class="ping-dot"></span>
+                <span>{{ proxyRunning ? '运行中' : '离线' }}</span>
+              </div>
+              <label class="proxy-field">
+                <span>端口</span>
+                <input type="number" v-model.number="proxyPort" min="1024" max="65535">
+              </label>
+              <label class="proxy-field" title="客户端请求需携带的 Bearer Key，留空则不校验">
+                <span>Key</span>
+                <input type="password" v-model="proxyKey" placeholder="可选">
+              </label>
+              <label class="proxy-field" title="剩余积分低于此值自动禁用当前账号并切换下一个（0=关闭）">
+                <span>切号阈值</span>
+                <input type="number" v-model.number="quotaThreshold" min="0" step="0.01" placeholder="0=关闭" @change="saveQuotaThreshold">
+              </label>
             </div>
-            <label class="proxy-field">
-              <span>端口</span>
-              <input type="number" id="proxyPortInput" value="8001" min="1024" max="65535">
-            </label>
-            <label class="proxy-field" title="客户端请求需携带的 Bearer Key，留空则不校验">
-              <span>Key</span>
-              <input type="password" id="proxyPassInput" placeholder="可选">
-            </label>
-            <label class="proxy-field" title="剩余积分低于此值自动禁用当前账号并切换下一个（0=关闭）">
-              <span>切号阈值</span>
-              <input type="number" id="quotaThresholdInput" value="0" min="0" step="0.01" placeholder="0=关闭" onchange="saveQuotaThreshold(this.value)">
-            </label>
+            <button class="btn btn-sm" id="proxyToggleBtn"
+              :class="proxyRunning ? 'btn-ghost btn-proxy-on' : 'btn-primary'"
+              :disabled="proxyToggling"
+              @click="toggleProxy">
+              <span v-if="proxyToggling" class="spinner-sm"></span>
+              <template v-else>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
+                <span v-if="proxyRunning"><span class="proxy-btn-dot on"></span> 关闭网关</span>
+                <span v-else>启动网关</span>
+              </template>
+            </button>
           </div>
-
-          <button class="btn btn-primary btn-sm" onclick="toggleProxy()" id="proxyToggleBtn">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>
-            启动网关
-          </button>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- Collapsible Proxy Test Chat Area (Independent, outside Header) -->
-  <div class="proxy-chat-card collapsed" id="proxyChatCard" style="display:none">
+    <!-- ── Chat Drawer ── -->
+    <div class="proxy-chat-card" id="proxyChatCard"
+      v-show="currentView === 'console' && proxyRunning"
+      :class="{ collapsed: chatCardCollapsed }">
       <div class="chat-header">
         <div class="chat-header-left">
           <span style="color:var(--success);font-weight:600;">网关工作中</span>
           <span style="color:var(--text-muted);margin:0 6px;">|</span>
-          <span class="proxy-endpoint" id="proxyEndpoint">
-            <code id="proxyEndpointUrl">http://127.0.0.1:8001/v1</code>
-            <button class="copy-btn" onclick="copyEndpoint()" title="复制地址">
+          <span class="proxy-endpoint">
+            <code id="proxyEndpointUrl">http://127.0.0.1:{{ proxyPort }}/v1</code>
+            <button class="copy-btn" @click="copyEndpoint" title="复制地址">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
             </button>
           </span>
         </div>
         <div class="chat-header-actions">
-          <button class="sync-btn" onclick="syncModels()" id="syncModelsBtn">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg><span class="sync-label">同步模型</span>
+          <button class="sync-btn" id="syncModelsBtn" :disabled="syncLoading" @click="syncModels">
+            <span v-if="syncLoading" class="spinner-sm"></span>
+            <template v-else>
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>
+            </template>
+            <span class="sync-label">{{ syncLabel }}</span>
           </button>
-          <button class="sync-btn" onclick="exportToWorkBuddy()" id="exportBtn">
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg><span class="sync-label">导入 WorkBuddy</span>
+          <button class="sync-btn" id="exportBtn" :disabled="wbExportLoading" @click="exportToWorkBuddy">
+            <span v-if="wbExportLoading" class="spinner-sm"></span>
+            <template v-else>
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            </template>
+            <span class="sync-label">{{ wbExportLabel }}</span>
           </button>
-          <button class="sync-btn" onclick="toggleChatCard()" id="proxyChatToggleBtn">
+          <button class="sync-btn" id="proxyChatToggleBtn" @click="chatCardCollapsed = !chatCardCollapsed">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-            <span>对话测试</span> <span id="chatCollapseIcon">▼</span>
+            <span>对话测试</span> <span>{{ chatCardCollapsed ? '▼' : '▲' }}</span>
           </button>
         </div>
       </div>
-      <div class="chat-body">
-        <div class="chat-messages" id="chatMessages">
-          <div class="chat-empty">启动网关后即可测试对话</div>
+      <div class="chat-body" v-show="!chatCardCollapsed">
+        <div class="chat-messages" id="chatMessages" ref="chatMessagesRef">
+          <div class="chat-empty" v-if="!chatMessages.length">启动网关后即可测试对话</div>
+          <div v-for="(m, i) in chatMessages" :key="i" class="chat-msg" :class="m.role">
+            {{ m.content }}
+          </div>
         </div>
         <div class="chat-input-area">
           <div class="model-selector" id="modelSelector">
-            <div class="model-selector-trigger" onclick="event.stopPropagation();toggleModelDropdown()">
-              <span class="model-current-icon" id="modelCurrentIcon"></span>
-              <span class="model-current-name" id="modelCurrentName"></span>
-              <span class="model-current-id" id="modelCurrentId" style="display:none"></span>
+            <div class="model-selector-trigger" @click.stop="modelDropdownOpen = !modelDropdownOpen">
+              <span class="model-current-icon" v-html="currentModel.icon"></span>
+              <span class="model-current-name">{{ currentModel.name }}</span>
               <span class="model-arrow">▾</span>
             </div>
-            <div class="model-dropdown" id="modelDropdown"></div>
+            <div class="model-dropdown" :class="{ open: modelDropdownOpen }" id="modelDropdown">
+              <div v-for="m in modelList" :key="m.id" class="model-option"
+                :class="{ active: currentModel.id === m.id }"
+                @click.stop="selectModel(m)">
+                <span v-html="m.icon"></span>
+                <span>{{ m.name }}</span>
+              </div>
+            </div>
           </div>
-          <input type="text" id="chatInput" placeholder="输入消息测试..." onkeydown="if(event.key==='Enter')sendTestChat()" disabled>
-          <button class="chat-send-btn" id="chatSendBtn" onclick="sendTestChat()" disabled>发送</button>
+          <input type="text" v-model="chatInput" placeholder="输入消息测试..."
+            @keydown="e => { if(e.key==='Enter') sendTestChat(); }"
+            :disabled="!proxyRunning || chatSending">
+          <button class="chat-send-btn" @click="sendTestChat" :disabled="!proxyRunning || chatSending">
+            {{ chatSending ? '...' : '发送' }}
+          </button>
         </div>
       </div>
     </div>
 
-  <div class="main" id="main">
-    <!-- Stats Cards -->
-    <div class="stats" id="stats"></div>
+    <!-- ── Console Main ── -->
+    <div class="main" id="main" v-show="currentView === 'console'">
 
-    <!-- Filter Bar -->
-    <div class="filter-bar" id="filterBar" style="display:none">
-      <span class="filter-label">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-        添加日期
-      </span>
-      <div class="filter-date-group">
-        <button class="btn btn-ghost btn-sm" onclick="setFilterDate(-2)">前天</button>
-        <button class="btn btn-ghost btn-sm" onclick="setFilterDate(-1)">昨天</button>
-        <button class="btn btn-ghost btn-sm" onclick="setFilterDate(0)">今天</button>
-        <span class="filter-sep"></span>
-        <div class="date-input-wrapper" style="position:relative">
-          <input type="date" id="filterDate" onchange="applyFilter();updateDatePh()" oninput="updateDatePh()" title="点击选择指定日期">
-          <span id="datePh" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:12px;pointer-events:none">选择日期</span>
+      <!-- Stats -->
+      <div class="stats" id="stats">
+        <div class="stat-card">
+          <div class="stat-icon blue">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+          </div>
+          <div class="stat-text">
+            <div class="stat-label">总账号</div>
+            <div class="stat-value">{{ statTotal }}</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon purple">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+          </div>
+          <div class="stat-text">
+            <div class="stat-label">已用 / 总量</div>
+            <div class="stat-value" :title="statQuota">{{ statQuota }}</div>
+          </div>
         </div>
       </div>
-      <span class="filter-chip" id="filterChip">
-        <span id="filterChipText"></span>
-        <span class="x" onclick="clearFilter()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg></span>
-      </span>
-      <div class="status-filter-group">
-        <select class="status-filter-select" id="statusFilterSelect" onchange="setStatusFilter(this.value)">
-          <option value="all">全部状态</option>
-          <option value="normal">正常</option>
-          <option value="disabled">已禁用</option>
-          <option value="banned">已封禁</option>
-        </select>
+
+      <!-- Filter Bar -->
+      <div class="filter-bar" id="filterBar" v-show="accounts.length > 0">
+        <div style="position:relative">
+          <input type="date" v-model="filterDate" id="filterDate" :class="{ empty: !filterDate }">
+          <span id="datePh" v-show="!filterDate" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:12px;pointer-events:none">选择日期</span>
+        </div>
+        <!-- 多选按钮：点击进入多选模式，卡片复选框出现 + 批量操作区出现。激活态高亮。
+             非激活时不占额外空间，避免常驻复选框影响 UI 布局。 -->
+        <button class="filter-icon-btn" :class="{ active: selectMode }" @click="toggleSelectMode" title="多选：勾选账号批量导出/删除">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><path d="M14 6.5h7M14 17.5h7"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+        </button>
+        <!-- 批量操作：仅多选模式时出现，放在多选按钮右边。选中数合并进「全选」标签。 -->
+        <div class="filter-batch-actions" v-if="selectMode">
+          <label class="batch-select-all" :class="{ checked: allSelected, indeterminate: someSelected && !allSelected }">
+            <input type="checkbox" :checked="allSelected" @change="toggleSelectAll">
+            <svg class="batch-checkbox-box" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path class="cb-check" d="M5 13l4 4L19 7"/>
+              <line class="cb-dash" x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            <span>全选 <span class="batch-count-num" v-if="selectedCount > 0">{{ selectedCount }}</span></span>
+          </label>
+          <button class="btn btn-sm btn-ghost" :disabled="selectedCount === 0 || batchExportLoading" @click="batchExport">
+            <span v-if="batchExportLoading" class="spinner-sm"></span>
+            <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/></svg> 导出</template>
+          </button>
+          <button class="btn btn-sm btn-danger" :disabled="selectedCount === 0 || batchDeleteLoading" @click="batchDelete">
+            <span v-if="batchDeleteLoading" class="spinner-sm"></span>
+            <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg> 删除</template>
+          </button>
+        </div>
+        <!-- 贴合主题的状态下拉组件 (保持 Dropdown 下拉交互形式) —— margin-left:auto 靠最右 -->
+        <div class="status-dropdown" :class="{ open: statusDropdownOpen }" @click.stop="statusDropdownOpen = !statusDropdownOpen">
+          <div class="status-dropdown-trigger">
+            <span class="status-dot" :class="getStatusDotClass(statusFilter)"></span>
+            <span>{{ getStatusFilterLabel(statusFilter) }}</span>
+            <svg class="status-dropdown-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+          <div class="status-dropdown-menu" v-show="statusDropdownOpen">
+            <div class="status-dropdown-item" :class="{ active: statusFilter === 'all' }" @click.stop="selectStatusFilter('all')">
+              <span class="status-dot dot-all"></span>全部状态
+            </div>
+            <div class="status-dropdown-item" :class="{ active: statusFilter === 'normal' }" @click.stop="selectStatusFilter('normal')">
+              <span class="status-dot dot-normal"></span>正常
+            </div>
+            <div class="status-dropdown-item" :class="{ active: statusFilter === 'disabled' }" @click.stop="selectStatusFilter('disabled')">
+              <span class="status-dot dot-disabled"></span>已禁用
+            </div>
+            <div class="status-dropdown-item" :class="{ active: statusFilter === 'banned' }" @click.stop="selectStatusFilter('banned')">
+              <span class="status-dot dot-banned"></span>已封禁
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Account Grid -->
+      <div class="account-grid" id="accountGrid">
+
+        <!-- Empty State -->
+        <div class="empty-state" v-if="!filteredAccounts.length">
+          <template v-if="accounts.length">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+            <h3>无匹配账号</h3>
+            <p>尝试调整日期筛选条件</p>
+          </template>
+          <template v-else>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/></svg>
+            <h3>暂无配置账号</h3>
+            <p>请点击右上角【OAuth 登录】或【文件导入】添加账号</p>
+          </template>
+        </div>
+
+        <!-- Cards -->
+        <div v-for="a in filteredAccounts" :key="a.id"
+          class="card"
+          :class="{
+            active: a.id === proxyCurrentAccount && proxyActive,
+            current: a.id === proxyCurrentAccount,
+            selected: !!selectedIds[a.id],
+            'select-mode': selectMode
+          }"
+          :data-account-id="a.id">
+
+          <!-- 勾选复选框：常驻 DOM，用 selectMode 控制 class 触发缩放动画（出现放大、消失缩回）。
+               不用 v-if —— v-if 会直接移除元素，退出动画来不及播。 -->
+          <label class="card-checkbox" :class="{ show: selectMode }">
+            <input type="checkbox" :checked="!!selectedIds[a.id]" @change="toggleSelect(a.id)">
+            <svg class="card-checkbox-box" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path class="cb-check" d="M5 13l4 4L19 7"/>
+            </svg>
+          </label>
+
+          <div class="card-header">
+            <div style="display:flex;align-items:center;flex:1;min-width:0">
+              <div class="card-info">
+                <div class="card-name">{{ a.nickname || a.email || '未命名' }}</div>
+                <div class="card-email" v-if="a.email && a.email !== (a.nickname || a.email)">{{ a.email }}</div>
+                <div class="card-meta">
+                  <span v-if="a.id === proxyCurrentAccount" class="current-badge">
+                    <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg>当前
+                  </span>
+                  <span :class="getStatusBadgeClass(a)">{{ getStatusText(a) }}</span>
+                  <span class="badge" :class="getPlanBadgeClass(a)">{{ getPlanText(a) }}</span>
+                  <span v-if="a.enterprise_name" style="font-size:11px;color:var(--text-muted)">
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 6h2M13 6h2M9 10h2M13 10h2M9 14h2M13 14h2"/></svg>
+                    {{ a.enterprise_name }}
+                  </span>
+                  <span v-if="a.created_at" style="font-size:11px;color:var(--text-muted)">
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg>
+                    {{ dateStr(new Date(a.created_at * 1000)) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div class="checkin-status">
+              <template v-if="parseCheckin(a) !== null">
+                <span class="checkin-badge" :class="parseCheckin(a).done ? 'done' : 'pending'">
+                  <template v-if="parseCheckin(a).done">
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-1px"><path d="M5 13l4 4L19 7"/></svg> 已签到
+                  </template>
+                  <template v-else>
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> 未签到
+                  </template>
+                </span>
+                <span v-if="parseCheckin(a).streak > 0" class="streak-badge">
+                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><path d="M8 2c0 4-3 6-3 9 0 4 3 7 7 7s7-3 7-7c0-3-2-5-3-7 0 3-2 5-4 5s-4-3-4-7z"/><path d="M12 22v-4"/></svg>
+                  {{ parseCheckin(a).streak }}天
+                </span>
+              </template>
+              <span v-else class="checkin-badge inactive">未开通</span>
+            </div>
+          </div>
+
+          <!-- Quota -->
+          <div class="quota-section" v-if="getCardQuota(a)">
+            <div class="quota-header">
+              <span>已用 {{ fmt(getCardQuota(a).adjUsed) }} / 剩余 {{ fmt(getCardQuota(a).adjRemain) }}</span>
+              <span>{{ fmt(getCardQuota(a).total) }}</span>
+            </div>
+            <div class="quota-bar">
+              <div class="quota-fill" :class="getCardQuota(a).cls" :style="{ width: getCardQuota(a).pct + '%' }"></div>
+            </div>
+          </div>
+
+          <!-- Stats Row -->
+          <div class="card-stats-row" v-if="accountStats[a.id] && accountStats[a.id].request_count">
+            <span class="stat-pill" title="总请求次数">请求 {{ accountStats[a.id].request_count }} 次</span>
+            <span class="stat-pill" title="输入/输出 Token">Token ↑{{ fmtK(accountStats[a.id].prompt_tokens) }} ↓{{ fmtK(accountStats[a.id].completion_tokens) }}</span>
+            <span class="stat-pill" title="累计消耗积分">消耗 {{ fmtL(accountStats[a.id].lifetime_credit) }}</span>
+            <span class="stat-pill" title="缓存命中率">缓存 {{ getHitRate(accountStats[a.id]) }}%</span>
+          </div>
+
+          <!-- Actions -->
+          <div class="card-footer">
+            <div class="card-actions">
+              <button class="btn btn-ghost btn-sm" @click="showQuotaDetail(a.id)" title="额度详情">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M4 16l4-8 4 4 4-6 4 8"/></svg> 详情
+              </button>
+              <button class="btn btn-ghost btn-sm" :disabled="cardLoading[a.id + '_checkin']" @click="doCheckin(a.id)" title="签到">
+                <span v-if="cardLoading[a.id + '_checkin']" class="spinner-sm"></span>
+                <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> 签到</template>
+              </button>
+              <button class="btn btn-ghost btn-sm" :disabled="cardLoading[a.id + '_refresh']" @click="refreshOne(a.id)" title="刷新">
+                <span v-if="cardLoading[a.id + '_refresh']" class="spinner-sm"></span>
+                <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg> 刷新</template>
+              </button>
+              <button v-if="(a.status || 'normal') === 'normal'" class="btn btn-ghost btn-sm btn-icon" @click="setPriorityAccount(a.id)" title="设为优先调度">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+              </button>
+              <button v-if="(a.status || 'normal') !== 'banned'" class="btn btn-ghost btn-sm"
+                :style="{ color: (a.status || 'normal') === 'disabled' ? '#22c55e' : '#f59e0b' }"
+                @click="toggleAccountStatus(a.id)">
+                <template v-if="(a.status || 'normal') === 'disabled'">
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg> 启用
+                </template>
+                <template v-else>
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> 禁用
+                </template>
+              </button>
+              <button class="btn btn-danger btn-sm btn-icon" :disabled="cardLoading[a.id + '_delete']" @click="deleteOne(a.id)" title="删除">
+                <span v-if="cardLoading[a.id + '_delete']" class="spinner-sm"></span>
+                <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
 
-    <!-- Account Grid -->
-    <div class="account-grid" id="accountGrid"></div>
+    <!-- ── Logs View ── -->
+    <div class="logs-view" id="logsView" v-show="currentView === 'logs'">
+      <div class="logs-toolbar">
+        <span class="logs-title">运行日志</span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <label class="btn btn-ghost btn-sm" for="logEnabledToggle" style="cursor:pointer;user-select:none;white-space:nowrap;flex-shrink:0;background:var(--bg-tertiary);margin:0">
+            <input type="checkbox" id="logEnabledToggle" v-model="logEnabled" @change="toggleLogEnabled" style="cursor:pointer;margin:0;padding:0;width:13px;height:13px"> 记录
+          </label>
+          <select id="logEventFilter" v-model="logEventFilter" class="select-styled" @change="refreshLogs">
+            <option value="">全部类型</option>
+            <option value="request">请求</option>
+            <option value="success">成功</option>
+            <option value="warning">警告</option>
+            <option value="error">错误</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" @click="clearLogs" title="清空日志">清空</button>
+          <button class="btn btn-ghost btn-sm" @click="refreshLogs" title="刷新">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="logs-list" id="logsList">
+        <template v-if="logs.length">
+          <div v-for="(l, i) in logs" :key="i" class="log-row"
+            :class="l.event === 'success' ? 'log-success' : l.event === 'error' ? 'log-error' : 'log-request'">
+            <span class="log-time">{{ l._time }}</span>
+            <span class="log-badge" :class="l.event === 'success' ? 'log-success' : l.event === 'error' ? 'log-error' : 'log-request'">
+              {{ l.event === 'success' ? '成功' : l.event === 'error' ? '错误' : '请求' }}
+            </span>
+            <span class="log-acct">{{ l.account_name || l.account_id || '-' }}</span>
+            <span class="log-model">{{ l.model || '' }}</span>
+            <span class="log-msg">{{ l.message || '' }}</span>
+          </div>
+        </template>
+        <div v-else class="logs-empty">暂无日志，启动代理后请求会产生日志</div>
+      </div>
+    </div>
+
+    <!-- ── Shop Cards ── -->
+    <div class="shop-cards" id="shopCardsView" v-show="currentView === 'shop-cards'">
+      <div class="shop-cards-header">联营店铺</div>
+      <div class="shop-cards-desc">
+        <h4>精选合作店铺</h4>
+        <p>提供稳定优质的大模型 Token / 账号支持，由<span class="desc-highlight">官方认证</span>合作伙伴运营。<br>支持<span class="desc-highlight">按量计费</span>，购买1积分不到1分钱，每次对话消耗1积分。<span class="desc-highlight">低价保证</span>，比官方更便宜的流量套餐。</p>
+      </div>
+      <div class="shop-cards-grid">
+        <div class="shop-card" @click="openShop('https://buy.bitlesu.com/', '卡旺流量')">
+          <img src="icons/kawang.png" class="shop-card-icon" alt="">
+          <span class="shop-card-name">卡旺流量</span>
+          <span class="shop-card-desc">WorkBuddy 官方合作流量店铺</span>
+          <span class="shop-card-btn">前往购买</span>
+        </div>
+        <div class="shop-card" @click="openShop('https://sztc.rimian666.cn/ProductEn/Index/498fe9ed5fc34753', '六两流量')">
+          <img src="icons/liulaing1.png" class="shop-card-icon" alt="">
+          <span class="shop-card-name">六两流量</span>
+          <span class="shop-card-desc">专注于AI模型流量销售，稳定可靠</span>
+          <span class="shop-card-btn">前往购买</span>
+        </div>
+        <div class="shop-card" @click="openShop('https://h5.dandanhou.net/index?k=QlA1TGwvZVVFelk9', '蛋蛋猴流量')">
+          <img src="icons/liuliang2.png" class="shop-card-icon" alt="">
+          <span class="shop-card-name">蛋蛋猴流量</span>
+          <span class="shop-card-desc">特惠活动进行中，11月大促活动</span>
+          <span class="shop-card-btn">前往购买</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Shop iframe ── -->
+    <div class="shop-view" id="shopView" v-show="currentView === 'shop'">
+      <div class="shop-toolbar">
+        <button class="btn btn-ghost btn-sm" @click="showConsole">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          返回控制台
+        </button>
+        <span class="shop-name">{{ shopName }}</span>
+        <button class="btn btn-ghost btn-sm" @click="openShopExternal">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
+          浏览器打开
+        </button>
+      </div>
+      <iframe id="shopFrame" class="shop-frame" :src="shopUrl"></iframe>
+    </div>
+
+  </div><!-- end .content -->
+
+  <!-- ── Modals ── -->
+
+  <!-- OAuth Modal -->
+  <div class="modal-overlay" id="oauthModal" :class="{ show: activeModal === 'oauth' }">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>OAuth 授权登录</h2>
+        <p>使用浏览器扫码授权，自动完成登录</p>
+      </div>
+      <div class="modal-body">
+        <div class="oauth-url-box" style="background:var(--bg);padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;word-break:break-all;margin-bottom:14px;">{{ oauthUrlText }}</div>
+        <div v-html="oauthStatusHtml"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" @click="cancelOAuth(); activeModal = null">取消</button>
+      </div>
+    </div>
   </div>
 
-  <!-- Shop Cards View -->
-  <div class="shop-cards" id="shopCardsView" style="display:none">
-    <div class="shop-cards-header">联营店铺</div>
-    <div class="shop-cards-desc">
-      <h4>关于流量卡</h4>
-      <p>市面上大多数便宜流量卡其实是<span class="desc-highlight">物联卡</span>——虚标流量、限速断网、充进去的钱说没就没了。<br>本店上架的华玥通讯和北极工坊，全是<span class="desc-highlight">正规运营商手机卡</span>，11 位手机号，官方 app 可查套餐，<span class="desc-highlight">不限速不虚标</span>，月租多少就是多少。觉得合适就办一张，不合适看看也无妨。</p>
-    </div>
-    <div class="shop-cards-grid">
-      <div class="shop-card" onclick="openShop('https://buy.bitlesu.com/', '奥瑞斯·星域')">
-        <img src="icons/kawang.png" class="shop-card-icon" alt="">
-        <span class="shop-card-name">奥瑞斯·星域</span>
-        <span class="shop-card-desc">WorkBuddy 等卡密自助秒发，寄卖即用</span>
-        <span class="shop-card-btn">进入店铺</span>
+  <!-- Import Modal -->
+  <div class="modal-overlay" id="importModal" :class="{ show: activeModal === 'import' }">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>粘贴 Token / JSON 导入</h2>
+        <p>支持粘贴 access_token 或完整账号 JSON 数据</p>
       </div>
-      <div class="shop-card" onclick="openShop('https://sztc.rimian666.cn/ProductEn/Index/498fe9ed5fc34753', '华玥通讯')">
-        <img src="icons/liulaing1.png" class="shop-card-icon" alt="">
-        <span class="shop-card-name">华玥通讯</span>
-        <span class="shop-card-desc">正规运营商大流量套餐，官方可查，不限速不虚标</span>
-        <span class="shop-card-btn">进入店铺</span>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Token / JSON 数据</label>
+          <textarea id="importJson" v-model="importJsonText" placeholder="支持粘贴 access_token，每行一个&#10;123456+eyJhbGciOi...&#10;&#10;或完整JSON：&#10;{ &quot;access_token&quot;: &quot;...&quot; }"></textarea>
+        </div>
       </div>
-      <div class="shop-card" onclick="openShop('https://h5.dandanhou.net/index?k=QlA1TGwvZVVFelk9', '北极工坊')">
-        <img src="icons/liuliang2.png" class="shop-card-icon" alt="">
-        <span class="shop-card-name">北极工坊</span>
-        <span class="shop-card-desc">多运营商套餐严选，11 位手机号，月租透明无套路</span>
-        <span class="shop-card-btn">进入店铺</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Shop iframe View -->
-  <div class="shop-view" id="shopView" style="display:none">
-    <div class="shop-toolbar">
-      <button class="btn btn-ghost btn-sm" onclick="showConsole()">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-        返回控制台
-      </button>
-      <span class="shop-name" id="shopName"></span>
-      <button class="btn btn-ghost btn-sm" onclick="openShopExternal()">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
-        浏览器打开
-      </button>
-    </div>
-    <iframe id="shopFrame" class="shop-frame"></iframe>
-  </div>
-
-  <!-- Logs View -->
-  <div class="logs-view" id="logsView" style="display:none">
-    <div class="logs-toolbar">
-      <span class="logs-title">运行日志</span>
-      <div style="display:flex;gap:6px;align-items:center">
-        <label class="btn btn-ghost btn-sm" for="logEnabledToggle" style="cursor:pointer;user-select:none;white-space:nowrap;flex-shrink:0;background:var(--bg-tertiary);margin:0">
-          <input type="checkbox" id="logEnabledToggle" onchange="toggleLogEnabled()" checked style="cursor:pointer;margin:0;padding:0;width:13px;height:13px"> 记录
-        </label>
-        <select id="logEventFilter" class="select-styled" onchange="refreshLogs()">
-          <option value="">全部类型</option>
-          <option value="request">请求</option>
-          <option value="success">成功</option>
-          <option value="warning">警告</option>
-          <option value="error">错误</option>
-        </select>
-        <button class="btn btn-ghost btn-sm" onclick="clearLogs()" title="清除日志">清空</button>
-        <button class="btn btn-ghost btn-sm" onclick="refreshLogs()" title="刷新">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" @click="activeModal = null">取消</button>
+        <button class="btn btn-primary" :disabled="importLoading" @click="doImport">
+          <span v-if="importLoading" class="spinner-sm"></span>
+          {{ importLoading ? '导入中..' : '开始导入' }}
         </button>
       </div>
     </div>
-    <div class="logs-list" id="logsList">
-      <div class="logs-empty">暂无日志，启动代理后请求会产生日志</div>
+  </div>
+
+  <!-- Quota Detail Modal -->
+  <div class="modal-overlay" id="quotaModal" :class="{ show: activeModal === 'quotaDetail' }">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>额度详情</h2>
+        <p>{{ detailAccountName }}</p>
+      </div>
+      <div class="modal-body" id="quotaContent" v-html="quotaContentHtml"></div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" @click="activeModal = null">关闭</button>
+        <button class="btn btn-primary" @click="refreshQuota">刷新额度</button>
+      </div>
     </div>
   </div>
-</div>
 
-<!-- OAuth Modal -->
-<div class="modal-overlay" id="oauthModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>OAuth 授权登录</h2>
-      <p>请在浏览器中打开授权链接完成配置</p>
-    </div>
-    <div class="modal-body">
-      <div class="oauth-url-box" id="oauthUrl" style="background:var(--bg);padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);font-size:12px;word-break:break-all;margin-bottom:14px;">加载中...</div>
-      <div id="oauthStatus">
-        <div style="text-align:center;padding:24px 0;color:var(--text-secondary);font-size:13px;">
-          <div class="spinner"></div>
-          <div>等待浏览器授权完成...</div>
+  <!-- Update Modal -->
+  <div class="modal-overlay" id="updateModal" :class="{ show: activeModal === 'update' }">
+    <div class="modal" style="max-width:440px">
+      <div class="modal-header">
+        <h2>{{ updateTitle }}</h2>
+        <button class="modal-close" @click="activeModal = null">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div style="text-align:center;padding:24px 0" v-html="updateStatusHtml"></div>
+        <div v-show="updateProgressVisible" style="margin:12px 0">
+          <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="height:100%;background:var(--accent);border-radius:3px;transition:width .3s" :style="{ width: updateProgressPct + '%' }"></div>
+          </div>
+          <div style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:4px">{{ updateProgressPct }}%</div>
         </div>
-      </div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="cancelOAuth();closeModal('oauthModal')">取消</button>
-    </div>
-  </div>
-</div>
-
-<!-- Import Modal -->
-<div class="modal-overlay" id="importModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>粘贴 Token / JSON 导入</h2>
-      <p>支持粘贴 access_token 字符串，或 JSON 账号数组对象</p>
-    </div>
-    <div class="modal-body">
-      <div class="form-group">
-        <label>Token / JSON 内容</label>
-        <textarea id="importJson" placeholder='粘贴 access_token，例如：&#10;123456+eyJhbGciOi...&#10;&#10;也支持 JSON：&#10;{ "access_token": "...", "email": "..." }&#10;[{ "access_token": "..." }]'></textarea>
-      </div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeModal('importModal')">取消</button>
-      <button class="btn btn-primary" onclick="doImport()">开始导入</button>
-    </div>
-  </div>
-</div>
-
-<!-- 确认弹窗由 showConfirm() 动态创建（见 .confirm-overlay），
-     原先这里那份静态 #confirmModal 从未被任何代码引用，已移除。 -->
-
-<!-- Quota Detail Modal -->
-<div class="modal-overlay" id="quotaModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>额度使用详情</h2>
-      <p id="quotaAccountName"></p>
-    </div>
-    <div class="modal-body" id="quotaContent"></div>
-    <div class="modal-actions">
-      <button class="btn btn-ghost" onclick="closeModal('quotaModal')">关闭</button>
-      <button class="btn btn-primary" onclick="refreshQuota()">刷新配额</button>
-    </div>
-  </div>
-</div>
-
-<!-- Update Modal -->
-<div class="modal-overlay" id="updateModal">
-  <div class="modal" style="max-width:440px">
-    <div class="modal-header">
-      <h2 id="updateTitle">检查更新</h2>
-      <button class="modal-close" onclick="closeModal('updateModal')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-    </div>
-    <div class="modal-body" id="updateBody">
-      <div id="updateStatus" style="text-align:center;padding:24px 0">检查中...</div>
-      <div id="updateProgressWrap" style="display:none;margin:12px 0">
-        <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
-          <div id="updateProgressBar" style="height:100%;width:0%;background:var(--accent);border-radius:3px;transition:width .3s"></div>
+        <div v-show="updateActionsVisible" style="display:flex;gap:8px;justify-content:center;margin-top:12px">
+          <button class="btn btn-primary" :disabled="updateBtnDisabled" @click="doUpdate">{{ updateBtnText }}</button>
+          <button class="btn btn-ghost" @click="activeModal = null">稍后再说</button>
         </div>
-        <div id="updateProgressText" style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:4px">0%</div>
+        <div v-show="updateNotesVisible" style="margin-top:12px;max-height:200px;overflow-y:auto;font-size:12px;color:var(--text-muted);white-space:pre-wrap">{{ updateNotes }}</div>
       </div>
-      <div id="updateActions" style="display:none;gap:8px;justify-content:center;margin-top:12px">
-        <button class="btn btn-primary" id="updateBtn" onclick="doUpdate()">下载更新</button>
-        <button class="btn btn-ghost" onclick="closeModal('updateModal')">稍后再说</button>
-      </div>
-      <div id="updateReleaseNotes" style="margin-top:12px;max-height:200px;overflow-y:auto;font-size:12px;color:var(--text-muted);white-space:pre-wrap;display:none"></div>
     </div>
   </div>
-</div>
 
-<!-- Changelog Modal -->
-<div class="modal-overlay" id="changelogModal">
-  <div class="modal changelog-modal">
-    <div class="modal-header">
-      <h2>更新日志</h2>
-      <button class="modal-close" onclick="closeModal('changelogModal')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-    </div>
-    <div class="modal-body">
-      <div class="changelog-version">v1.0.5</div>
-      <div class="changelog-date">2026-07-27</div>
-
-      <div class="changelog-section-title">UI 全面升级</div>
-      <ul class="changelog-list">
-        <li>全新暖米色 / 暖浓咖啡设计系统</li>
-        <li>浅色模式升级为护眼暖米色，长时间使用更舒适</li>
-        <li>自定义标题栏，窗口更精致</li>
-        <li>主题切换新增圆形扩散过渡动画</li>
-        <li>账号卡片显示导入日期，方便追溯</li>
-      </ul>
-
-      <div class="changelog-section-title">新增功能</div>
-      <ul class="changelog-list">
-        <li>账号卡片新增运行统计：请求次数、Token 消耗、累计积分消耗、缓存命中率</li>
-        <li>应用内检查更新，发现新版本可在线下载</li>
-        <li>新增商店入口，方便查看订阅方案</li>
-      </ul>
-
-      <div class="changelog-section-title">代理链路加固</div>
-      <ul class="changelog-list">
-        <li>全链路审核修复（11 项）</li>
-        <li>修复代理链路「请求永不返回」问题</li>
-        <li>修复故障转移在某些场景失效的问题</li>
-        <li>阈值切换确保备选账号额度充足，防止切换死循环</li>
-        <li>阈值自动切号后被禁用账号立即在卡片上反映状态</li>
-        <li>账号增删立即同步调度器，删除当前调度号会自动切到下一个可用号</li>
-      </ul>
-
-      <div class="changelog-section-title">数据与界面同步</div>
-      <ul class="changelog-list">
-        <li>修复删除账号后卡片仍残留、需手动刷新才消失的问题</li>
-        <li>修复导入账号后额度不显示、必须手动点刷新的问题</li>
-        <li>修复签到成功后签到徽章不立即更新的问题</li>
-        <li>网关运行时额度统计自动刷新，不再需要手动刷新才看到消耗</li>
-        <li>无可用账号时主动提示，不再静默「假运行」</li>
-      </ul>
-
-      <div class="changelog-section-title">体验优化</div>
-      <ul class="changelog-list">
-        <li>窗口可自由拖拽边缘调整大小</li>
-        <li>修复首次打开窗口四周闪白边的问题</li>
-        <li>关闭窗口增加确认弹窗，避免误触退出</li>
-        <li>文件导入显示加载动画，读取完成后才消失</li>
-        <li>检查更新发现新版本时醒目标识</li>
-        <li>刷新额度时局部更新，不再整体重排</li>
-        <li>网关栏标签更直观：端口 / Key / 切号阈值</li>
-      </ul>
-
-      <div class="changelog-version" style="margin-top:24px">v1.0.3</div>
-      <div class="changelog-date">2026-07-26</div>
-
-      <div class="changelog-section-title">额度计算修复</div>
-      <ul class="changelog-list">
-        <li>修复个人体验版等套餐额度显示为 0 的问题</li>
-        <li>对齐官方计算逻辑，正确合并多个资源包</li>
-        <li>仪表盘统计和卡片显示同步修正</li>
-      </ul>
-
-      <div class="changelog-section-title">运行日志</div>
-      <ul class="changelog-list">
-        <li>新增运行日志面板，记录每次请求的账号和状态</li>
-        <li>支持按类型筛选（请求 / 成功 / 错误）</li>
-        <li>可一键清空，可关闭记录节省性能</li>
-      </ul>
-
-      <div class="changelog-section-title">调度优化</div>
-      <ul class="changelog-list">
-        <li>冷却状态重启不丢失，到期自动恢复</li>
-        <li>区分额度耗尽、非法请求、临时错误的不同冷却策略</li>
-        <li>手动启用账号时自动清除运行时冷却</li>
-      </ul>
-
-      <div class="changelog-version" style="margin-top:24px">v1.0.2</div>
-      <div class="changelog-date">2026-07-26</div>
-
-      <div class="changelog-section-title">账号调度</div>
-      <ul class="changelog-list">
-        <li>实时显示当前正在使用的账号，排在列表第一位</li>
-        <li>请求处理中绿色光效提示，处理完自动消失</li>
-        <li>可手动指定优先使用的账号，重启后仍然记住</li>
-        <li>可手动禁用账号，禁用后不再参与调度</li>
-        <li>自动选择最优账号，无需手动干预</li>
-      </ul>
-
-      <div class="changelog-section-title">安全防护</div>
-      <ul class="changelog-list">
-        <li>自动检测被封禁的账号，标记后不再使用</li>
-        <li>封禁状态永久保存，避免重复尝试</li>
-        <li>封禁账号红色醒目标识</li>
-      </ul>
-
-      <div class="changelog-section-title">体验优化</div>
-      <ul class="changelog-list">
-        <li>账号状态筛选（全部 / 正常 / 禁用 / 封禁）</li>
-        <li>签到状态移至卡片右上角，一目了然</li>
-        <li>日期筛选器中文化</li>
-        <li>界面细节打磨，整体更清爽</li>
-      </ul>
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-primary" onclick="closeModal('changelogModal')">知道了</button>
+  <!-- Changelog Modal -->
+  <div class="modal-overlay" id="changelogModal" :class="{ show: activeModal === 'changelog' }">
+    <div class="modal changelog-modal">
+      <div class="modal-header">
+        <h2>更新日志</h2>
+        <button class="modal-close" @click="activeModal = null">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="changelog-version">v1.0.5</div>
+        <div class="changelog-date">2026-07-27</div>
+        <div class="changelog-section-title">UI 架构升级</div>
+        <ul class="changelog-list">
+          <li>底层重构为 Vue 3 响应式架构，消除DOM频繁刷新</li>
+          <li>集成 Header 单行网关中控与 360° 边框全亮流光动画</li>
+          <li>完美自适应护眼暖米色与深色夜间主题</li>
+          <li>按钮加载态与 Toast 通知系统完整保留</li>
+          <li>账号卡片新增导入日期小字显示</li>
+        </ul>
+        <div class="changelog-section-title">功能更新</div>
+        <ul class="changelog-list">
+          <li>支持额度阈值切号功能，积分不足自动切换下一个账号</li>
+          <li>支持账号状态管理（正常/禁用/封禁）</li>
+          <li>代理 Info 实时轮询，当前调度账号实时感知</li>
+        </ul>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" @click="activeModal = null">知道了</button>
+      </div>
     </div>
   </div>
-</div>
 
-<!-- Toast -->
-<div class="toast" id="toast"></div>
-<script src="vue.prod.js"></script>
+</div><!-- end #app -->
+
 <script>
+// ─────────────────────────────────────────────
+//  全局工具函数（Vue app 外部，始终可用）
+// ─────────────────────────────────────────────
 
-// ===== Frameless Window Controls =====
+// Window Controls
 async function winMin(){ try{ await pywebview.api.win_minimize(); }catch(e){} }
 async function winMax(){
   try{
-    // 按后端回报的真实窗口状态设置图标，而不是盲目 toggle ——
-    // 否则 Win+↑、双击边框、贴边分屏改变状态后图标就和窗口不一致了。
     const r = JSON.parse(await pywebview.api.win_toggle_max());
     const btn = document.getElementById('winMaxBtn');
     if(btn) btn.classList.toggle('is-max', !!r.maximized);
   }catch(e){}
 }
-let _closingConfirmed = false;  // 防止确认弹窗期间重复点 X 触发多次
+let _closingConfirmed = false;
 async function winClose(){
-  if (_closingConfirmed) return;        // 已经在关闭流程中
-  const ok = await showConfirm('确定退出应用？', '退出确认');
+  if (_closingConfirmed) return;
+  const ok = await showConfirm('确定要关闭窗口吗？', '关闭确认');
   if (!ok) return;
   _closingConfirmed = true;
   try{ await pywebview.api.win_close(); }catch(e){ _closingConfirmed = false; }
 }
 
-// frameless 窗口边缘 resize：前端自己算鼠标 delta，每帧调后端 resize_delta。
-// 系统 sizing（WS_THICKFRAME hit-test）和发 WM_NCLBUTTONDOWN 进 sizing loop 都
-// 不工作，所以彻底绕开 —— 前端算位移、后端 GetWindowRect+SetWindowPos 落尺寸。
-let rzDir = null, rzLastX = 0, rzLastY = 0, rzAccX = 0, rzAccY = 0, rzPending = false;
+// Resize handles
+let rzDir=null, rzLastX=0, rzLastY=0, rzAccX=0, rzAccY=0, rzPending=false;
 document.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
-  const el = e.target.closest('.rz');
-  if (!el) return;
-  e.preventDefault();
-  rzDir = el.dataset.dir;
-  rzLastX = e.screenX; rzLastY = e.screenY;
+  const el = e.target.closest('.rz'); if (!el) return;
+  e.preventDefault(); rzDir=el.dataset.dir; rzLastX=e.screenX; rzLastY=e.screenY;
 });
 document.addEventListener('mousemove', e => {
   if (!rzDir) return;
-  rzAccX += e.screenX - rzLastX; rzAccY += e.screenY - rzLastY;
-  rzLastX = e.screenX; rzLastY = e.screenY;
-  // rAF 节流：本帧内多次 mousemove 只累积 delta，一帧只发一次后端，避免 IPC 风暴。
-  if (rzPending) return;
-  rzPending = true;
+  rzAccX+=e.screenX-rzLastX; rzAccY+=e.screenY-rzLastY;
+  rzLastX=e.screenX; rzLastY=e.screenY;
+  if (rzPending) return; rzPending=true;
   requestAnimationFrame(() => {
-    rzPending = false;
-    if (!rzDir) return;
-    const dx = rzAccX, dy = rzAccY; rzAccX = 0; rzAccY = 0;
-    if (dx === 0 && dy === 0) return;
+    rzPending=false; if (!rzDir) return;
+    const dx=rzAccX, dy=rzAccY; rzAccX=0; rzAccY=0;
+    if (dx===0&&dy===0) return;
     try { pywebview.api.resize_delta(rzDir, dx, dy); } catch(_) {}
   });
 });
-window.addEventListener('mouseup', () => { rzDir = null; });
-window.addEventListener('blur', () => { rzDir = null; });  // 失焦兜底，防拖拽卡死
+window.addEventListener('mouseup', () => { rzDir=null; });
+window.addEventListener('blur', () => { rzDir=null; });
 
-let currentPlatform = 'workbuddy';
-let currentAccounts = [];
-let oauthTimer = null;
-let quotaAccountId = null;
-let proxyCurrentAccount = null;
-let proxyActive = false;
-let proxyInfoTimer = null;
-let statusFilter = 'all';
-
-// ===== Platform Switch =====
-function switchPlatform(platform) {
-  currentPlatform = platform;
-  loadAccounts();
-}
-
-// ===== Shop / Console View Switch =====
-let currentShopUrl = '';
-
-function showConsole() {
-  document.getElementById('consoleHeader').style.display = '';
-  document.getElementById('main').style.display = '';
-  document.getElementById('shopCardsView').style.display = 'none';
-  document.getElementById('shopView').style.display = 'none';
-  document.getElementById('logsView').style.display = 'none';
-  const frame = document.getElementById('shopFrame');
-  if (frame) frame.src = '';
-  document.querySelectorAll('.sidebar .nav-item').forEach(t => t.classList.toggle('active', t.dataset.view === 'console'));
-}
-
-function showShopCards() {
-  document.getElementById('consoleHeader').style.display = 'none';
-  document.getElementById('main').style.display = 'none';
-  document.getElementById('shopView').style.display = 'none';
-  document.getElementById('logsView').style.display = 'none';
-  document.getElementById('shopCardsView').style.display = '';
-  document.querySelectorAll('.sidebar .nav-item').forEach(t => t.classList.toggle('active', t.dataset.view === 'shop-cards'));
-}
-
-function showLogs() {
-  document.getElementById('consoleHeader').style.display = 'none';
-  document.getElementById('main').style.display = 'none';
-  document.getElementById('shopCardsView').style.display = 'none';
-  document.getElementById('shopView').style.display = 'none';
-  document.getElementById('logsView').style.display = '';
-  document.querySelectorAll('.sidebar .nav-item').forEach(t => t.classList.toggle('active', t.dataset.view === 'logs'));
-  (async () => {
-    try {
-      const r = JSON.parse(await pywebview.api.get_log_enabled());
-      document.getElementById('logEnabledToggle').checked = r.enabled;
-    } catch(e) {}
-    refreshLogs();
-  })();
-}
-
-async function exportAccounts() {
-  const btn = event?.currentTarget;
-  btnLoading(btn);
-  try {
-    // 路径由 Python 侧的原生保存对话框决定，这里只负责回报结果
-    const r = JSON.parse(await pywebview.api.export_accounts(currentPlatform));
-    if (r.cancelled) return;
-    if (r.error) { showToast(r.error, 'error'); return; }
-    // count/path 缺失说明后端还是旧版（改了 Python 但只重载了页面，没重启进程）
-    if (typeof r.count !== 'number') {
-      showToast('导出完成，但后端返回格式异常，请重启应用', 'warning');
-      return;
-    }
-    showToast(`已导出 ${r.count} 个账号`, 'success', r.path);
-  } catch(e) {
-    showToast('导出失败: ' + e, 'error');
-  } finally { btnDone(btn); }
-}
-
-async function saveQuotaThreshold(val) {
-  try {
-    await pywebview.api.set_quota_threshold(parseFloat(val) || 0);
-    showToast(`换号阈值已设为 ${parseFloat(val) || 0}`, 'success');
-  } catch(e) {}
-}
-
-async function loadQuotaThreshold() {
-  try {
-    const r = JSON.parse(await pywebview.api.get_quota_threshold());
-    const el = document.getElementById('quotaThresholdInput');
-    if (el) el.value = r.threshold || 0;
-  } catch(e) {}
-}
-
-async function toggleLogEnabled() {
-  const cb = document.getElementById('logEnabledToggle');
-  try {
-    await pywebview.api.set_log_enabled(cb.checked);
-  } catch(e) { console.error(e); }
-}
-
-async function refreshLogs() {
-  const ev = document.getElementById('logEventFilter').value;
-  try {
-    const data = await pywebview.api.get_logs("workbuddy", 200, 0, ev);
-    if (!data) return;
-    const r = JSON.parse(data);
-    const list = document.getElementById('logsList');
-    if (!r.logs || r.logs.length === 0) {
-      list.innerHTML = '<div class="logs-empty">暂无日志，启动代理后请求会产生日志</div>';
-      return;
-    }
-    list.innerHTML = r.logs.map(l => {
-      const cls = l.event === 'success' ? 'log-success' : l.event === 'error' ? 'log-error' : 'log-request';
-      const badge = l.event === 'success' ? '成功' : l.event === 'error' ? '错误' : '请求';
-      const name = l.account_name || l.account_id || '-';
-      return `<div class="log-row ${cls}">
-        <span class="log-time">${l._time}</span>
-        <span class="log-badge ${cls}">${badge}</span>
-        <span class="log-acct">${name}</span>
-        <span class="log-model">${l.model || ''}</span>
-        <span class="log-msg">${l.message || ''}</span>
-      </div>`;
-    }).join('');
-  } catch(e) { console.error(e); }
-}
-
-async function clearLogs() {
-  if (!await showConfirm('确定清空所有运行日志？')) return;
-  try {
-    await pywebview.api.clear_logs("workbuddy");
-    document.getElementById('logsList').innerHTML = '<div class="logs-empty">日志已清空</div>';
-  } catch(e) { console.error(e); }
-}
-
-function openShop(url, name) {
-  document.getElementById('shopCardsView').style.display = 'none';
-  document.getElementById('shopView').style.display = 'flex';
-  document.getElementById('shopName').textContent = name;
-  document.getElementById('shopFrame').src = url;
-  currentShopUrl = url;
-}
-
-function openShopExternal() {
-  if (currentShopUrl) pywebview.api.open_external(currentShopUrl);
-}
-
-// ===== Toast =====
+// Toast
 const TOAST_ICONS = {
   success: '<path d="M20 6L9 17l-5-5"/>',
   error:   '<path d="M18 6L6 18M6 6l12 12"/>',
   warning: '<path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2 18a2 2 0 001.7 3h16.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/>',
   info:    '<circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/>',
-  loading: '<path d="M12 3a9 9 0 109 9" />',
+  loading: '<path d="M12 3a9 9 0 109 9"/>',
 };
 let _toastTimer = null;
-
-/**
- * @param msg  主文案
- * @param type success | error | warning | info | loading
- * @param detail 可选副文案，用等宽字体显示，适合放文件路径这类需要看清的内容
- * @param persistent 为 true 时不自动消失（loading 用），由调用方在异步结束后
- *                   再 showToast 一次覆盖掉，或手动调 hideToast。避免「正在处理」
- *                   提示自己闪掉但实际还在跑。
- */
-function showToast(msg, type = 'info', detail = '', persistent = false) {
-  const el = document.getElementById('toast');
-  if (!el) return;
+function showToast(msg, type='info', detail='', persistent=false) {
+  const el = document.getElementById('toast'); if (!el) return;
   const kind = TOAST_ICONS[type] ? type : 'info';
   el.innerHTML =
-    `<span class="toast-icon ${kind === 'loading' ? 'toast-spin' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ` +
-    `stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${TOAST_ICONS[kind]}</svg></span>` +
-    `<span class="toast-body"><span class="toast-msg"></span>` +
-    (detail ? `<span class="toast-detail"></span>` : '') + `</span>`;
-  // 用 textContent 赋值，避免账号名/路径里的 < & 被当成标记解析
+    `<span class="toast-icon ${kind==='loading'?'toast-spin':''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${TOAST_ICONS[kind]}</svg></span>` +
+    `<span class="toast-body"><span class="toast-msg"></span>${detail?'<span class="toast-detail"></span>':''}</span>`;
   el.querySelector('.toast-msg').textContent = msg;
   if (detail) el.querySelector('.toast-detail').textContent = detail;
-
   el.className = `toast ${kind} show`;
   clearTimeout(_toastTimer);
-  if (!persistent) {
-    // 带路径的提示需要更久才读得完
-    _toastTimer = setTimeout(() => el.classList.remove('show'), detail ? 6000 : 3000);
-  }
+  if (!persistent) _toastTimer = setTimeout(() => el.classList.remove('show'), detail ? 6000 : 3000);
 }
+function hideToast() { clearTimeout(_toastTimer); document.getElementById('toast')?.classList.remove('show'); }
 
-function hideToast() {
-  clearTimeout(_toastTimer);
-  document.getElementById('toast')?.classList.remove('show');
-}
-
-// ===== Button Loading =====
-function btnLoading(btn) {
-  if (!btn || btn.tagName !== 'BUTTON') return;
-  btn._origHTML = btn.innerHTML;
-  btn.disabled = true;
-  btn.classList.add('btn-loading');
-  btn.innerHTML = '<span class="spinner-sm"></span>';
-}
-function btnDone(btn) {
-  if (!btn || btn.tagName !== 'BUTTON') return;
-  btn.disabled = false;
-  btn.classList.remove('btn-loading');
-  if (btn._origHTML) btn.innerHTML = btn._origHTML;
-}
-
-// ===== Modal Helpers =====
-function showModal(id) { document.getElementById(id).classList.add('show'); }
-function closeModal(id) {
-  document.getElementById(id).classList.remove('show');
-  if (id === 'oauthModal') cancelOAuth();
-}
-/**
- * 确认弹窗。全部走 CSS 类和设计变量 —— 原实现把颜色硬编码成一套旧的深蓝配色
- * (#141b2d / #0f172a / #ef4444)，既跟不上主题切换，也和暖米色体系对不上。
- *
- * @param msg   正文，支持 \n 换行
- * @param title 标题，默认「确认操作」
- * @param opts  { danger: 确定按钮是否用危险色（默认 true）, okText, cancelText }
- */
+// Confirm Dialog
 function showConfirm(msg, title, opts) {
   opts = opts || {};
-  const okText = opts.okText || '确定';
-  const cancelText = opts.cancelText || '取消';
-  const danger = opts.danger !== false;
-
-  return new Promise(function(resolve) {
+  const okText = opts.okText || '确定', cancelText = opts.cancelText || '取消', danger = opts.danger !== false;
+  return new Promise(resolve => {
     const ov = document.createElement('div');
     ov.className = 'confirm-overlay';
     ov.innerHTML =
       '<div class="confirm-box" role="dialog" aria-modal="true">' +
-        '<div class="confirm-title"></div>' +
-        '<div class="confirm-msg"></div>' +
+        '<div class="confirm-title"></div><div class="confirm-msg"></div>' +
         '<div class="confirm-actions">' +
           '<button class="btn btn-ghost btn-sm confirm-no"></button>' +
           '<button class="btn btn-sm confirm-yes"></button>' +
-        '</div>' +
-      '</div>';
-
-    const yes = ov.querySelector('.confirm-yes');
-    const no = ov.querySelector('.confirm-no');
+        '</div></div>';
+    const yes = ov.querySelector('.confirm-yes'), no = ov.querySelector('.confirm-no');
     ov.querySelector('.confirm-title').textContent = title || '确认操作';
     ov.querySelector('.confirm-msg').textContent = msg;
-    no.textContent = cancelText;
-    yes.textContent = okText;
+    no.textContent = cancelText; yes.textContent = okText;
     yes.classList.add(danger ? 'btn-danger' : 'btn-primary');
-
     document.body.appendChild(ov);
     requestAnimationFrame(() => ov.classList.add('show'));
-
     let settled = false;
     function done(v) {
-      // 焦点在确定键上按 Enter 会同时触发 keydown 和按钮 click，
-      // 两次 resolve 对 Promise 无害但会重复移除节点，这里加一道闸
-      if (settled) return;
-      settled = true;
+      if (settled) return; settled = true;
       document.removeEventListener('keydown', onKey);
       ov.classList.remove('show');
-      // 等淡出动画结束再移除，避免闪一下
-      setTimeout(() => ov.remove(), 160);
-      resolve(v);
+      setTimeout(() => ov.remove(), 160); resolve(v);
     }
-    function onKey(e) {
-      if (e.key === 'Escape') done(false);
-      else if (e.key === 'Enter') done(true);
-    }
-
-    yes.onclick = () => done(true);
-    no.onclick = () => done(false);
-    // 点遮罩空白处等同取消
-    ov.onclick = (e) => { if (e.target === ov) done(false); };
-    document.addEventListener('keydown', onKey);
-    yes.focus();
+    function onKey(e) { if (e.key==='Escape') done(false); else if (e.key==='Enter') done(true); }
+    yes.onclick = () => done(true); no.onclick = () => done(false);
+    ov.onclick = e => { if (e.target===ov) done(false); };
+    document.addEventListener('keydown', onKey); yes.focus();
   });
 }
 
-// ===== Load Accounts =====
-async function loadAccountsLight() {
-  try {
-    const raw = await pywebview.api.list_accounts(currentPlatform);
-    const fresh = JSON.parse(raw);
-    const freshMap = {};
-    fresh.forEach(a => freshMap[a.id] = a);
-    currentAccounts = currentAccounts.map(a => freshMap[a.id] || a).filter(a => freshMap[a.id]);
-    fresh.forEach(a => { if (!currentAccounts.find(x => x.id === a.id)) currentAccounts.push(a); });
-    renderStats();
-    buildFilter();
-    updateCardsInPlace();
-  } catch (e) {}
-}
-
-let accountStats = {};
-
-async function loadAccounts() {
-  try {
-    const [raw, statsRaw] = await Promise.all([
-      pywebview.api.list_accounts(currentPlatform),
-      pywebview.api.get_all_stats(currentPlatform),
-    ]);
-    currentAccounts = JSON.parse(raw);
-    try {
-      const sd = JSON.parse(statsRaw);
-      accountStats = {};
-      (sd.stats || []).forEach(s => { accountStats[s.account_id] = s; });
-    } catch {}
-    renderStats();
-    buildFilter();
-    loadQuotaThreshold();
-    // 网关未运行时，从 DB 恢复优先账号标注
-    if (!proxyRunning) {
-      try {
-        const pr = await pywebview.api.get_priority_account();
-        const pd = JSON.parse(pr);
-        if (pd.priority) proxyCurrentAccount = pd.priority;
-      } catch {}
-    }
-    renderAccounts();
-    if (currentAccounts.length > 0) {
-      pywebview.api.batch_checkin_status(currentPlatform).then(() => loadAccountsLight()).catch(() => {});
-    }
-  } catch (e) {
-    currentAccounts = [];
-    renderStats();
-    buildFilter();
-    loadQuotaThreshold();
-    renderAccounts();
-  }
-}
-
-function renderStats() {
-  const el = document.getElementById('stats');
-  el.innerHTML = `
-    <div class="stat-card">
-      <div class="stat-icon blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div>
-      <div class="stat-text"><div class="stat-label">总账号</div><div class="stat-value" id="statTotal">-</div></div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-icon purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg></div>
-      <div class="stat-text"><div class="stat-label">已用 / 总量</div><div class="stat-value" id="statQuota">-</div></div>
-    </div>
-    <!-- 今日签到卡片保留代码，不渲染显示 -->
-    <div class="stat-card" style="display:none">
-      <div class="stat-icon green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></div>
-      <div class="stat-text"><div class="stat-label">今日签到</div><div class="stat-value" id="statCheckin">-</div></div>
-    </div>
-  `;
-  pywebview.api.get_stats(currentPlatform).then(raw => {
-    const d = JSON.parse(raw);
-    const qStr = `${fmt(d.total_used)} / ${fmt(d.total_quota)}`;
-    const totalEl = document.getElementById('statTotal');
-    if (totalEl) totalEl.textContent = d.total_accounts;
-    const quotaEl = document.getElementById('statQuota');
-    if (quotaEl) {
-      quotaEl.textContent = qStr;
-      quotaEl.title = qStr;
-    }
-    const checkinEl = document.getElementById('statCheckin');
-    if (checkinEl) checkinEl.textContent = d.checked_in_today;
-  }).catch(() => {});
-}
-
-function dateStr(d) {
-  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-}
-
-function friendlyDate(val) {
-  if (!val) return '';
-  const p = val.split('-');
-  if (p.length !== 3) return val;
-  return `${p[0]}年${parseInt(p[1],10)}月${parseInt(p[2],10)}日`;
-}
-
-function updateFilterChip() {
-  const val = document.getElementById('filterDate').value;
-  const chip = document.getElementById('filterChip');
-  if (val) {
-    document.getElementById('filterChipText').textContent = friendlyDate(val);
-    chip.classList.add('show');
-  } else {
-    chip.classList.remove('show');
-  }
-}
-
-function buildFilter() {
-  document.getElementById('filterBar').style.display = currentAccounts.length ? 'flex' : 'none';
-  updateDatePh();
-}
-
-function setFilterDate(offset) {
-  const d = new Date();
-  d.setDate(d.getDate() + offset);
-  document.getElementById('filterDate').value = dateStr(d);
-  applyFilter();
-  updateDatePh();
-}
-
-function applyFilter() {
-  updateFilterChip();
-  updateDatePh();
-  renderAccounts();
-}
-
-function clearFilter() {
-  document.getElementById('filterDate').value = '';
-  updateFilterChip();
-  updateDatePh();
-  renderAccounts();
-}
-
-function updateDatePh() {
-  const input = document.getElementById('filterDate');
-  const ph = document.getElementById('datePh');
-  if (!input || !ph) return;
-  if (input.value) {
-    input.classList.remove('empty');
-    ph.style.display = 'none';
-  } else {
-    input.classList.add('empty');
-    ph.style.display = '';
-  }
-}
-
-function getFilteredAccounts() {
-  let result = currentAccounts;
-  if (statusFilter !== 'all') {
-    result = result.filter(a => (a.status || 'normal') === statusFilter);
-  }
-  const val = document.getElementById('filterDate').value;
-  if (val) {
-    result = result.filter(a => {
-      if (!a.created_at) return false;
-      const d = new Date(a.created_at * 1000);
-      return dateStr(d) === val;
-    });
-  }
-  if (proxyCurrentAccount) {
-    result = [...result].sort((a, b) => {
-      if (a.id === proxyCurrentAccount) return -1;
-      if (b.id === proxyCurrentAccount) return 1;
-      return 0;
-    });
-  }
-  return result;
-}
-
-function cardQuotaHtml(a) {
-  const quotaData = parseQuota(a);
-  if (!quotaData) return '';
-  const pc = accountStats[a.id]?.total_credit || 0;
-  const adjUsed = quotaData.used + pc;
-  const adjRemain = quotaData.total - adjUsed;
-  const adjPct = quotaData.total > 0 ? Math.round(adjUsed / quotaData.total * 100) : 0;
-  return `<div class="quota-section">
-            <div class="quota-header">
-              <span>已用 ${fmt(adjUsed)} / 剩余 ${fmt(Math.max(0, adjRemain))}</span>
-              <span>${fmt(quotaData.total)}</span>
-            </div>
-            <div class="quota-bar"><div class="quota-fill ${adjPct >= 80 ? 'danger' : adjPct >= 50 ? 'warning' : ''}" style="width:${Math.min(adjPct, 100)}%"></div></div>
-          </div>`;
-}
-
-function cardStatsHtml(a) {
-  const s = accountStats[a.id];
-  if (!s || !s.request_count) return '';
-  const hits = s.cache_hits || 0, misses = s.cache_misses || 0;
-  const hitRate = (hits + misses) > 0 ? (hits / (hits + misses) * 100).toFixed(1) : 0;
-  return `<div class="card-stats-row">
-            <span class="stat-pill" title="总请求次数">请求 ${s.request_count} 次</span>
-            <span class="stat-pill" title="输入/输出 Token">Token ↑${fmtK(s.prompt_tokens)} ↓${fmtK(s.completion_tokens)}</span>
-            <span class="stat-pill" title="累计消耗积分">消耗 ${fmtL(s.lifetime_credit)}</span>
-            <span class="stat-pill" title="缓存命中率">缓存 ${hitRate}%</span>
-          </div>`;
-}
-
-function updateCardsInPlace() {
-  // 增删兜底：DOM 卡片集合与 currentAccounts 不一致（有账号被删或新增）时，
-  // 局部 patch 会留下孤立卡片或漏渲染新卡片，直接降级为全量重建。
-  // 只在数量变化时触发，高频的额度/状态更新仍走下面的局部 patch。
-  const grid = document.getElementById('accountGrid');
-  if (grid) {
-    const existingIds = new Set();
-    grid.querySelectorAll('.card[data-account-id]').forEach(c => existingIds.add(c.dataset.accountId));
-    const currentIds = new Set(currentAccounts.map(a => a.id));
-    let mismatch = existingIds.size !== currentIds.size;
-    if (!mismatch) {
-      for (const id of currentIds) {
-        if (!existingIds.has(id)) { mismatch = true; break; }
-      }
-    }
-    if (mismatch) { renderAccounts(); return; }
-  }
-  currentAccounts.forEach(a => {
-    const card = document.querySelector(`.card[data-account-id="${a.id}"]`);
-    if (!card) return;
-    const newQuota = cardQuotaHtml(a);
-    const oldQuota = card.querySelector('.quota-section');
-    if (oldQuota) {
-      if (newQuota) oldQuota.outerHTML = newQuota;
-      else oldQuota.remove();
-    } else if (newQuota) {
-      const header = card.querySelector('.card-header');
-      if (header) header.insertAdjacentHTML('afterend', newQuota);
-    }
-    const newStats = cardStatsHtml(a);
-    const oldStats = card.querySelector('.card-stats-row');
-    if (oldStats) {
-      if (newStats) oldStats.outerHTML = newStats;
-      else oldStats.remove();
-    } else if (newStats) {
-      const quotaSec = card.querySelector('.quota-section');
-      if (quotaSec) quotaSec.insertAdjacentHTML('afterend', newStats);
-    }
-    // 状态徽章：只替换 .badge-status-* span，不动 .card-meta 里的当前号/plan/企业名。
-    // 阈值自动切号会把 acc.status 改成 disabled，不刷这里卡片就一直显示「正常」。
-    const oldBadge = card.querySelector('.card-meta .badge-status-normal, .card-meta .badge-status-disabled, .card-meta .badge-status-banned');
-    if (oldBadge) {
-      const newBadgeHtml = getStatusBadge(a);
-      if (oldBadge.outerHTML !== newBadgeHtml) oldBadge.outerHTML = newBadgeHtml;
-    }
-    // 按钮区：status 变了，启用/禁用按钮和优先调度按钮都要跟着换。
-    const oldActions = card.querySelector('.card-actions');
-    if (oldActions) oldActions.innerHTML = cardActionsHtml(a);
-  });
-}
-
-function renderAccounts() {
-  const filtered = getFilteredAccounts();
-  const el = document.getElementById('accountGrid');
-  if (!filtered.length) {
-    if (currentAccounts.length) {
-      el.innerHTML = `
-        <div class="empty-state">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-          <h3>无匹配账号</h3>
-          <p>尝试调整日期筛选条件</p>
-        </div>
-      `;
-    } else {
-      el.innerHTML = `
-        <div class="empty-state">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/></svg>
-          <h3>暂无配置账号</h3>
-          <p>请点击右上角【OAuth 登录】或【文件导入】添加账号</p>
-        </div>
-      `;
-    }
-    return;
-  }
-
-  el.innerHTML = filtered.map(a => {
-    const planBadge = getPlanBadge(a);
-    const checkinData = parseCheckin(a);
-    const displayName = a.nickname || a.email || '未命名';
-    const showEmail = a.email && a.email !== displayName;
-
-    return `
-      <div class="card" data-account-id="${a.id}">
-        <div class="card-header">
-          <div style="display:flex;align-items:center;flex:1;min-width:0">
-            <div class="card-info">
-              <div class="card-name">${escapeHtml(displayName)}</div>
-              ${showEmail ? `<div class="card-email">${escapeHtml(a.email)}</div>` : ''}
-              <div class="card-meta">
-                ${a.id === proxyCurrentAccount ? '<span class="current-badge"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg>当前</span>' : ''}
-                ${getStatusBadge(a)}
-                ${planBadge}
-                ${a.enterprise_name ? `<span style="font-size:11px;color:var(--text-muted)"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 6h2M13 6h2M9 10h2M13 10h2M9 14h2M13 14h2"/></svg> ${escapeHtml(a.enterprise_name)}</span>` : ''}
-                ${a.created_at ? `<span style="font-size:11px;color:var(--text-muted)"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg> ${dateStr(new Date(a.created_at * 1000))}</span>` : ''}
-              </div>
-            </div>
-          </div>
-          <div class="checkin-status">
-            ${checkinData !== null ? `
-              <span class="checkin-badge ${checkinData.done ? 'done' : 'pending'}">
-                ${checkinData.done
-                  ? '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-1px"><path d="M5 13l4 4L19 7"/></svg> 已签到'
-                  : '<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> 未签到'}
-              </span>
-              ${checkinData.streak > 0 ? `<span class="streak-badge"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><path d="M8 2c0 4-3 6-3 9 0 4 3 7 7 7s7-3 7-7c0-3-2-5-3-7 0 3-2 5-4 5s-4-3-4-7z"/><path d="M12 22v-4"/></svg> ${checkinData.streak}天</span>` : ''}
-            ` : `<span class="checkin-badge inactive">未开通</span>`}
-          </div>
-        </div>
-
-        ${cardQuotaHtml(a)}
-
-        ${cardStatsHtml(a)}
-
-        <div class="card-footer">
-          <div class="card-actions">${cardActionsHtml(a)}</div>
-        </div>
-      </div>
-    `;
-  }).join('');
-  updateAccountHighlight();
-}
-
-// ===== Helpers =====
-function escapeHtml(s) {
-  if (!s) return '';
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
-
-function getStatusBadge(a) {
-  const s = a.status || 'normal';
-  if (s === 'banned') return '<span class="badge-status-banned">封禁</span>';
-  if (s === 'disabled') return '<span class="badge-status-disabled">已禁用</span>';
-  return '<span class="badge-status-normal">正常</span>';
-}
-
-// 卡片底部按钮区 HTML。renderAccounts 和 updateCardsInPlace 共用，保证两处渲染一致。
-function cardActionsHtml(a) {
-  const st = a.status || 'normal';
-  return `
-            <button class="btn btn-ghost btn-sm" onclick="showQuotaDetail('${a.id}')" title="额度详情"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M4 16l4-8 4 4 4-6 4 8"/></svg> 详情</button>
-            <button class="btn btn-ghost btn-sm" onclick="doCheckin('${a.id}')" title="签到"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> 签到</button>
-            <button class="btn btn-ghost btn-sm" onclick="refreshOne('${a.id}')" title="刷新"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg> 刷新</button>
-            ${st === 'normal' ? `<button class="btn btn-ghost btn-sm btn-icon" onclick="setPriorityAccount('${a.id}')" title="设为优先调度"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></button>` : ''}
-            ${st === 'banned' ? '' : `<button class="btn btn-ghost btn-sm" style="color:${st === 'disabled' ? '#22c55e' : '#f59e0b'}" onclick="toggleAccountStatus('${a.id}')">${st === 'disabled' ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg> 启用' : '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> 禁用'}</button>`}
-            <button class="btn btn-danger btn-sm btn-icon" onclick="deleteOne('${a.id}')" title="删除"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
-  `;
-}
-
-async function toggleAccountStatus(id) {
-  const acc = currentAccounts.find(a => a.id === id);
-  if (!acc) return;
-  const newStatus = (acc.status === 'normal') ? 'disabled' : 'normal';
-  try {
-    const raw = await pywebview.api.set_account_status(currentPlatform, id, newStatus);
-    const r = JSON.parse(raw);
-    if (r.ok) {
-      acc.status = newStatus;
-      await refreshProxyStatus();
-      await loadAccounts();
-      showToast(newStatus === 'disabled' ? '已禁用' : '已启用', 'success');
-    } else {
-      await loadAccountsLight();
-      showToast(r.error || '操作失败', 'error');
-    }
-  } catch (e) {}
-}
-
-async function setPriorityAccount(id) {
-  try {
-    const raw = await pywebview.api.set_priority_account(currentPlatform, id);
-    const r = JSON.parse(raw);
-    if (r.ok) {
-      proxyCurrentAccount = id;
-      updateAccountHighlight();
-      renderAccounts();
-      showToast('已设为优先调度', 'success');
-    }
-  } catch (e) {}
-}
-
-function setStatusFilter(s) {
-  statusFilter = s;
-  renderAccounts();
-}
-
-function showChangelog() { showModal('changelogModal'); }
-
-function getPlanBadge(a) {
-  const code = a.dosage_notify_code || a.plan_type || '';
-  const pkg = a.quota_raw?.userResource?.data?.Response?.Data?.Accounts;
-  let isPro = false, isEnterprise = false, isTrial = false;
-  if (pkg) {
-    for (const r of pkg) {
-      const pc = r.PackageCode || '';
-      if (['TCACA_code_002_AkiJS3ZHF5', 'TCACA_code_003_FAnt7lcmRT'].includes(pc)) isPro = true;
-      if (pc === 'TCACA_code_006_DbXS0lrypC' || pc === 'TCACA_code_007_nzdH5h4Nl0') isTrial = true;
-    }
-  }
-  if (a.enterprise_id || a.enterprise_name) isEnterprise = true;
-
-  if (isEnterprise) return '<span class="badge badge-enterprise">企业版</span>';
-  if (isPro) return '<span class="badge badge-pro">Pro</span>';
-  if (isTrial) return '<span class="badge badge-trial">Free</span>';
-  return '<span class="badge badge-free">Free</span>';
-}
-
-function _n(v) {
-  if (v == null) return 0;
-  if (typeof v === 'number') return v;
-  const n = Number(v);
-  return isNaN(n) ? 0 : n;
-}
-function _pickN(item, keys) {
-  for (const k of keys) {
-    if (item[k] != null) return _n(item[k]);
-  }
-  return 0;
-}
-function fmt(n) {
-  const v = _n(n);
-  return (Math.round(v * 100) / 100).toString();
-}
-function fmtK(n) {
-  const v = _n(n);
-  if (v >= 100000000) return (v / 100000000).toFixed(1) + '亿';
-  if (v >= 10000) return (v / 10000).toFixed(1) + 'w';
-  if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
-  return String(v);
-}
-function fmtL(n) {
-  const v = _n(n);
-  if (v >= 10000) return (v / 10000).toFixed(1) + 'w';
-  if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
-  return v.toFixed(2);
-}
-
-function parseQuota(a) {
-  try {
-    const qr = a.quota_raw;
-    if (!qr) return null;
-    const ur = qr.userResource || a.usage_raw;
-    if (!ur) return null;
-    const accts = ur.data?.Response?.Data?.Accounts || [];
-    if (!accts.length) return null;
-    let total = 0, used = 0;
-    for (const r of accts) {
-      const st = _n(r.Status);
-      if (st !== 0 && st !== 3) continue;
-      const t = _pickN(r, ['CycleCapacitySizePrecise', 'CycleCapacitySize', 'CapacitySizePrecise', 'CapacitySize']);
-      const remain = _pickN(r, ['CycleCapacityRemainPrecise', 'CycleCapacityRemain', 'CapacityRemainPrecise', 'CapacityRemain']);
-      if (t <= 0) continue;
-      total += t;
-      used += Math.max(0, t - remain);
-    }
-    if (total === 0) return null;
-    return { total, used, pct: Math.round((used / total) * 100) };
-  } catch { return null; }
-}
-
-function parseCheckin(a) {
-  const today = Math.floor(Date.now() / 1000);
-  const dayStart = today - (today % 86400);
-  const lt = a.last_checkin_time;
-  const done = lt ? lt >= dayStart : false;
-  return { done, streak: a.checkin_streak || 0 };
-}
-
-// ===== Actions =====
-async function refreshAll() {
-  const btn = event?.currentTarget;
-  btnLoading(btn);
-  try {
-    const raw = await pywebview.api.refresh_all(currentPlatform);
-    const r = JSON.parse(raw);
-    showToast(`刷新完成: ${r.success}/${r.total}`, r.success > 0 ? 'success' : 'info');
-    await loadAccounts();
-  } catch (e) { showToast('刷新失败: ' + e, 'error'); }
-  finally { btnDone(btn); }
-}
-
-async function refreshOne(id) {
-  const btn = event?.currentTarget;
-  btnLoading(btn);
-  try {
-    const raw = await pywebview.api.refresh_token(currentPlatform, id);
-    const r = JSON.parse(raw);
-    if (r.error) { showToast(r.error, 'error'); return; }
-    showToast('刷新成功', 'success');
-    await loadAccountsLight();
-    await refreshAccountStats();
-  } catch (e) { showToast('刷新失败: ' + e, 'error'); }
-  finally { btnDone(btn); }
-}
-
-async function deleteOne(id) {
-  if (!await showConfirm('确认删除该账号？', '删除账号')) return;
-  const btn = event?.currentTarget;
-  btnLoading(btn);
-  try {
-    await pywebview.api.delete_account(currentPlatform, id);
-    showToast('已删除', 'success');
-    // 必须全量重建：loadAccountsLight 的 updateCardsInPlace 只更新现有卡片，
-    // 不会移除已删账号的卡片 DOM，导致「提示成功但卡片还在」。
-    await loadAccounts();
-  } catch (e) { showToast('删除失败: ' + e, 'error'); }
-  finally { btnDone(btn); }
-}
-
-// ===== OAuth =====
-async function showOAuthModal() {
-  showModal('oauthModal');
-  document.getElementById('oauthUrl').textContent = '正在获取登录链接...';
-  document.getElementById('oauthStatus').innerHTML = `
-    <div style="text-align:center;padding:24px 0;color:var(--text-secondary);font-size:13px;">
-      <div class="spinner"></div>
-      <div style="margin-top:8px;">等待授权完成...</div>
-    </div>
-  `;
-
-  try {
-    const raw = await pywebview.api.oauth_start(currentPlatform);
-    const r = JSON.parse(raw);
-    if (r.error) { showToast(r.error, 'error'); closeModal('oauthModal'); return; }
-
-    document.getElementById('oauthUrl').textContent = r.verification_uri;
-
-    document.getElementById('oauthStatus').innerHTML = `
-      <div style="margin-bottom:14px;display:flex;gap:8px;justify-content:center;">
-        <button class="btn btn-primary btn-sm" onclick="window.open('${r.verification_uri}', '_blank')">打开浏览器链接</button>
-        <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${r.verification_uri}')">复制链接</button>
-      </div>
-      <div style="text-align:center;padding:16px 0;color:var(--text-secondary);font-size:13px;">
-        <div class="spinner"></div>
-        <div style="margin-top:8px;">等待浏览器授权完成...</div>
-      </div>
-    `;
-
-    startOAuthPolling(r.login_id);
-  } catch (e) {
-    showToast('启动 OAuth 失败: ' + e, 'error');
-    closeModal('oauthModal');
-  }
-}
-
-function startOAuthPolling(loginId) {
-  if (oauthTimer) clearInterval(oauthTimer);
-  oauthTimer = setInterval(async () => {
-    try {
-      const raw = await pywebview.api.oauth_poll(loginId);
-      const r = JSON.parse(raw);
-      if (r.status === 'completed') {
-        clearInterval(oauthTimer);
-        oauthTimer = null;
-        await completeOAuth(r.data);
-      } else if (r.error) {
-        clearInterval(oauthTimer);
-        oauthTimer = null;
-        showToast(r.error, 'error');
-        closeModal('oauthModal');
-      }
-    } catch (e) {}
-  }, 1500);
-}
-
-async function completeOAuth(data) {
-  try {
-    const raw = await pywebview.api.complete_oauth_and_save(currentPlatform, JSON.stringify(data));
-    const r = JSON.parse(raw);
-    if (r.error) { showToast(r.error, 'error'); return; }
-    showToast(`登录成功: ${r.email}`, 'success');
-    closeModal('oauthModal');
-    await loadAccounts();
-  } catch (e) {
-    showToast('保存账号失败: ' + e, 'error');
-  }
-}
-
-function cancelOAuth() {
-  if (oauthTimer) { clearInterval(oauthTimer); oauthTimer = null; }
-  try { pywebview.api.oauth_cancel(); } catch(e) {}
-}
-
-// ===== Import =====
-function showImportModal() {
-  document.getElementById('importJson').value = '';
-  showModal('importModal');
-}
-
-function doImport() {
-  var json = document.getElementById('importJson').value.trim();
-  if (!json) { showToast('请粘贴 Token 或 JSON', 'error'); return; }
-  var btn = event && event.currentTarget;
-  btnLoading(btn);
-  pywebview.api.import_from_json(currentPlatform, json).then(function(raw) {
-    var r = JSON.parse(raw);
-    if (r.error) { showToast(r.error, 'error'); return; }
-    showToast('导入成功: ' + (r.accounts ? r.accounts.length : 0) + ' 个账号', 'success');
-    closeModal('importModal');
-    loadAccounts();
-  }).catch(function(e) { showToast('导入失败: ' + e, 'error'); }).finally(function() { btnDone(btn); });
-}
-
-// ===== File Import =====
-function handleFileImport(event) {
-  var file = event.target.files && event.target.files[0];
-  if (!file) return;
-  // loading + persistent：导入是异步且耗时（每个号都要拉额度），提示不能自己闪掉，
-  // 要等到导入完成（成功/失败）的下一条 toast 覆盖它。
-  showToast('正在读取文件并导入...', 'loading', '', true);
-  file.text().then(function(text) {
-    return pywebview.api.import_from_json(currentPlatform, text).then(function(raw) {
-      var r = JSON.parse(raw);
-      if (r.error) { showToast(r.error, 'error'); return; }
-      showToast('文件导入成功: ' + (r.accounts ? r.accounts.length : 0) + ' 个账号', 'success');
-      loadAccounts();
-    });
-  }).catch(function(e) { showToast('文件导入失败: ' + e, 'error'); });
-  event.target.value = '';
-}
-
-// ===== Check-in =====
-async function checkinAll() {
-  const btn = event?.currentTarget;
-  btnLoading(btn);
-  try {
-    const raw = await pywebview.api.checkin_all(currentPlatform);
-    const r = JSON.parse(raw);
-    showToast(`签到完成: ${r.success}成功 / ${r.already}已签 / ${r.failed}失败`, r.failed > 0 ? 'warning' : 'success');
-    // 全量重建：签到徽章（.checkin-badge）不在 updateCardsInPlace 的 patch 范围，
-    // 用 loadAccountsLight 会导致「签到成功但徽章还显示未签到」。
-    await loadAccounts();
-  } catch (e) { showToast('批量签到失败: ' + e, 'error'); }
-  finally { btnDone(btn); }
-}
-
-async function doCheckin(id) {
-  const btn = event?.currentTarget;
-  btnLoading(btn);
-  try {
-    const raw = await pywebview.api.checkin(currentPlatform, id);
-    const r = JSON.parse(raw);
-    if (r.error) { showToast(r.error, 'error'); return; }
-    if (r.success) {
-      showToast(`签到成功! ${r.credit ? '+'+r.credit+' 积分' : ''}`, 'success');
-    } else {
-      showToast(r.message || '签到失败(可能已签到)', 'info');
-    }
-    // 同 checkinAll：全量重建让签到徽章立即更新。
-    await loadAccounts();
-  } catch (e) { showToast('签到失败: ' + e, 'error'); }
-  finally { btnDone(btn); }
-}
-
-// ===== Quota Detail =====
-async function showQuotaDetail(id) {
-  quotaAccountId = id;
-  const account = currentAccounts.find(a => a.id === id);
-  document.getElementById('quotaAccountName').textContent = account?.email || '额度详情';
-  document.getElementById('quotaContent').innerHTML = '<div style="text-align:center;padding:30px 0"><div class="spinner"></div><div style="color:var(--text-muted);font-size:13px;margin-top:8px">加载中...</div></div>';
-  showModal('quotaModal');
-
-  try {
-    const [quotaRaw, statsRaw] = await Promise.all([
-      pywebview.api.get_quota(currentPlatform, id),
-      pywebview.api.get_all_stats(currentPlatform),
-    ]);
-    const r = JSON.parse(quotaRaw);
-    const statsData = JSON.parse(statsRaw);
-    const myStats = statsData.stats?.find(s => s.account_id === id);
-    if (r.error) {
-      document.getElementById('quotaContent').innerHTML = `<p style="color:var(--danger)">${r.error}</p>`;
-    } else {
-      renderQuotaContent(r, myStats);
-    }
-  } catch (e) {
-    document.getElementById('quotaContent').innerHTML = `<p style="color:var(--danger)">查询失败: ${e}</p>`;
-  }
-}
-
-function renderQuotaContent(data, stats) {
-  let html = '';
-
-  if (stats && stats.request_count > 0) {
-    const totalReq = stats.request_count;
-    const hits = stats.cache_hits || 0;
-    const misses = stats.cache_misses || 0;
-    const hitRate = (hits + misses) > 0 ? (hits / (hits + misses) * 100).toFixed(1) : 0;
-    html += `<div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;margin-bottom:12px;">
-      <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;">使用统计（本代理）</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px;">
-        <div><span style="color:var(--text-muted)">请求次数</span><br><span style="font-weight:600">${totalReq.toLocaleString()}</span></div>
-        <div><span style="color:var(--text-muted)">输入Token</span><br><span style="font-weight:600">${(stats.prompt_tokens||0).toLocaleString()}</span></div>
-        <div><span style="color:var(--text-muted)">输出Token</span><br><span style="font-weight:600">${(stats.completion_tokens||0).toLocaleString()}</span></div>
-        <div><span style="color:var(--text-muted)">总Token</span><br><span style="font-weight:600">${(stats.total_tokens||0).toLocaleString()}</span></div>
-        <div><span style="color:var(--text-muted)">消耗积分</span><br><span style="font-weight:600">${(stats.total_credit||0).toFixed(2)}</span></div>
-        <div><span style="color:var(--text-muted)">缓存命中</span><br><span style="font-weight:600;color:${hitRate>=50?'var(--success)':'var(--text)'}">${hitRate}%</span></div>
-      </div>
-    </div>`;
-  }
-
-  if (data.dosage_notify_zh || data.dosage_notify_en) {
-    html += `<div style="background:var(--warning-light);border:1px solid rgba(234,179,8,0.3);border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:var(--warning);">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M12 9v4M12 17h.01M10.3 3.86l-8.1 14c-.6 1.1.1 2.5 1.3 2.5h16.8c1.2 0 1.9-1.4 1.3-2.5l-8.1-14c-.6-1.1-2.1-1.1-2.7 0z"/></svg> ${data.dosage_notify_zh || data.dosage_notify_en || ''}
-    </div>`;
-  }
-
-  if (data.payment_type) {
-    html += `<div class="quota-item"><span class="label">付费方式</span><span class="value">${data.payment_type}</span></div>`;
-  }
-
-  if (data.resources?.length) {
-    let allTotal = 0, allUsed = 0, allRemain = 0;
-    for (const r of data.resources) {
-      allTotal += _n(r.total);
-      allUsed += _n(r.used);
-      allRemain += _n(r.remain);
-    }
-    const allPct = allTotal > 0 ? Math.round((allUsed / allTotal) * 100) : 0;
-    const allCls = allPct >= 80 ? 'danger' : allPct >= 50 ? 'warning' : '';
-    html += `<div style="margin-bottom:12px;">
-      <div class="quota-item" style="border-bottom:none;padding-bottom:4px;">
-        <span class="label">总计配额</span>
-        <span class="value">已用 ${fmt(allUsed)} / 剩余 ${fmt(allRemain)}</span>
-      </div>
-      <div class="quota-bar"><div class="quota-fill ${allCls}" style="width:${Math.min(allPct, 100)}%"></div></div>
-    </div>`;
-
-    html += '<div class="quota-list">';
-    for (const r of data.resources) {
-      const total = _n(r.total);
-      const used = _n(r.used);
-      const remain = _n(r.remain);
-      const pct = total > 0 ? Math.round((used / total) * 100) : 0;
-      const cls = pct >= 80 ? 'danger' : pct >= 50 ? 'warning' : '';
-      const isBase = r.packageCode !== 'TCACA_code_009_0XmEQc2xOf';
-      html += `
-        <div style="padding:8px 0;border-bottom:1px solid var(--border);">
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px;">
-            <span style="color:var(--text-secondary)">${r.packageName || r.packageCode || '资源包'}${isBase ? ' (基础包)' : ''}</span>
-            <span style="font-weight:600">${fmt(remain)}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:2px;">
-            <span>已用 ${fmt(used)}</span>
-            <span>${fmt(total)}</span>
-          </div>
-          <div class="quota-bar"><div class="quota-fill ${cls}" style="width:${Math.min(pct, 100)}%"></div></div>
-        </div>`;
-    }
-    html += '</div>';
-  }
-
-  if (!html) {
-    html = '<p style="color:var(--text-muted);text-align:center;padding:20px 0;">暂无配额数据</p>';
-  }
-
-  document.getElementById('quotaContent').innerHTML = html;
-}
-
-async function refreshQuota() {
-  if (quotaAccountId) await showQuotaDetail(quotaAccountId);
-}
-
-// ===== Proxy =====
-let proxyRunning = false;
-
-function setProxyBtnState(running) {
-  const dot = document.getElementById('proxyBtnDot');
-  const btn = document.getElementById('proxyBtn');
-  if (dot) dot.className = 'proxy-btn-dot ' + (running ? 'on' : 'off');
-  if (btn) btn.classList.toggle('online', running);
-}
-
-const PROXY_GATEWAY_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6 6h.01M6 18h.01"/></svg>';
-
-async function toggleProxy() {
-  const btn = document.getElementById('proxyToggleBtn');
-  const panel = document.getElementById('proxyPanel');
-  const statusText = document.getElementById('proxyStatusText');
-
-  if (proxyRunning) {
-    const raw = await pywebview.api.proxy_stop();
-    const r = JSON.parse(raw);
-    if (r.success) {
-      proxyRunning = false;
-      btn.className = 'btn btn-primary btn-sm';
-      btn.innerHTML = `${PROXY_GATEWAY_SVG} 启动网关`;
-      panel.classList.remove('online');
-      panel.dataset.port = document.getElementById('proxyPortInput').value || '8001';
-      statusText.textContent = '离线';
-      setProxyBtnState(false);
-      hideChatCard();
-      stopProxyInfoPolling();
-    }
-    return;
-  }
-
-  const port = document.getElementById('proxyPortInput').value || '8001';
-  const pass = document.getElementById('proxyPassInput').value || '';
-  btn.innerHTML = '<span class="spinner-sm"></span> 启动中...';
-
-  const raw = await pywebview.api.proxy_start(port, pass);
-  const r = JSON.parse(raw);
-  if (r.success) {
-    proxyRunning = true;
-    btn.className = 'btn btn-ghost btn-sm btn-proxy-on';
-    btn.innerHTML = `${PROXY_GATEWAY_SVG} <span class="proxy-btn-dot on"></span> 关闭网关`;
-    panel.classList.add('online');
-    panel.dataset.port = r.port;
-    statusText.textContent = '运行中';
-    document.getElementById('proxyEndpointUrl').textContent = `http://127.0.0.1:${r.port}/v1`;
-    setProxyBtnState(true);
-    showChatCard();
-    startProxyInfoPolling();
-  } else {
-    btn.className = 'btn btn-primary btn-sm';
-    btn.innerHTML = `${PROXY_GATEWAY_SVG} 启动网关`;
-    showToast(r.error || '启动失败', 'warning');
-  }
-}
-
-async function refreshProxyStatus() {
-  const raw = await pywebview.api.proxy_status();
-  const r = JSON.parse(raw);
-  proxyRunning = r.running;
-  const btn = document.getElementById('proxyToggleBtn');
-  const panel = document.getElementById('proxyPanel');
-  const statusText = document.getElementById('proxyStatusText');
-  if (r.running) {
-    btn.className = 'btn btn-ghost btn-sm btn-proxy-on';
-    btn.innerHTML = `${PROXY_GATEWAY_SVG} <span class="proxy-btn-dot on"></span> 关闭网关`;
-    panel.classList.add('online');
-    panel.dataset.port = r.port;
-    statusText.textContent = '运行中';
-    document.getElementById('proxyEndpointUrl').textContent = `http://127.0.0.1:${r.port}/v1`;
-    setProxyBtnState(true);
-    showChatCard();
-    startProxyInfoPolling();
-  } else {
-    btn.className = 'btn btn-primary btn-sm';
-    btn.innerHTML = `${PROXY_GATEWAY_SVG} 启动网关`;
-    panel.classList.remove('online');
-    statusText.textContent = '离线';
-    setProxyBtnState(false);
-    stopProxyInfoPolling();
-  }
-}
-
-function startProxyInfoPolling() {
-  if (proxyInfoTimer) return;
-  proxyInfoTimer = setInterval(pollProxyInfo, 2000);
-  pollProxyInfo();
-}
-
-function stopProxyInfoPolling() {
-  if (proxyInfoTimer) { clearInterval(proxyInfoTimer); proxyInfoTimer = null; }
-  proxyCurrentAccount = null;
-  proxyActive = false;
-  updateAccountHighlight();
-}
-
-// 网关崩溃检测：fetch 连续失败超过阈值即判定网关已死，同步真实状态。
-// 否则前端会一直显示「运行中」，用户以为网关还在跑实际已挂。
-let _proxyFetchFailCount = 0;
-let _statsRefreshCounter = 0;
-let _noUsableWarned = false;  // 可用账号归 0 告警去重，避免每轮询都 toast
-
-async function pollProxyInfo() {
-  if (!proxyRunning) return;
-  try {
-    const r = await fetch(`${getProxyBaseUrl()}/proxy/info`);
-    const info = await r.json();
-    _proxyFetchFailCount = 0;  // 成功，重置失败计数
-    const newCurrent = info.current_account;
-    const newActive = info.active;
-    if (newCurrent !== proxyCurrentAccount || newActive !== proxyActive) {
-      const wasActive = proxyActive;
-      const prevAccount = proxyCurrentAccount;
-      proxyCurrentAccount = newCurrent;
-      proxyActive = newActive;
-      updateAccountHighlight();
-      if (wasActive && !newActive) {
-        refreshAccountStats();
-      }
-      if (newCurrent !== prevAccount) {
-        loadAccountsLight();
-      }
-    }
-    if (info.threshold_switch) {
-      if (info.threshold_switch.startsWith('__nofallback__')) {
-        const name = info.threshold_switch.replace('__nofallback__','');
-        showToast(`账号 ${name} 额度低于阈值，池中无可用账号可换`, 'warning');
-      } else {
-        showToast(`账号 ${info.threshold_switch} 额度低于阈值，已自动切换`, 'warning');
-      }
-      // 阈值事件必定伴随账号状态变化（disabled 或额度变化），无条件重载卡片，
-      // 让 updateCardsInPlace 刷新被禁用账号的徽章和按钮。不依赖「当前号是否变化」。
-      loadAccountsLight();
-    }
-    // 网关运行时额度/统计会随请求变化，每 ~10 秒（5 次轮询）刷一次 stats，
-    // 让卡片上的已用额度/请求次数跟着更新。避免一直显示旧数据。
-    if (++_statsRefreshCounter >= 5) {
-      _statsRefreshCounter = 0;
-      refreshAccountStats();
-    }
-    // 可用账号归 0 告警：删光账号或全部被禁用/过期后，网关虽在跑但无号可调。
-    // 只在从「有可用」变「无可用」时提示一次，恢复时清标志，避免每 2 秒重复 toast。
-    const usable = info.accounts_usable || 0;
-    if (usable === 0 && !_noUsableWarned) {
-      _noUsableWarned = true;
-      showToast('没有可用账号，网关无法处理请求', 'warning');
-    } else if (usable > 0) {
-      _noUsableWarned = false;
-    }
-  } catch {
-    // fetch 失败：网关可能已崩溃。连续失败超过阈值才判定，避免偶发网络抖动误报。
-    if (++_proxyFetchFailCount >= 3) {
-      _proxyFetchFailCount = 0;
-      showToast('网关连接失败，可能已停止', 'warning');
-      refreshProxyStatus();  // 重新拉 proxy_status，它会据实把 proxyRunning 改回 false
-    }
-  }
-}
-
-async function refreshAccountStats() {
-  try {
-    const statsRaw = await pywebview.api.get_all_stats(currentPlatform);
-    const sd = JSON.parse(statsRaw);
-    accountStats = {};
-    (sd.stats || []).forEach(s => { accountStats[s.account_id] = s; });
-    renderAccounts();
-  } catch {}
-}
-
-function updateAccountHighlight() {
-  document.querySelectorAll('.card[data-account-id]').forEach(card => {
-    const id = card.dataset.accountId;
-    const isCurrent = id === proxyCurrentAccount;
-    card.classList.toggle('current', isCurrent);
-    card.classList.toggle('active', isCurrent && proxyActive);
-    const meta = card.querySelector('.card-meta');
-    if (meta) {
-      let badge = meta.querySelector('.current-badge');
-      if (isCurrent && !badge) {
-        meta.insertAdjacentHTML('afterbegin', '<span class="current-badge"><svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg>当前</span>');
-      } else if (!isCurrent && badge) {
-        badge.remove();
-      }
-    }
-  });
-}
-
-// ===== Proxy Chat Card =====
-
-const MODEL_ICONS = {
-  deepseek: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#4D6BFE"/><path d="M12 5c-3.9 0-7 2.8-7 6.5 0 2 .9 3.7 2.4 4.9-.1.8-.5 1.8-1.2 2.7-.2.3 0 .7.4.6 1.8-.3 3.2-1 4.2-1.7.4.1.8.1 1.2.1 3.9 0 7-2.8 7-6.5S15.9 5 12 5z" fill="#fff"/><circle cx="9.5" cy="11.5" r="1" fill="#4D6BFE"/><circle cx="14.5" cy="11.5" r="1" fill="#4D6BFE"/></svg>',
-  kimi: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#7C5CFC"/><path d="M16 8a5 5 0 00-5 5v6c0 .6.4 1 1 1h2c.6 0 1-.4 1-1v-6a1 1 0 012 0v3c0 .6.4 1 1 1h1c.6 0 1-.4 1-1v-3a5 5 0 00-5-5z" fill="#fff" transform="translate(-3,-1)"/></svg>',
-  glm: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#00B894"/><path d="M8 7v10M8 7c0-1 1-2 2-2M8 12h4M16 7v10M16 7c0-1-1-2-2-2M16 12h-4" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>',
-  hunyuan: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#0053E0"/><path d="M7 12c0-2.8 2.2-5 5-5s5 2.2 5 5-2.2 5-5 5M17 12c0 2.8-2.2 5-5 5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" transform="rotate(45 12 12)"/><path d="M7 12c0-2.8 2.2-5 5-5s5 2.2 5 5-2.2 5-5 5M17 12c0 2.8-2.2 5-5 5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" opacity="0.5" transform="rotate(-45 12 12)"/></svg>',
-  minimax: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#FF6B35"/><path d="M6 16V8l3 4 3-4v8M15 16V8l3 4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>',
-  qwen: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#615CED"/><circle cx="12" cy="10" r="4" stroke="#fff" stroke-width="2" fill="none"/><path d="M12 14v5M9 19h6" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>',
-  auto: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="url(#autoGrad)"/><defs><linearGradient id="autoGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs><path d="M12 5l1.8 4.5L18 11l-4.2 1.5L12 17l-1.8-4.5L6 11l4.2-1.5z" fill="#fff"/></svg>',
-};
-
-const PRESET_MODELS = [
-  { id: 'auto', provider: 'auto', name: 'Auto' },
-  { id: 'hy3', provider: 'hunyuan', name: 'Hy3' },
-  { id: 'glm-5.2', provider: 'glm', name: 'GLM-5.2' },
-  { id: 'glm-5.1', provider: 'glm', name: 'GLM-5.1' },
-  { id: 'glm-5v-turbo', provider: 'glm', name: 'GLM-5v-Turbo' },
-  { id: 'minimax-m3', provider: 'minimax', name: 'MiniMax-M3' },
-  { id: 'kimi-k3-1', provider: 'kimi', name: 'Kimi-K3' },
-  { id: 'kimi-k2.7', provider: 'kimi', name: 'Kimi-K2.7-Code' },
-  { id: 'kimi-k2.6', provider: 'kimi', name: 'Kimi-K2.6' },
-  { id: 'deepseek-v4-flash', provider: 'deepseek', name: 'Deepseek-V4-Flash' },
-  { id: 'deepseek-v4-pro', provider: 'deepseek', name: 'Deepseek-V4-Pro' },
-];
-
-function getProxyBaseUrl() {
-  const port = document.getElementById('proxyPanel').dataset.port || document.getElementById('proxyPortInput').value || '8001';
-  return `http://127.0.0.1:${port}`;
-}
-
-function getProxyPassword() {
-  return document.getElementById('proxyPassInput').value || '';
-}
-
-function copyEndpoint() {
-  const el = document.getElementById('proxyEndpointUrl');
-  const text = el ? el.textContent : '';
-  if (!text) return;
-
-  function doSuccess() {
-    showToast('已复制 ' + text, 'success');
-  }
-
-  function fallbackCopy() {
-    try {
-      const textarea = document.createElement('textarea');
-      textarea.value = text;
-      textarea.style.position = 'fixed';
-      textarea.style.left = '-9999px';
-      textarea.style.top = '-9999px';
-      document.body.appendChild(textarea);
-      textarea.focus();
-      textarea.select();
-      const res = document.execCommand('copy');
-      document.body.removeChild(textarea);
-      if (res) doSuccess();
-      else showToast('复制失败', 'error');
-    } catch (e) {
-      showToast('复制失败: ' + e, 'error');
-    }
-  }
-
-  if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(text).then(doSuccess).catch(fallbackCopy);
-  } else {
-    fallbackCopy();
-  }
-}
-
-function renderModelSelect(models) {
-  const dropdown = document.getElementById('modelDropdown');
-  dropdown.innerHTML = '';
-  let firstModel = models[0];
-  for (const m of models) {
-    const icon = MODEL_ICONS[m.provider] || MODEL_ICONS.auto;
-    const div = document.createElement('div');
-    div.className = 'model-option';
-    div.setAttribute('data-model', m.id);
-    div.innerHTML = `${icon}<span>${m.name}</span>`;
-    div.onclick = (e) => { e.stopPropagation(); selectModel(m.id, m.name, icon); };
-    dropdown.appendChild(div);
-  }
-  if (firstModel) {
-    const icon = MODEL_ICONS[firstModel.provider] || MODEL_ICONS.auto;
-    selectModel(firstModel.id, firstModel.name, icon);
-  }
-}
-
-function selectModel(id, name, icon) {
-  document.getElementById('modelCurrentId').textContent = id;
-  document.getElementById('modelCurrentName').textContent = name;
-  document.getElementById('modelCurrentIcon').innerHTML = icon;
-  document.getElementById('modelDropdown').classList.remove('open');
-  document.querySelectorAll('.model-option').forEach(o => {
-    o.classList.toggle('active', o.getAttribute('data-model') === id);
-  });
-}
-
-function toggleModelDropdown() {
-  document.getElementById('modelDropdown').classList.toggle('open');
-}
-
-document.addEventListener('click', () => {
-  document.getElementById('modelDropdown')?.classList.remove('open');
-});
-
-function toggleChatCard() {
-  const card = document.getElementById('proxyChatCard');
-  const icon = document.getElementById('chatCollapseIcon');
-  if (!card) return;
-  card.classList.toggle('collapsed');
-  if (icon) icon.textContent = card.classList.contains('collapsed') ? '▼' : '▲';
-}
-
-function showChatCard() {
-  const chatCard = document.getElementById('proxyChatCard');
-  if (chatCard) chatCard.style.display = 'block';
-  const port = document.getElementById('proxyPanel').dataset.port || document.getElementById('proxyPortInput').value || '8001';
-  const urlEl = document.getElementById('chatHeaderUrl');
-  if (urlEl) urlEl.textContent = `http://127.0.0.1:${port}/v1`;
-  renderModelSelect(PRESET_MODELS);
-  const input = document.getElementById('chatInput');
-  if (input) input.disabled = false;
-  const btn = document.getElementById('chatSendBtn');
-  if (btn) btn.disabled = false;
-}
-
-function hideChatCard() {
-  const chatCard = document.getElementById('proxyChatCard');
-  if (chatCard) chatCard.style.display = 'none';
-}
-
-function exportToWorkBuddy() {
-  showConfirm('确定导入配置吗？\n\n这将会覆盖您自己已经配置的模型。\n请导入前进行重要备份。', '导入确认').then(function(ok) {
-    if (!ok) return;
-    _exportToWorkBuddyActual();
-  });
-}
-
-function _exportToWorkBuddyActual() {
-  const btn = document.getElementById('exportBtn');
-  if (!btn) return;
-  const origHTML = btn.innerHTML;
-  const port = document.getElementById('proxyPanel').dataset.port || document.getElementById('proxyPortInput').value || '8001';
-  const pass = document.getElementById('proxyPassInput').value || '';
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-sm"></span> 导入中...';
-  pywebview.api.export_to_workbuddy(port, pass).then(function(raw) {
-    const r = JSON.parse(raw);
-    if (r.success) {
-      btn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg> 已导入 ${r.count}个`;
-      let msg = `已写入 ${r.path}`;
-      if (r.backup) msg += `\n备份: ${r.backup}`;
-      showToast(msg, 'success');
-    } else {
-      throw new Error(r.error);
-    }
-  }).catch(function(e) {
-    btn.innerHTML = '导入失败';
-    showToast('导入失败: ' + e.message, 'error');
-  }).finally(function() {
-    setTimeout(function() {
-      btn.innerHTML = origHTML;
-      btn.disabled = false;
-    }, 2500);
-  });
-}
-
-async function syncModels() {
-  const btn = document.getElementById('syncModelsBtn');
-  if (!btn) return;
-  const origHTML = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner-sm"></span> 同步中...';
-  try {
-    const resp = await fetch(`${getProxyBaseUrl()}/v1/models`, {
-      headers: { 'Authorization': `Bearer ${getProxyPassword()}` }
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    const ids = (data.data || []).map(m => m.id);
-    const synced = ids.map(id => {
-      let provider = 'auto';
-      const lower = id.toLowerCase();
-      if (lower.includes('deepseek')) provider = 'deepseek';
-      else if (lower.includes('kimi')) provider = 'kimi';
-      else if (lower.includes('glm')) provider = 'glm';
-      else if (lower.includes('hy') || lower.includes('hunyuan')) provider = 'hunyuan';
-      else if (lower.includes('minimax')) provider = 'minimax';
-      else if (lower.includes('qwen')) provider = 'qwen';
-      return { id, provider, name: id };
-    });
-    renderModelSelect(synced);
-    showToast(`已同步 ${synced.length} 个官方模型`, 'success');
-    btn.innerHTML = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg> 已同步 ${synced.length}个`;
-  } catch (e) {
-    showToast('同步模型失败: ' + e.message, 'error');
-    btn.innerHTML = '同步失败';
-  } finally {
-    setTimeout(() => {
-      btn.innerHTML = origHTML;
-      btn.disabled = false;
-    }, 2000);
-  }
-}
-
-let chatBusy = false;
-
-async function sendTestChat() {
-  if (chatBusy) return;
-  const input = document.getElementById('chatInput');
-  const btn = document.getElementById('chatSendBtn');
-  const model = document.getElementById('modelCurrentId').textContent;
-  const msg = input.value.trim();
-  if (!msg) return;
-  if (!proxyRunning) { showToast('请先启动网关', 'warning'); return; }
-
-  chatBusy = true;
-  btn.disabled = true;
-  btn.textContent = '...';
-  input.value = '';
-  input.disabled = true;
-
-  const container = document.getElementById('chatMessages');
-  const empty = container.querySelector('.chat-empty');
-  if (empty) empty.remove();
-
-  const userDiv = document.createElement('div');
-  userDiv.className = 'chat-msg user';
-  userDiv.textContent = msg;
-  container.appendChild(userDiv);
-
-  const assistantDiv = document.createElement('div');
-  assistantDiv.className = 'chat-msg assistant';
-  assistantDiv.textContent = '思考中...';
-  container.appendChild(assistantDiv);
-  container.scrollTop = container.scrollHeight;
-
-  try {
-    const resp = await fetch(`${getProxyBaseUrl()}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${getProxyPassword()}`,
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: [{ role: 'user', content: msg }],
-        stream: true,
-      }),
-    });
-
-    if (!resp.ok) throw new Error((await resp.text()).slice(0, 200));
-
-    assistantDiv.textContent = '';
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let fullText = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let idx;
-      while ((idx = buffer.indexOf('\n\n')) !== -1) {
-        const event = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        for (const line of event.split('\n')) {
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6).trim();
-          if (data === '[DONE]') continue;
-          try {
-            const obj = JSON.parse(data);
-            const delta = obj.choices && obj.choices[0] && obj.choices[0].delta;
-            if (delta && delta.content) {
-              fullText += delta.content;
-              assistantDiv.textContent = fullText;
-              container.scrollTop = container.scrollHeight;
-            }
-          } catch {}
-        }
-      }
-    }
-
-    if (!fullText) assistantDiv.textContent = '(空响应)';
-  } catch (e) {
-    assistantDiv.className = 'chat-msg error';
-    assistantDiv.textContent = '错误: ' + e.message;
-  } finally {
-    chatBusy = false;
-    btn.disabled = false;
-    btn.textContent = '发送';
-    input.disabled = false;
-    input.focus();
-  }
-}
-
-// ===== Theme =====
+// Theme
 function setThemeUI(theme) {
-  const html = document.documentElement;
-  const isDark = theme === 'dark';
-  html.setAttribute('data-theme', isDark ? 'dark' : 'light');
-  const btn = document.getElementById('themeBtn');
-  if (btn) {
-    btn.innerHTML = isDark
-      ? '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg> 浅色模式'
-      : '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> 深色模式';
-  }
+  document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
 }
 
-async function toggleTheme(event) {
-  const html = document.documentElement;
-  const isDark = html.getAttribute('data-theme') === 'dark';
-  const theme = isDark ? 'light' : 'dark';
-  const x = event && event.clientX != null ? event.clientX : window.innerWidth / 2;
-  const y = event && event.clientY != null ? event.clientY : window.innerHeight / 2;
-  const endRadius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
-  const apply = () => setThemeUI(theme);
-  if (document.startViewTransition) {
-    const t = document.startViewTransition(apply);
-    t.ready.then(() => {
-      html.animate(
-        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${endRadius}px at ${x}px ${y}px)`] },
-        { duration: 420, easing: 'ease-in-out', pseudoElement: '::view-transition-new(root)' }
-      );
-    }).catch(() => {});
-  } else {
-    apply();
-  }
-  try {
-    await pywebview.api.set_theme(theme);
-  } catch(e) {}
-}
-
-// ===== Init =====
-// ===== License =====
+// License (outside Vue – needs to show before Vue mounts)
 let appStarted = false;
-const _LICENSE_ENABLED = false;
+const _LICENSE_ENABLED = true;
 function showLicenseOverlay(msg) {
   document.getElementById('licenseSub').textContent = msg || '请输入激活码以继续使用';
   document.getElementById('licenseError').textContent = '';
   document.getElementById('licenseOverlay').classList.add('show');
-  const inp = document.getElementById('licenseInput');
-  inp.value = '';
+  const inp = document.getElementById('licenseInput'); inp.value = '';
   setTimeout(() => inp.focus(), 100);
 }
-function hideLicenseOverlay() {
-  document.getElementById('licenseOverlay').classList.remove('show');
-}
+function hideLicenseOverlay() { document.getElementById('licenseOverlay').classList.remove('show'); }
 async function doActivate() {
   const code = document.getElementById('licenseInput').value.trim();
   if (!code) { document.getElementById('licenseError').textContent = '请输入激活码'; return; }
@@ -2142,135 +790,1044 @@ async function doActivate() {
     if (r.success) {
       hideLicenseOverlay();
       showToast('激活成功，有效期至 ' + (r.expiry_str || ''), 'success');
-      if (!appStarted) startApp();
+      if (!appStarted && window._vueApp) window._vueApp.startApp();
     } else {
       document.getElementById('licenseError').textContent = r.message || '激活失败';
     }
-  } catch (e) { document.getElementById('licenseError').textContent = '激活失败: ' + e; }
-}
-function startApp() {
-  if (appStarted) return;
-  appStarted = true;
-  const tryLoad = (attempt = 0) => {
-    try {
-      loadAccounts().then(async () => {
-        try { await refreshProxyStatus(); } catch(e) {}
-      }).catch(() => { if (attempt < 10) setTimeout(() => tryLoad(attempt + 1), 500); });
-    } catch(e) { if (attempt < 10) setTimeout(() => tryLoad(attempt + 1), 500); }
-  };
-  tryLoad();
-  if (_LICENSE_ENABLED) {
-    setInterval(() => {
-      pywebview.api.check_license().then(raw => {
-        const r = JSON.parse(raw);
-        if (!r.licensed) {
-          appStarted = false;
-          showLicenseOverlay(r.message);
-        }
-      }).catch(() => {});
-    }, 10000);
-  }
+  } catch(e) { document.getElementById('licenseError').textContent = '激活失败: ' + e; }
 }
 
-function init() {
-  const tryTheme = () => {
-    try {
-      pywebview.api.get_theme().then(raw => { setThemeUI(raw === 'dark' ? 'dark' : 'light'); }).catch(() => {});
-    } catch(e) { setTimeout(tryTheme, 200); }
-  };
-  tryTheme();
+// ─────────────────────────────────────────────
+//  Vue 3 App
+// ─────────────────────────────────────────────
+const { createApp, ref, reactive, computed, watch, onMounted, nextTick } = Vue;
 
-  if (_LICENSE_ENABLED) {
-    const tryLicense = (attempt = 0) => {
-      try {
-        pywebview.api.check_license().then(raw => {
-          const r = JSON.parse(raw);
-          if (r.licensed) { hideLicenseOverlay(); startApp(); }
-          else { showLicenseOverlay(r.message); }
-        }).catch(() => { if (attempt < 10) setTimeout(() => tryLicense(attempt + 1), 300); });
-      } catch(e) { if (attempt < 10) setTimeout(() => tryLicense(attempt + 1), 300); }
-    };
-    tryLicense();
-  } else {
-    hideLicenseOverlay();
-    startApp();
-  }
-}
-// ===== Auto Update =====
-let _updateData = null;
-async function checkForUpdate() {
-  showModal('updateModal');
-  document.getElementById('updateStatus').textContent = '检查中...';
-  document.getElementById('updateStatus').style.display = '';
-  document.getElementById('updateProgressWrap').style.display = 'none';
-  document.getElementById('updateActions').style.display = 'none';
-  document.getElementById('updateReleaseNotes').style.display = 'none';
-  document.getElementById('updateTitle').textContent = '检查更新';
-  try {
-    const raw = await pywebview.api.check_update();
-    const r = JSON.parse(raw);
-    if (r.error) {
-      document.getElementById('updateStatus').textContent = r.error;
-      return;
+const MODEL_ICONS = {
+  deepseek: '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#4D6BFE"/><path d="M12 5c-3.9 0-7 2.8-7 6.5 0 2 .9 3.7 2.4 4.9-.1.8-.5 1.8-1.2 2.7-.2.3 0 .7.4.6 1.8-.3 3.2-1 4.2-1.7.4.1.8.1 1.2.1 3.9 0 7-2.8 7-6.5S15.9 5 12 5z" fill="#fff"/><circle cx="9.5" cy="11.5" r="1" fill="#4D6BFE"/><circle cx="14.5" cy="11.5" r="1" fill="#4D6BFE"/></svg>',
+  kimi:     '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#7C5CFC"/><path d="M16 8a5 5 0 00-5 5v6c0 .6.4 1 1 1h2c.6 0 1-.4 1-1v-6a1 1 0 012 0v3c0 .6.4 1 1 1h1c.6 0 1-.4 1-1v-3a5 5 0 00-5-5z" fill="#fff" transform="translate(-3,-1)"/></svg>',
+  glm:      '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#00B894"/><path d="M8 7v10M8 7c0-1 1-2 2-2M8 12h4M16 7v10M16 7c0-1-1-2-2-2M16 12h-4" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>',
+  hunyuan:  '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#0053E0"/><path d="M7 12c0-2.8 2.2-5 5-5s5 2.2 5 5-2.2 5-5 5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" transform="rotate(45 12 12)"/></svg>',
+  minimax:  '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="#FF6B35"/><path d="M6 16V8l3 4 3-4v8M15 16V8l3 4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>',
+  auto:     '<svg viewBox="0 0 24 24" width="14" height="14"><rect width="24" height="24" rx="5" fill="url(#ag)"/><defs><linearGradient id="ag" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#8b5cf6"/></linearGradient></defs><path d="M12 5l1.8 4.5L18 11l-4.2 1.5L12 17l-1.8-4.5L6 11l4.2-1.5z" fill="#fff"/></svg>',
+};
+const PRESET_MODELS = [
+  { id:'auto', provider:'auto', name:'Auto' },
+  { id:'hy3', provider:'hunyuan', name:'Hy3' },
+  { id:'glm-5.2', provider:'glm', name:'GLM-5.2' },
+  { id:'glm-5.1', provider:'glm', name:'GLM-5.1' },
+  { id:'glm-5v-turbo', provider:'glm', name:'GLM-5v-Turbo' },
+  { id:'minimax-m3', provider:'minimax', name:'MiniMax-M3' },
+  { id:'kimi-k3-1', provider:'kimi', name:'Kimi-K3' },
+  { id:'kimi-k2.7', provider:'kimi', name:'Kimi-K2.7-Code' },
+  { id:'kimi-k2.6', provider:'kimi', name:'Kimi-K2.6' },
+  { id:'deepseek-v4-flash', provider:'deepseek', name:'Deepseek-V4-Flash' },
+  { id:'deepseek-v4-pro', provider:'deepseek', name:'Deepseek-V4-Pro' },
+].map(m => ({ ...m, icon: MODEL_ICONS[m.provider] || MODEL_ICONS.auto }));
+
+const vApp = createApp({
+  setup() {
+    // ── 核心状态 ──
+    const currentPlatform = ref('workbuddy');
+    const currentView = ref('console');
+    const activeModal = ref(null);
+    const hasUpdate = ref(false);
+
+    // ── 账号数据 ──
+    const accounts = ref([]);
+    const accountStats = reactive({});
+    const statTotal = ref('-');
+    const statQuota = ref('-');
+
+    // ── 过滤 ──
+    const statusFilter = ref('all');
+    const filterDate = ref('');
+    const statusDropdownOpen = ref(false);
+
+    function selectStatusFilter(val) {
+      statusFilter.value = val;
+      statusDropdownOpen.value = false;
     }
-    _updateData = r;
-    if (r.has_update) {
-      // 手动检查发现新版本也要亮 badge（不只启动时那次检查）。
-      const badge = document.getElementById('updateBadge');
-      if (badge) badge.style.display = '';
-      document.getElementById('updateTitle').textContent = `发现新版本 ${r.latest_version}`;
-      document.getElementById('updateStatus').innerHTML = `当前版本: ${r.current_version}<br>最新版本: ${r.latest_version}`;
-      document.getElementById('updateActions').style.display = 'flex';
-      if (r.release_body) {
-        document.getElementById('updateReleaseNotes').textContent = r.release_body;
-        document.getElementById('updateReleaseNotes').style.display = '';
+    function getStatusDotClass(val) {
+      if (val === 'normal') return 'dot-normal';
+      if (val === 'disabled') return 'dot-disabled';
+      if (val === 'banned') return 'dot-banned';
+      return 'dot-all';
+    }
+    function getStatusFilterLabel(val) {
+      if (val === 'normal') return '正常';
+      if (val === 'disabled') return '已禁用';
+      if (val === 'banned') return '已封禁';
+      return '全部状态';
+    }
+    document.addEventListener('click', () => { statusDropdownOpen.value = false; });
+
+    // ── 代理 ──
+    const proxyRunning = ref(false);
+    const proxyCurrentAccount = ref(null);
+    const proxyActive = ref(false);
+    const proxyPort = ref(8001);
+    const proxyKey = ref('');
+    const quotaThreshold = ref(0);
+    const proxyToggling = ref(false);
+    let proxyInfoTimer = null;
+    let _proxyFetchFailCount = 0, _statsRefreshCounter = 0, _noUsableWarned = false;
+
+    // ── Chat ──
+    const chatCardCollapsed = ref(true);
+    const chatMessages = ref([]);
+    const chatInput = ref('');
+    const chatSending = ref(false);
+    const modelList = ref(PRESET_MODELS);
+    const currentModel = ref(PRESET_MODELS[0]);
+    const modelDropdownOpen = ref(false);
+    const syncLoading = ref(false);
+    const syncLabel = ref('同步模型');
+    const wbExportLoading = ref(false);
+    const wbExportLabel = ref('导入 WorkBuddy');
+    const chatMessagesRef = ref(null);
+
+    // ── 工具栏加载态 ──
+    const exportLoading = ref(false);
+    const checkinAllLoading = ref(false);
+    const refreshAllLoading = ref(false);
+
+    // ── 多选模式（点筛选栏多选按钮才进入，复选框非常驻，避免影响 UI 布局）──
+    // selectedIds 用对象当集合（Set 在 Vue 模板里不响应式，对象 key 增删会触发更新）。
+    const selectMode = ref(false);
+    const selectedIds = reactive({});
+    const batchDeleteLoading = ref(false);
+    const batchExportLoading = ref(false);
+
+    // ── 卡片按钮加载态（key = accountId + '_op'）──
+    const cardLoading = reactive({});
+
+    // ── OAuth ──
+    const oauthUrlText = ref('正在生成授权链接...');
+    const oauthStatusHtml = ref('');
+    let oauthTimer = null;
+
+    // ── Import ──
+    const importJsonText = ref('');
+    const importLoading = ref(false);
+
+    // ── Quota Detail ──
+    const quotaAccountId = ref(null);
+    const detailAccountName = ref('');
+    const detailLoading = ref(false);
+    const detailError = ref('');
+    const detailData = ref(null);
+    const detailStats = ref(null);
+
+    // ── Shop ──
+    const shopUrl = ref('');
+    const shopName = ref('');
+    let currentShopUrl = '';
+
+    // ── Update ──
+    const updateTitle = ref('检查更新');
+    const updateStatusHtml = ref('');
+    const updateProgressVisible = ref(false);
+    const updateProgressPct = ref(0);
+    const updateActionsVisible = ref(false);
+    const updateNotesVisible = ref(false);
+    const updateNotes = ref('');
+    const updateBtnText = ref('下载更新');
+    const updateBtnDisabled = ref(false);
+    let _updateData = null;
+    let _updateApplyPath = null;
+
+    // ── Logs ──
+    const logs = ref([]);
+    const logEnabled = ref(true);
+    const logEventFilter = ref('');
+
+    // ── Computed ──
+    const filteredAccounts = computed(() => {
+      let result = accounts.value;
+      if (statusFilter.value !== 'all') result = result.filter(a => (a.status||'normal') === statusFilter.value);
+      if (filterDate.value) {
+        result = result.filter(a => {
+          if (!a.created_at) return false;
+          return dateStr(new Date(a.created_at*1000)) === filterDate.value;
+        });
       }
-    } else {
-      // 已是最新：不自动关闭，让用户自己看完再关，避免一闪而过。
-      document.getElementById('updateStatus').textContent = `已是最新版本 (${r.current_version})`;
+      if (proxyCurrentAccount.value) {
+        result = [...result].sort((a,b) => {
+          if (a.id === proxyCurrentAccount.value) return -1;
+          if (b.id === proxyCurrentAccount.value) return 1;
+          return 0;
+        });
+      }
+      return result;
+    });
+
+    const detailResourcesTotal = computed(() => {
+      if (!detailData.value?.resources) return { used:0, remain:0, pct:0, cls:'' };
+      let allTotal=0, allUsed=0, allRemain=0;
+      for (const r of detailData.value.resources) { allTotal+=_n(r.total); allUsed+=_n(r.used); allRemain+=_n(r.remain); }
+      const pct = allTotal > 0 ? Math.round(allUsed/allTotal*100) : 0;
+      return { used:allUsed, remain:allRemain, pct:Math.min(pct,100), cls: pct>=80?'danger':pct>=50?'warning':'' };
+    });
+
+    // ─── Helpers ───
+    function _n(v) { if(v==null)return 0; if(typeof v==='number')return v; const n=Number(v); return isNaN(n)?0:n; }
+    function _pickN(item, keys) { for(const k of keys){if(item&&item[k]!=null)return _n(item[k]);}return 0; }
+    function fmt(n) { const v=_n(n); return (Math.round(v*100)/100).toString(); }
+    function fmtK(n) { const v=_n(n); if(v>=100000000)return (v/100000000).toFixed(1)+'亿'; if(v>=10000)return (v/10000).toFixed(1)+'w'; if(v>=1000)return (v/1000).toFixed(1)+'k'; return String(v); }
+    function fmtL(n) { const v=_n(n); if(v>=10000)return (v/10000).toFixed(1)+'w'; if(v>=1000)return (v/1000).toFixed(1)+'k'; return v.toFixed(2); }
+    function dateStr(d) { return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+    function friendlyDate(val) { if(!val)return ''; const p=val.split('-'); if(p.length!==3)return val; return `${p[0]}年${parseInt(p[1],10)}月${parseInt(p[2],10)}日`; }
+    function getHitRate(s) { if(!s)return '0.0'; const h=s.cache_hits||0,m=s.cache_misses||0; return (h+m)>0?(h/(h+m)*100).toFixed(1):'0.0'; }
+
+    function getStatusBadgeClass(a) { const s=a.status||'normal'; if(s==='banned')return 'badge-status-banned'; if(s==='disabled')return 'badge-status-disabled'; return 'badge-status-normal'; }
+    function getStatusText(a) { const s=a.status||'normal'; if(s==='banned')return '封禁'; if(s==='disabled')return '已禁用'; return '正常'; }
+    function getPlanBadgeClass(a) {
+      const pkg = a.quota_raw?.userResource?.data?.Response?.Data?.Accounts;
+      let isPro=false, isTrial=false;
+      if(pkg){for(const r of pkg){const pc=r.PackageCode||''; if(['TCACA_code_002_AkiJS3ZHF5','TCACA_code_003_FAnt7lcmRT'].includes(pc))isPro=true; if(pc==='TCACA_code_006_DbXS0lrypC'||pc==='TCACA_code_007_nzdH5h4Nl0')isTrial=true;}}
+      if(a.enterprise_id||a.enterprise_name)return 'badge-enterprise';
+      if(isPro)return 'badge-pro'; if(isTrial)return 'badge-trial'; return 'badge-free';
     }
-  } catch(e) {
-    document.getElementById('updateStatus').textContent = '检查更新失败: ' + e.message;
-  }
-}
-async function doUpdate() {
-  if (!_updateData || !_updateData.download_url) return;
-  const btn = document.getElementById('updateBtn');
-  btn.disabled = true;
-  btn.textContent = '下载中...';
-  document.getElementById('updateProgressWrap').style.display = '';
-  document.getElementById('updateReleaseNotes').style.display = 'none';
-  try {
-    const raw = await pywebview.api.download_update(_updateData.download_url);
-    const r = JSON.parse(raw);
-    if (r.error) {
-      document.getElementById('updateStatus').textContent = r.error;
-      btn.disabled = false;
-      btn.textContent = '下载更新';
-      return;
+    function getPlanText(a) {
+      const pkg = a.quota_raw?.userResource?.data?.Response?.Data?.Accounts;
+      let isPro=false, isTrial=false;
+      if(pkg){for(const r of pkg){const pc=r.PackageCode||''; if(['TCACA_code_002_AkiJS3ZHF5','TCACA_code_003_FAnt7lcmRT'].includes(pc))isPro=true; if(pc==='TCACA_code_006_DbXS0lrypC'||pc==='TCACA_code_007_nzdH5h4Nl0')isTrial=true;}}
+      if(a.enterprise_id||a.enterprise_name)return '企业版';
+      if(isPro)return 'Pro'; if(isTrial)return 'Free'; return 'Free';
     }
-    document.getElementById('updateStatus').textContent = '下载完成，准备更新...';
-    document.getElementById('updateProgressBar').style.width = '100%';
-    document.getElementById('updateProgressText').textContent = '100%';
-    btn.textContent = '重启更新';
-    btn.onclick = async function() {
-      const applyRaw = await pywebview.api.apply_update(r.path);
-      const applyR = JSON.parse(applyRaw);
-      if (applyR.error) {
-        document.getElementById('updateStatus').textContent = applyR.error;
+    function parseQuota(a) {
+      try {
+        const qr=a.quota_raw; if(!qr)return null;
+        const ur=qr.userResource||a.usage_raw; if(!ur)return null;
+        const accts=ur.data?.Response?.Data?.Accounts||[]; if(!accts.length)return null;
+        let total=0,used=0;
+        for(const r of accts){
+          const st=_n(r.Status); if(st!==0&&st!==3)continue;
+          const t=_pickN(r,['CycleCapacitySizePrecise','CycleCapacitySize','CapacitySizePrecise','CapacitySize']);
+          const remain=_pickN(r,['CycleCapacityRemainPrecise','CycleCapacityRemain','CapacityRemainPrecise','CapacityRemain']);
+          if(t<=0)continue; total+=t; used+=Math.max(0,t-remain);
+        }
+        if(total===0)return null;
+        return {total,used,pct:Math.round(used/total*100)};
+      } catch{return null;}
+    }
+    function getCardQuota(a) {
+      const q=parseQuota(a); if(!q)return null;
+      const pc=accountStats[a.id]?.total_credit||0;
+      const adjUsed=q.used+pc, adjRemain=Math.max(0,q.total-adjUsed);
+      const adjPct=q.total>0?Math.round(adjUsed/q.total*100):0;
+      return {total:q.total, adjUsed, adjRemain, pct:Math.min(adjPct,100), cls:adjPct>=80?'danger':adjPct>=50?'warning':''};
+    }
+    function parseCheckin(a) {
+      const today=Math.floor(Date.now()/1000), dayStart=today-(today%86400);
+      const lt=a.last_checkin_time, done=lt?lt>=dayStart:false;
+      return {done, streak:a.checkin_streak||0};
+    }
+
+    // ─── View switching ───
+    function showConsole() { currentView.value = 'console'; }
+    function showLogs() {
+      currentView.value = 'logs';
+      pywebview.api.get_log_enabled().then(r => { logEnabled.value = JSON.parse(r).enabled; }).catch(()=>{});
+      refreshLogs();
+    }
+    function showShopCards() { currentView.value = 'shop-cards'; }
+    function openShop(url, name) {
+      shopUrl.value = url; shopName.value = name;
+      currentShopUrl = url; currentView.value = 'shop';
+    }
+    function openShopExternal() { if(currentShopUrl) pywebview.api.open_external(currentShopUrl); }
+    function openModal(name) { activeModal.value = name; }
+
+    // ─── Theme ───
+    async function toggleTheme(event) {
+      const html = document.documentElement;
+      const isDark = html.getAttribute('data-theme') === 'dark';
+      const theme = isDark ? 'light' : 'dark';
+      const x = event?.clientX ?? innerWidth/2, y = event?.clientY ?? innerHeight/2;
+      const endR = Math.hypot(Math.max(x, innerWidth-x), Math.max(y, innerHeight-y));
+      const apply = () => setThemeUI(theme);
+      if (document.startViewTransition) {
+        const t = document.startViewTransition(apply);
+        t.ready.then(() => html.animate(
+          { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${endR}px at ${x}px ${y}px)`] },
+          { duration:420, easing:'ease-in-out', pseudoElement:'::view-transition-new(root)' }
+        )).catch(()=>{});
+      } else { apply(); }
+      try { await pywebview.api.set_theme(theme); } catch(e) {}
+    }
+
+    // ─── Accounts ───
+    async function loadAccountsLight() {
+      try {
+        const raw = await pywebview.api.list_accounts(currentPlatform.value);
+        const fresh = JSON.parse(raw);
+        const freshMap = {};
+        fresh.forEach(a => freshMap[a.id]=a);
+        const merged = accounts.value
+          .map(a => freshMap[a.id]||a)
+          .filter(a => freshMap[a.id]);
+        fresh.forEach(a => { if(!merged.find(x=>x.id===a.id)) merged.push(a); });
+        accounts.value = merged;
+        loadStats();
+      } catch(e) {}
+    }
+
+    async function loadAccounts() {
+      try {
+        const [raw, statsRaw] = await Promise.all([
+          pywebview.api.list_accounts(currentPlatform.value),
+          pywebview.api.get_all_stats(currentPlatform.value),
+        ]);
+        accounts.value = JSON.parse(raw);
+        try {
+          const sd = JSON.parse(statsRaw);
+          Object.keys(accountStats).forEach(k => delete accountStats[k]);
+          (sd.stats||[]).forEach(s => { accountStats[s.account_id]=s; });
+        } catch {}
+        loadStats();
+        loadQuotaThreshold();
+        if (!proxyRunning.value) {
+          try {
+            const pr = JSON.parse(await pywebview.api.get_priority_account());
+            if (pr.priority) proxyCurrentAccount.value = pr.priority;
+          } catch {}
+        }
+        if (accounts.value.length > 0) {
+          pywebview.api.batch_checkin_status(currentPlatform.value)
+            .then(()=>loadAccountsLight()).catch(()=>{});
+        }
+      } catch(e) { accounts.value = []; }
+    }
+
+    async function loadStats() {
+      try {
+        const d = JSON.parse(await pywebview.api.get_stats(currentPlatform.value));
+        statTotal.value = d.total_accounts;
+        const q = `${fmt(d.total_used)} / ${fmt(d.total_quota)}`;
+        statQuota.value = q;
+      } catch {}
+    }
+
+    async function loadQuotaThreshold() {
+      try {
+        const r = JSON.parse(await pywebview.api.get_quota_threshold());
+        quotaThreshold.value = r.threshold || 0;
+      } catch {}
+    }
+
+    async function refreshAccountStats() {
+      try {
+        const sd = JSON.parse(await pywebview.api.get_all_stats(currentPlatform.value));
+        Object.keys(accountStats).forEach(k => delete accountStats[k]);
+        (sd.stats||[]).forEach(s => { accountStats[s.account_id]=s; });
+      } catch {}
+    }
+
+    // ─── Filter ───
+    function setFilterDate(offset) {
+      const d = new Date(); d.setDate(d.getDate()+offset);
+      filterDate.value = dateStr(d);
+    }
+
+    // ─── Save threshold ───
+    async function saveQuotaThreshold() {
+      try {
+        await pywebview.api.set_quota_threshold(quotaThreshold.value);
+        showToast(`切号阈值已设为 ${quotaThreshold.value}`, 'success');
+      } catch {}
+    }
+
+    // ─── Export accounts ───
+    async function exportAccounts() {
+      exportLoading.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.export_accounts(currentPlatform.value));
+        if (r.cancelled) return;
+        if (r.error) { showToast(r.error, 'error'); return; }
+        showToast(`已导出 ${r.count} 个账号`, 'success', r.path||'');
+      } catch(e) { showToast('导出失败: '+e, 'error'); }
+      finally { exportLoading.value = false; }
+    }
+
+    // ─── Checkin All ───
+    async function checkinAll() {
+      checkinAllLoading.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.checkin_all(currentPlatform.value));
+        showToast(`签到完成: ${r.success}成功 / ${r.already}已签 / ${r.failed}失败`, r.failed>0?'warning':'success');
+        await loadAccounts();
+      } catch(e) { showToast('批量签到失败: '+e, 'error'); }
+      finally { checkinAllLoading.value = false; }
+    }
+
+    // ─── Refresh All ───
+    async function refreshAll() {
+      refreshAllLoading.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.refresh_all(currentPlatform.value));
+        showToast(`刷新完成: ${r.success}/${r.total}`, r.success>0?'success':'info');
+        await loadAccounts();
+      } catch(e) { showToast('刷新失败: '+e, 'error'); }
+      finally { refreshAllLoading.value = false; }
+    }
+
+    // ─── Per-card actions ───
+    async function doCheckin(id) {
+      cardLoading[id+'_checkin'] = true;
+      try {
+        const r = JSON.parse(await pywebview.api.checkin(currentPlatform.value, id));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        if (r.success) showToast(`签到成功! ${r.credit?'+'+r.credit+' 积分':''}`, 'success');
+        else showToast(r.message||'签到完成(已签到)', 'info');
+        await loadAccounts();
+      } catch(e) { showToast('签到失败: '+e, 'error'); }
+      finally { cardLoading[id+'_checkin'] = false; }
+    }
+
+    async function refreshOne(id) {
+      cardLoading[id+'_refresh'] = true;
+      try {
+        const r = JSON.parse(await pywebview.api.refresh_token(currentPlatform.value, id));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        showToast('账号刷新成功', 'success');
+        await loadAccountsLight();
+        await refreshAccountStats();
+      } catch(e) { showToast('刷新失败: '+e, 'error'); }
+      finally { cardLoading[id+'_refresh'] = false; }
+    }
+
+    async function deleteOne(id) {
+      if (!await showConfirm('确定删除该账号吗？', '删除确认')) return;
+      cardLoading[id+'_delete'] = true;
+      try {
+        const r = JSON.parse(await pywebview.api.delete_account(currentPlatform.value, id));
+        if (r.success === false) {
+          showToast(r.error || '删除失败', 'error');
+          await loadAccountsLight();
+        } else {
+          showToast('删除成功', 'success');
+          await loadAccounts();
+        }
+      } catch(e) { showToast('删除失败: '+e, 'error'); }
+      finally { cardLoading[id+'_delete'] = false; }
+    }
+
+    // ─── 勾选（常驻复选框，随时多选）──
+    // selectedIds 用对象当 Set：Vue 对 reactive 对象的 key 增删是响应式的，
+    // 而 Set/Map 的内部变更 Vue 2 风格模板检测不到。这里 selectedIds[id] = true / delete。
+    const allSelected = computed(() => {
+      const list = filteredAccounts.value;
+      return list.length > 0 && list.every(a => selectedIds[a.id]);
+    });
+    const someSelected = computed(() => Object.keys(selectedIds).length > 0);
+    const selectedCount = computed(() => Object.keys(selectedIds).length);
+
+    function clearSelection() {
+      Object.keys(selectedIds).forEach(k => delete selectedIds[k]);
+    }
+    // 进入/退出多选模式：退出时清空已选，避免下次进入还残留旧选中
+    function toggleSelectMode() {
+      if (selectMode.value) { selectMode.value = false; clearSelection(); }
+      else { selectMode.value = true; }
+    }
+    function toggleSelect(id) {
+      if (selectedIds[id]) delete selectedIds[id];
+      else selectedIds[id] = true;
+    }
+    function toggleSelectAll() {
+      // 全选/取消全选：当前是否全选决定这次是清空还是全选
+      if (allSelected.value) {
+        Object.keys(selectedIds).forEach(k => delete selectedIds[k]);
+      } else {
+        filteredAccounts.value.forEach(a => { selectedIds[a.id] = true; });
+      }
+    }
+
+    async function batchExport() {
+      const ids = Object.keys(selectedIds);
+      if (!ids.length) return;
+      batchExportLoading.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.export_selected_accounts(currentPlatform.value, JSON.stringify(ids)));
+        if (r.cancelled) { /* 用户取消保存对话框，不提示 */ }
+        else if (r.error) { showToast(r.error, 'error'); }
+        else { showToast(`已导出 ${r.count} 个账号`, 'success', r.path || ''); }
+      } catch(e) { showToast('导出失败: '+e, 'error'); }
+      finally { batchExportLoading.value = false; }
+    }
+
+    async function batchDelete() {
+      const ids = Object.keys(selectedIds);
+      if (!ids.length) return;
+      if (!await showConfirm(`确定删除选中的 ${ids.length} 个账号吗？`, '批量删除确认', { okText: '删除' })) return;
+      batchDeleteLoading.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.delete_accounts(currentPlatform.value, JSON.stringify(ids)));
+        if (r.success === false) {
+          // 后端拒绝（删完池空）：不删任何账号，提示用户取消一些勾选
+          showToast(r.error || '删除失败', 'error');
+          await loadAccountsLight();
+        } else {
+          showToast(`已删除 ${ids.length} 个账号`, 'success');
+          selectMode.value = false;   // 删完退出多选模式
+          clearSelection();
+          await loadAccounts();
+        }
+      } catch(e) { showToast('删除失败: '+e, 'error'); }
+      finally { batchDeleteLoading.value = false; }
+    }
+
+    async function setPriorityAccount(id) {
+      try {
+        const r = JSON.parse(await pywebview.api.set_priority_account(currentPlatform.value, id));
+        if (r.ok) { proxyCurrentAccount.value = id; showToast('已设为优先调度', 'success'); }
+      } catch {}
+    }
+
+    async function toggleAccountStatus(id) {
+      const acc = accounts.value.find(a=>a.id===id); if (!acc) return;
+      const newStatus = (acc.status==='normal') ? 'disabled' : 'normal';
+      try {
+        const r = JSON.parse(await pywebview.api.set_account_status(currentPlatform.value, id, newStatus));
+        if (r.ok) {
+          acc.status = newStatus;
+          await refreshProxyStatus();
+          await loadAccounts();
+          showToast(newStatus==='disabled'?'已禁用':'已启用', 'success');
+        } else {
+          await loadAccountsLight();
+          showToast(r.error||'操作失败', 'error');
+        }
+      } catch {}
+    }
+
+    // ─── Quota Detail ───
+    const quotaContentHtml = ref('');
+
+    function buildQuotaHtml(data, stats) {
+      let html = '';
+      if (stats && stats.request_count > 0) {
+        const totalReq = stats.request_count;
+        const hits = stats.cache_hits || 0;
+        const misses = stats.cache_misses || 0;
+        const hitRate = (hits + misses) > 0 ? (hits / (hits + misses) * 100).toFixed(1) : '0.0';
+        html += `<div style="background:var(--bg-tertiary);border-radius:8px;padding:12px;margin-bottom:12px;">
+          <div style="font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;">使用统计（本代理）</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:12px;">
+            <div><span style="color:var(--text-muted)">请求次数</span><br><span style="font-weight:600">${totalReq.toLocaleString()}</span></div>
+            <div><span style="color:var(--text-muted)">输入Token</span><br><span style="font-weight:600">${(stats.prompt_tokens||0).toLocaleString()}</span></div>
+            <div><span style="color:var(--text-muted)">输出Token</span><br><span style="font-weight:600">${(stats.completion_tokens||0).toLocaleString()}</span></div>
+            <div><span style="color:var(--text-muted)">总Token</span><br><span style="font-weight:600">${(stats.total_tokens||0).toLocaleString()}</span></div>
+            <div><span style="color:var(--text-muted)">消耗积分</span><br><span style="font-weight:600">${(stats.total_credit||0).toFixed(2)}</span></div>
+            <div><span style="color:var(--text-muted)">缓存命中</span><br><span style="font-weight:600;color:${hitRate>=50?'var(--success)':'var(--text)'}">${hitRate}%</span></div>
+          </div>
+        </div>`;
+      }
+      if (data.dosage_notify_zh || data.dosage_notify_en) {
+        html += `<div style="background:var(--warning-light);border:1px solid rgba(234,179,8,0.3);border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:var(--warning);">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M12 9v4M12 17h.01M10.3 3.86l-8.1 14c-.6 1.1.1 2.5 1.3 2.5h16.8c1.2 0 1.9-1.4 1.3-2.5l-8.1-14c-.6-1.1-2.1-1.1-2.7 0z"/></svg> ${data.dosage_notify_zh || data.dosage_notify_en || ''}
+        </div>`;
+      }
+      if (data.payment_type) {
+        html += `<div class="quota-item"><span class="label">付费方式</span><span class="value">${data.payment_type}</span></div>`;
+      }
+      if (data.resources?.length) {
+        let allTotal = 0, allUsed = 0, allRemain = 0;
+        for (const r of data.resources) {
+          allTotal += _n(r.total);
+          allUsed += _n(r.used);
+          allRemain += _n(r.remain);
+        }
+        const allPct = allTotal > 0 ? Math.round((allUsed / allTotal) * 100) : 0;
+        const allCls = allPct >= 80 ? 'danger' : allPct >= 50 ? 'warning' : '';
+        html += `<div style="margin-bottom:12px;">
+          <div class="quota-item" style="border-bottom:none;padding-bottom:4px;">
+            <span class="label">总计配额</span>
+            <span class="value">已用 ${fmt(allUsed)} / 剩余 ${fmt(allRemain)}</span>
+          </div>
+          <div class="quota-bar"><div class="quota-fill ${allCls}" style="width:${Math.min(allPct, 100)}%"></div></div>
+        </div>`;
+
+        html += '<div class="quota-list">';
+        for (const r of data.resources) {
+          const total = _n(r.total);
+          const used = _n(r.used);
+          const remain = _n(r.remain);
+          const pct = total > 0 ? Math.round((used / total) * 100) : 0;
+          const cls = pct >= 80 ? 'danger' : pct >= 50 ? 'warning' : '';
+          const isBase = r.packageCode !== 'TCACA_code_009_0XmEQc2xOf';
+          html += `
+            <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+              <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px;">
+                <span style="color:var(--text-secondary)">${r.packageName || r.packageCode || '资源包'}${isBase ? ' (基础包)' : ''}</span>
+                <span style="font-weight:600">${fmt(remain)}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:2px;">
+                <span>已用 ${fmt(used)}</span>
+                <span>${fmt(total)}</span>
+              </div>
+              <div class="quota-bar"><div class="quota-fill ${cls}" style="width:${Math.min(pct, 100)}%"></div></div>
+            </div>`;
+        }
+        html += '</div>';
+      }
+      if (!html) {
+        html = '<p style="color:var(--text-muted);text-align:center;padding:20px 0;">暂无额度数据</p>';
+      }
+      return html;
+    }
+
+    async function showQuotaDetail(id) {
+      quotaAccountId.value = id;
+      const acc = accounts.value.find(a=>a.id===id);
+      detailAccountName.value = acc?.email || '账号详情';
+      quotaContentHtml.value = '<div style="text-align:center;padding:30px 0"><div class="spinner"></div><div style="color:var(--text-muted);font-size:13px;margin-top:8px">加载中..</div></div>';
+      activeModal.value = 'quotaDetail';
+      try {
+        const [qRaw, sRaw] = await Promise.all([
+          pywebview.api.get_quota(currentPlatform.value, id),
+          pywebview.api.get_all_stats(currentPlatform.value),
+        ]);
+        const r = JSON.parse(qRaw);
+        const sData = JSON.parse(sRaw);
+        const myStats = sData.stats?.find(s=>s.account_id===id)||null;
+        if (r.error) {
+          quotaContentHtml.value = `<p style="color:var(--danger)">${r.error}</p>`;
+        } else {
+          quotaContentHtml.value = buildQuotaHtml(r, myStats);
+        }
+      } catch(e) {
+        quotaContentHtml.value = `<p style="color:var(--danger)">查询失败: ${e}</p>`;
+      }
+    }
+    async function refreshQuota() { if (quotaAccountId.value) await showQuotaDetail(quotaAccountId.value); }
+
+    // ─── OAuth ───
+    async function showOAuthModal() {
+      activeModal.value = 'oauth';
+      oauthUrlText.value = '正在生成授权链接...';
+      oauthStatusHtml.value = `<div style="text-align:center;padding:24px 0;color:var(--text-secondary);font-size:13px;"><div class="spinner"></div><div style="margin-top:8px;">正在连接...</div></div>`;
+      try {
+        const r = JSON.parse(await pywebview.api.oauth_start(currentPlatform.value));
+        if (r.error) { showToast(r.error, 'error'); activeModal.value = null; return; }
+        oauthUrlText.value = r.verification_uri;
+        oauthStatusHtml.value = `
+          <div style="margin-bottom:14px;display:flex;gap:8px;justify-content:center;">
+            <button class="btn btn-primary btn-sm" onclick="window.open('${r.verification_uri}','_blank')">在浏览器中打开</button>
+            <button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${r.verification_uri}')">复制链接</button>
+          </div>
+          <div style="text-align:center;padding:16px 0;color:var(--text-secondary);font-size:13px;">
+            <div class="spinner"></div><div style="margin-top:8px;">等待浏览器授权完成..</div>
+          </div>`;
+        startOAuthPolling(r.login_id);
+      } catch(e) { showToast('启动 OAuth 失败: '+e, 'error'); activeModal.value = null; }
+    }
+    function startOAuthPolling(loginId) {
+      if (oauthTimer) clearInterval(oauthTimer);
+      oauthTimer = setInterval(async () => {
+        try {
+          const r = JSON.parse(await pywebview.api.oauth_poll(loginId));
+          if (r.status === 'completed') {
+            clearInterval(oauthTimer); oauthTimer = null;
+            const cr = JSON.parse(await pywebview.api.complete_oauth_and_save(currentPlatform.value, JSON.stringify(r.data)));
+            if (cr.error) { showToast(cr.error, 'error'); return; }
+            showToast(`登录成功: ${cr.email}`, 'success');
+            activeModal.value = null;
+            await loadAccounts();
+          } else if (r.error) {
+            clearInterval(oauthTimer); oauthTimer = null;
+            showToast(r.error, 'error'); activeModal.value = null;
+          }
+        } catch {}
+      }, 1500);
+    }
+    function cancelOAuth() {
+      if (oauthTimer) { clearInterval(oauthTimer); oauthTimer = null; }
+      try { pywebview.api.oauth_cancel(); } catch {}
+    }
+
+    // ─── Import ───
+    function showImportModal() { importJsonText.value = ''; activeModal.value = 'import'; }
+    async function doImport() {
+      const json = importJsonText.value.trim();
+      if (!json) { showToast('请粘贴 Token 或 JSON', 'error'); return; }
+      importLoading.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.import_from_json(currentPlatform.value, json));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        showToast('导入成功: '+(r.accounts?r.accounts.length:0)+' 个账号', 'success');
+        activeModal.value = null;
+        await loadAccounts();
+      } catch(e) { showToast('导入失败: '+e, 'error'); }
+      finally { importLoading.value = false; }
+    }
+    function handleFileImport(e) {
+      const file = e.target.files && e.target.files[0]; if (!file) return;
+      showToast('正在读取文件并导入..', 'loading', '', true);
+      file.text().then(text => {
+        return pywebview.api.import_from_json(currentPlatform.value, text).then(raw => {
+          const r = JSON.parse(raw);
+          if (r.error) { showToast(r.error, 'error'); return; }
+          showToast('文件导入成功: '+(r.accounts?r.accounts.length:0)+' 个账号', 'success');
+          loadAccounts();
+        });
+      }).catch(e => showToast('文件导入失败: '+e, 'error'));
+      e.target.value = '';
+    }
+
+    // ─── Proxy ───
+    function getProxyBaseUrl() { return `http://127.0.0.1:${proxyPort.value}`; }
+
+    async function toggleProxy() {
+      proxyToggling.value = true;
+      try {
+        if (proxyRunning.value) {
+          const r = JSON.parse(await pywebview.api.proxy_stop());
+          if (r.success) {
+            proxyRunning.value = false;
+            chatCardCollapsed.value = true;
+            stopProxyInfoPolling();
+            showToast('网关已停止', 'info');
+          }
+        } else {
+          const r = JSON.parse(await pywebview.api.proxy_start(String(proxyPort.value), String(proxyKey.value||'')));
+          if (r.success) {
+            proxyRunning.value = true;
+            proxyPort.value = r.port;
+            chatCardCollapsed.value = false;
+            renderModelSelect(PRESET_MODELS);
+            startProxyInfoPolling();
+            showToast('网关启动成功', 'success');
+          } else {
+            showToast(r.error||'启动失败', 'warning');
+          }
+        }
+      } catch(e) { showToast('操作失败: '+e, 'error'); }
+      finally { proxyToggling.value = false; }
+    }
+
+    async function refreshProxyStatus() {
+      try {
+        const r = JSON.parse(await pywebview.api.proxy_status());
+        proxyRunning.value = r.running;
+        if (r.running) {
+          proxyPort.value = r.port||proxyPort.value;
+          renderModelSelect(PRESET_MODELS);
+          startProxyInfoPolling();
+        } else {
+          stopProxyInfoPolling();
+        }
+      } catch {}
+    }
+
+    function startProxyInfoPolling() {
+      if (proxyInfoTimer) return;
+      proxyInfoTimer = setInterval(pollProxyInfo, 2000);
+      pollProxyInfo();
+    }
+    function stopProxyInfoPolling() {
+      if (proxyInfoTimer) { clearInterval(proxyInfoTimer); proxyInfoTimer = null; }
+      proxyCurrentAccount.value = null;
+      proxyActive.value = false;
+    }
+    async function pollProxyInfo() {
+      if (!proxyRunning.value) return;
+      try {
+        const info = await fetch(`${getProxyBaseUrl()}/proxy/info`).then(r=>r.json());
+        _proxyFetchFailCount = 0;
+        const newCurrent = info.current_account, newActive = info.active;
+        if (newCurrent !== proxyCurrentAccount.value || newActive !== proxyActive.value) {
+          const wasActive = proxyActive.value, prev = proxyCurrentAccount.value;
+          proxyCurrentAccount.value = newCurrent;
+          proxyActive.value = newActive;
+          if (wasActive && !newActive) refreshAccountStats();
+          if (newCurrent !== prev) loadAccountsLight();
+        }
+        if (info.threshold_switch) {
+          if (info.threshold_switch.startsWith('__nofallback__')) {
+            showToast(`账号 ${info.threshold_switch.replace('__nofallback__','')} 积分不足，无可用后备账号`, 'warning');
+          } else {
+            showToast(`账号 ${info.threshold_switch} 积分低于阈值，已自动切换`, 'warning');
+          }
+          loadAccountsLight();
+        }
+        if (++_statsRefreshCounter >= 5) { _statsRefreshCounter=0; refreshAccountStats(); }
+        const usable = info.accounts_usable||0;
+        if (usable===0 && !_noUsableWarned) { _noUsableWarned=true; showToast('警告：当前无可用账号！', 'warning'); }
+        else if (usable>0) _noUsableWarned=false;
+      } catch {
+        if (++_proxyFetchFailCount >= 3) {
+          _proxyFetchFailCount=0;
+          showToast('代理心跳失联，请检查网关状态', 'warning');
+          refreshProxyStatus();
+        }
+      }
+    }
+
+    // ─── Copy Endpoint ───
+    function copyEndpoint() {
+      const text = `http://127.0.0.1:${proxyPort.value}/v1`;
+      const doSuccess = () => showToast('已复制: '+text, 'success');
+      const fallback = () => {
+        try {
+          const ta=document.createElement('textarea'); ta.value=text;
+          ta.style.cssText='position:fixed;left:-9999px;top:-9999px';
+          document.body.appendChild(ta); ta.focus(); ta.select();
+          if(document.execCommand('copy')) doSuccess(); else showToast('复制失败','error');
+          document.body.removeChild(ta);
+        } catch(e){showToast('复制失败: '+e,'error');}
+      };
+      if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(doSuccess).catch(fallback);
+      else fallback();
+    }
+
+    // ─── Chat ───
+    function renderModelSelect(models) {
+      modelList.value = models.map(m => ({
+        ...m,
+        icon: MODEL_ICONS[m.provider] || MODEL_ICONS.auto
+      }));
+      if (models.length) selectModel(modelList.value[0]);
+    }
+    function selectModel(m) {
+      currentModel.value = m;
+      modelDropdownOpen.value = false;
+    }
+    // Close dropdown on outside click
+    document.addEventListener('click', () => { modelDropdownOpen.value = false; });
+
+    async function syncModels() {
+      syncLoading.value = true; syncLabel.value = '同步中..';
+      try {
+        const resp = await fetch(`${getProxyBaseUrl()}/v1/models`, { headers: { Authorization: `Bearer ${proxyKey.value||''}` }});
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        const synced = (data.data||[]).map(m => {
+          let provider='auto'; const l=m.id.toLowerCase();
+          if(l.includes('deepseek'))provider='deepseek';
+          else if(l.includes('kimi'))provider='kimi';
+          else if(l.includes('glm'))provider='glm';
+          else if(l.includes('hy')||l.includes('hunyuan'))provider='hunyuan';
+          else if(l.includes('minimax'))provider='minimax';
+          return {id:m.id, provider, name:m.id, icon:MODEL_ICONS[provider]||MODEL_ICONS.auto};
+        });
+        renderModelSelect(synced);
+        showToast(`已同步 ${synced.length} 个可用模型`, 'success');
+        syncLabel.value = `已同步${synced.length}个`;
+        setTimeout(() => { syncLabel.value='同步模型'; }, 2500);
+      } catch(e) {
+        showToast('同步模型失败: '+e.message, 'error');
+        syncLabel.value = '同步失败';
+        setTimeout(() => { syncLabel.value='同步模型'; }, 2000);
+      } finally { syncLoading.value = false; }
+    }
+
+    async function exportToWorkBuddy() {
+      if (!await showConfirm('确认将本网关配置导入至 WorkBuddy？\n\n这将覆盖 WorkBuddy 现有的 API 配置。', '导入确认')) return;
+      wbExportLoading.value = true; wbExportLabel.value = '导入中..';
+      try {
+        const r = JSON.parse(await pywebview.api.export_to_workbuddy(String(proxyPort.value), String(proxyKey.value||'')));
+        if (r.success) {
+          wbExportLabel.value = `已导入${r.count}项`;
+          showToast(`已写入: ${r.path}${r.backup?'\n备份: '+r.backup:''}`, 'success');
+        } else { throw new Error(r.error); }
+      } catch(e) {
+        wbExportLabel.value = '导入失败';
+        showToast('导出失败: '+e.message, 'error');
+      } finally {
+        setTimeout(() => { wbExportLabel.value='导入 WorkBuddy'; wbExportLoading.value=false; }, 2500);
+      }
+    }
+
+    let chatBusy = false;
+    async function sendTestChat() {
+      if (chatBusy || chatSending.value) return;
+      const msg = chatInput.value.trim(); if (!msg) return;
+      if (!proxyRunning.value) { showToast('请先启动网关', 'warning'); return; }
+      chatBusy = true; chatSending.value = true;
+      chatInput.value = '';
+      chatMessages.value.push({ role:'user', content:msg });
+      chatMessages.value.push({ role:'assistant', content:'思考中...' });
+      const idx = chatMessages.value.length - 1;
+      await nextTick();
+      if (chatMessagesRef.value) chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight;
+      try {
+        const resp = await fetch(`${getProxyBaseUrl()}/v1/chat/completions`, {
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':`Bearer ${proxyKey.value||''}`},
+          body:JSON.stringify({model:currentModel.value.id, messages:[{role:'user',content:msg}], stream:true}),
+        });
+        if (!resp.ok) throw new Error((await resp.text()).slice(0,200));
+        chatMessages.value[idx].content = '';
+        const reader=resp.body.getReader(), decoder=new TextDecoder();
+        let buffer='', fullText='';
+        while (true) {
+          const {done,value}=await reader.read(); if(done) break;
+          buffer += decoder.decode(value,{stream:true});
+          let i;
+          while((i=buffer.indexOf('\n\n'))!==-1) {
+            const ev=buffer.slice(0,i); buffer=buffer.slice(i+2);
+            for (const line of ev.split('\n')) {
+              if (!line.startsWith('data: ')) continue;
+              const data=line.slice(6).trim(); if(data==='[DONE]') continue;
+              try { const obj=JSON.parse(data); const delta=obj.choices?.[0]?.delta; if(delta?.content){fullText+=delta.content; chatMessages.value[idx].content=fullText; if(chatMessagesRef.value) chatMessagesRef.value.scrollTop=chatMessagesRef.value.scrollHeight; } } catch {}
+            }
+          }
+        }
+        if (!fullText) chatMessages.value[idx].content='(无回答)';
+      } catch(e) { chatMessages.value[idx].role='error'; chatMessages.value[idx].content='错误: '+e.message; }
+      finally { chatBusy=false; chatSending.value=false; }
+    }
+
+    // ─── Logs ───
+    async function refreshLogs() {
+      try {
+        const r = JSON.parse(await pywebview.api.get_logs('workbuddy', 200, 0, logEventFilter.value));
+        logs.value = r.logs||[];
+      } catch {}
+    }
+    async function toggleLogEnabled() {
+      try { await pywebview.api.set_log_enabled(logEnabled.value); } catch {}
+    }
+    async function clearLogs() {
+      if (!await showConfirm('确定清空所有运行日志？')) return;
+      try { await pywebview.api.clear_logs('workbuddy'); logs.value = []; } catch {}
+    }
+
+    // ─── Update ───
+    async function checkForUpdate() {
+      activeModal.value = 'update';
+      updateTitle.value='检查更新'; updateStatusHtml.value='<div>检查中...</div>';
+      updateProgressVisible.value=false; updateActionsVisible.value=false;
+      updateNotesVisible.value=false; updateBtnText.value='下载更新';
+      try {
+        const r = JSON.parse(await pywebview.api.check_update());
+        if (r.error) { updateStatusHtml.value=`<div>${r.error}</div>`; return; }
+        _updateData = r;
+        if (r.has_update) {
+          hasUpdate.value=true;
+          updateTitle.value=`发现新版本 ${r.latest_version}`;
+          updateStatusHtml.value=`<div>当前版本: ${r.current_version}<br>最新版本: ${r.latest_version}</div>`;
+          updateActionsVisible.value=true;
+          if (r.release_body) { updateNotes.value=r.release_body; updateNotesVisible.value=true; }
+        } else {
+          updateStatusHtml.value=`<div>已是最新版本 (${r.current_version})</div>`;
+        }
+      } catch(e) { updateStatusHtml.value=`<div>检查更新失败: ${e.message}</div>`; }
+    }
+    async function doUpdate() {
+      if (!_updateData?.download_url) return;
+      if (_updateApplyPath) {
+        try {
+          const r=JSON.parse(await pywebview.api.apply_update(_updateApplyPath));
+          if(r.error){updateStatusHtml.value=`<div>${r.error}</div>`;return;}
+          window.close();
+        } catch {}
         return;
       }
-      window.close();
-    };
-    btn.disabled = false;
-  } catch(e) {
-    document.getElementById('updateStatus').textContent = '下载失败: ' + e.message;
-    btn.disabled = false;
-    btn.textContent = '下载更新';
-  }
-}
-document.addEventListener('DOMContentLoaded', init);
+      updateBtnDisabled.value=true; updateBtnText.value='下载中..';
+      updateProgressVisible.value=true; updateNotesVisible.value=false;
+      try {
+        const r=JSON.parse(await pywebview.api.download_update(_updateData.download_url));
+        if(r.error){updateStatusHtml.value=`<div>${r.error}</div>`;updateBtnDisabled.value=false;updateBtnText.value='下载更新';return;}
+        updateStatusHtml.value='<div>下载完成，准备更新..</div>';
+        updateProgressPct.value=100;
+        updateBtnText.value='重启更新'; updateBtnDisabled.value=false;
+        _updateApplyPath=r.path;
+      } catch(e) { updateStatusHtml.value=`<div>下载失败: ${e.message}</div>`; updateBtnDisabled.value=false; updateBtnText.value='下载更新'; }
+    }
 
+    // ─── startApp ───
+    function startApp() {
+      if (appStarted) return;
+      appStarted = true;
+      const tryLoad=(attempt=0)=>{
+        try {
+          loadAccounts().then(async()=>{
+            try { await refreshProxyStatus(); } catch {}
+          }).catch(()=>{ if(attempt<10) setTimeout(()=>tryLoad(attempt+1),500); });
+        } catch(e){ if(attempt<10) setTimeout(()=>tryLoad(attempt+1),500); }
+      };
+      tryLoad();
+      if (_LICENSE_ENABLED) {
+        setInterval(()=>{
+          pywebview.api.check_license().then(raw=>{
+            const r=JSON.parse(raw);
+            if(!r.licensed){appStarted=false;showLicenseOverlay(r.message);}
+          }).catch(()=>{});
+        }, 10000);
+      }
+    }
+
+    onMounted(() => {
+      // Init theme
+      const tryTheme=()=>{
+        try{pywebview.api.get_theme().then(raw=>setThemeUI(raw==='dark'?'dark':'light')).catch(()=>{});}
+        catch(e){setTimeout(tryTheme,200);}
+      };
+      tryTheme();
+
+      // License check → startApp
+      if (_LICENSE_ENABLED) {
+        const tryLicense=(attempt=0)=>{
+          try{
+            pywebview.api.check_license().then(raw=>{
+              const r=JSON.parse(raw);
+              if(r.licensed){hideLicenseOverlay();startApp();}
+              else{showLicenseOverlay(r.message);}
+            }).catch(()=>{if(attempt<10)setTimeout(()=>tryLicense(attempt+1),300);});
+          }catch(e){if(attempt<10)setTimeout(()=>tryLicense(attempt+1),300);}
+        };
+        tryLicense();
+      } else {
+        hideLicenseOverlay(); startApp();
+      }
+    });
+
+    return {
+      // State
+      currentPlatform, currentView, activeModal, hasUpdate,
+      accounts, accountStats, statTotal, statQuota,
+      statusFilter, filterDate, statusDropdownOpen,
+      proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, quotaThreshold, proxyToggling,
+      chatCardCollapsed, chatMessages, chatInput, chatSending, modelList, currentModel, modelDropdownOpen,
+      syncLoading, syncLabel, wbExportLoading, wbExportLabel, chatMessagesRef,
+      exportLoading, checkinAllLoading, refreshAllLoading, cardLoading,
+      selectMode, selectedIds, batchDeleteLoading, batchExportLoading,
+      allSelected, someSelected, selectedCount,
+      oauthUrlText, oauthStatusHtml,
+      importJsonText, importLoading,
+      quotaAccountId, detailAccountName, detailLoading, detailError, detailData, detailStats, quotaContentHtml,
+      shopUrl, shopName,
+      updateTitle, updateStatusHtml, updateProgressVisible, updateProgressPct, updateActionsVisible, updateNotesVisible, updateNotes, updateBtnText, updateBtnDisabled,
+      logs, logEnabled, logEventFilter,
+      // Computed
+      filteredAccounts, detailResourcesTotal,
+      // Methods
+      fmt, fmtK, fmtL, _n, dateStr, friendlyDate, getHitRate,
+      getStatusBadgeClass, getStatusText, getPlanBadgeClass, getPlanText,
+      parseCheckin, getCardQuota,
+      selectStatusFilter, getStatusDotClass, getStatusFilterLabel,
+      showConsole, showLogs, showShopCards, openShop, openShopExternal, openModal,
+      toggleTheme,
+      setFilterDate, saveQuotaThreshold,
+      exportAccounts, checkinAll, refreshAll,
+      doCheckin, refreshOne, deleteOne, setPriorityAccount, toggleAccountStatus,
+      toggleSelectMode, toggleSelect, toggleSelectAll, clearSelection, batchExport, batchDelete,
+      showQuotaDetail, refreshQuota,
+      showOAuthModal, cancelOAuth,
+      showImportModal, doImport, handleFileImport,
+      toggleProxy, copyEndpoint,
+      selectModel, syncModels, exportToWorkBuddy, sendTestChat,
+      refreshLogs, toggleLogEnabled, clearLogs,
+      checkForUpdate, doUpdate,
+      startApp,
+    };
+  }
+});
+
+window._vueApp = vApp.mount('#app');
 </script>
 </body>
 </html>
