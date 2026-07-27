@@ -164,9 +164,11 @@ def apply_update(download_path: str) -> dict:
     if not current_exe:
         return {"error": "仅在打包后可执行更新"}
     bat_path = os.path.join(tempfile.gettempdir(), "ai-gateway-update.bat")
+    # bat 全程无交互（无 echo/pause）：窗口本就要隐藏，echo 给谁看。
+    # 失败时写日志文件到临时目录，方便排查，不弹窗阻塞。
+    log_path = os.path.join(tempfile.gettempdir(), "ai-gateway-update.err")
     bat_content = f"""@echo off
 chcp 65001 >nul
-echo 正在更新 AI Gateway...
 :wait
 tasklist /fi "PID eq {os.getpid()}" 2>nul | find "{os.getpid()}" >nul
 if not errorlevel 1 (
@@ -175,18 +177,29 @@ if not errorlevel 1 (
 )
 copy /y "{download_path}" "{current_exe}" >nul
 if errorlevel 1 (
-    echo 更新失败
-    pause
+    echo update failed: copy error >> "{log_path}"
+    del /q "{download_path}" >nul 2>&1
     exit /b 1
 )
-del /q "{download_path}"
+del /q "{download_path}" >nul 2>&1
 start "" "{current_exe}"
-exit
 """
     try:
         with open(bat_path, "w", encoding="utf-8") as f:
             f.write(bat_content)
-        os.startfile(bat_path)
+        # 关键：用 subprocess + CREATE_NO_WINDOW 启动 bat，避免 os.startfile 弹 cmd 黑窗。
+        # DETACHED_PROCESS 让它脱离父进程，父进程（本应用）退出后 bat 继续跑完覆盖+重启。
+        # SW_HIDE 通过 STARTUPINFO 再兜一层隐藏（对部分 Windows 版本更稳）。
+        import subprocess
+        si = subprocess.STARTUPINFO()
+        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        si.wShowWindow = 0  # SW_HIDE
+        subprocess.Popen(
+            ["cmd", "/c", bat_path],
+            startupinfo=si,
+            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
+            close_fds=True,
+        )
         return {"ok": True}
     except Exception as e:
         return {"error": f"启动更新程序失败: {e}"}
