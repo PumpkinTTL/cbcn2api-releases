@@ -376,30 +376,115 @@ body {
 /* Content Area */
 .content { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
 
-/* Header Top —— 分两组：左边低频录入，右边高频批量动作 */
+/* Header Top with Integrated Gateway Bar */
 .header-top {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 11px 20px;
+  gap: 10px;
+  padding: 8px 18px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  min-height: 48px;
+  width: 100%;
+  box-sizing: border-box;
 }
+
 .header-group {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.header-divider.main-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+/* Proxy Panel inside Header Top */
+.proxy-panel {
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  margin: 0;
+  box-shadow: none;
+  flex: 1;
   min-width: 0;
 }
-/* 靠右并加一道竖分隔，把「读」和「写」两类动作在视觉上断开 */
-.header-group-end {
-  margin-left: auto;
-  gap: 8px;
+
+.proxy-panel-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0;
+  width: 100%;
+  flex-wrap: nowrap;
+}
+
+/* Segmented Icon Toolbar Strip (Left Side) */
+.header-toolbar-strip {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-sizing: border-box;
   flex-shrink: 0;
-  padding-left: 16px;
-  border-left: 1px solid var(--border);
+  transition: var(--transition);
+}
+.header-toolbar-strip:hover {
+  border-color: var(--border-hover);
+}
+
+.btn-icon-strip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 29px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+  outline: none;
+}
+.btn-icon-strip + .btn-icon-strip {
+  border-left: 1px solid var(--border-light);
+}
+.btn-icon-strip:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.btn-icon-strip.accent {
+  color: var(--accent);
+}
+.btn-icon-strip.accent:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+.btn-icon-strip.primary {
+  color: var(--primary);
+}
+.btn-icon-strip.primary:hover {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.strip-divider {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+  margin: 0 1px;
 }
 
 /* Buttons */
@@ -483,14 +568,14 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  border-bottom: none;
   font-size: 13px;
   transition: var(--transition);
   margin-bottom: 0;
   flex-shrink: 0;
 }
 .proxy-panel.online {
-  border-bottom-color: rgba(56, 142, 60, 0.4);
+  border-bottom: none;
 }
 
 .proxy-panel-main {
@@ -502,16 +587,24 @@ body {
   flex-wrap: nowrap;
 }
 
-.proxy-status { display: flex; align-items: center; gap: 8px; min-width: 0; flex-shrink: 0; }
-.proxy-status-pill {
-  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
-  padding: 3px 9px; border-radius: 20px;
-  font-size: 11.5px; font-weight: 600; border: 1px solid var(--border);
-  background: var(--surface); color: var(--text-muted);
+.proxy-status-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+  user-select: none;
   transition: var(--transition);
 }
-.proxy-panel.online .proxy-status-pill {
-  background: var(--success-light); color: var(--success); border-color: rgba(56, 142, 60, 0.3);
+.proxy-panel.online .proxy-status-segment {
+  background: var(--success-light);
+  color: var(--success);
+  border-right-color: rgba(56, 142, 60, 0.3);
 }
 
 .ping-dot { position: relative; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: currentColor; }
@@ -521,47 +614,70 @@ body {
 }
 @keyframes proxy-ping { 75%,100% { transform: scale(2.2); opacity: 0; } }
 
-.proxy-endpoint { display: none; align-items: center; gap: 6px; min-width: 0; }
-.proxy-panel.online .proxy-endpoint { display: inline-flex; }
+.proxy-endpoint { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .proxy-endpoint code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11.5px; color: var(--text);
   background: var(--bg); padding: 3px 8px; border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px;
+  white-space: nowrap;
 }
 .copy-btn {
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-  width: 26px; height: 26px; border: 1px solid var(--border); background: var(--surface);
+  width: 24px; height: 24px; border: 1px solid var(--border); background: var(--surface);
   color: var(--text-secondary); border-radius: var(--radius-sm); cursor: pointer; transition: var(--transition);
 }
 .copy-btn:hover { color: var(--text); background: var(--surface-hover); border-color: var(--border-hover); }
-.copy-btn svg { width: 13px; height: 13px; }
+.copy-btn svg { width: 12px; height: 12px; }
 
-.proxy-input-group { display: flex; gap: 10px; align-items: center; flex-shrink: 0; margin-left: auto; }
+.proxy-input-group { display: flex; gap: 8px; align-items: center; flex-shrink: 0; margin-left: auto; }
 
-/* 端口/密码/阈值合成一个分段控件：外面一圈边框，内部用细线分隔。
-   原先三个各带边框的输入框 + 三个浮动标签 = 九个视觉元素，是这一排最挤的地方。 */
-/* 固定高度是关键：原先靠 input 的默认行高撑开，number 和 password 的
-   固有高度不一样，各列基线就对不齐、看着都没垂直居中。 */
 .proxy-fields {
   display: flex;
   align-items: stretch;
-  height: 30px;
+  height: 28px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
   transition: var(--transition);
+  flex-shrink: 1;
 }
 .proxy-fields:hover { border-color: var(--border-hover); }
-/* 聚焦只改容器描边色，不再加 2px 外扩光环 ——
-   那圈光环紧贴内容、又和右侧按钮的 10px 间距打架，看着就像内容顶到边框上了。 */
 .proxy-fields:focus-within { border-color: var(--primary); }
 
 .proxy-field {
   display: flex;
-  align-items: center;      /* 标签与输入框在这条 30px 的轴上共同居中 */
+  align-items: center;
+  height: 100%;
+  gap: 4px;
+  padding: 0 6px;
+  white-space: nowrap;
+  cursor: text;
+  transition: background var(--transition);
+}
+.proxy-field + .proxy-field { border-left: 1px solid var(--border); }
+.proxy-field:focus-within { background: var(--primary-light); }
+.proxy-field:focus-within span { color: var(--primary); }
+.proxy-field span {
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.proxy-field input {
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 11px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  padding: 0;
+  width: 44px;
+}
+.proxy-field input[type="password"] { width: 46px; }入框在这条 30px 的轴上共同居中 */
   height: 100%;
   gap: 6px;
   padding: 0 10px;
@@ -1126,3 +1242,17 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
   ::view-transition-old(root),
   ::view-transition-new(root) { animation: none !important; }
 }
+
+/* ===== frameless 窗口边缘 resize 触发条 =====
+   系统边缘 hit-test 被 WebView2 吃掉，用透明边条 + JS 主动发起 sizing。
+   z-index 低于 titlebar(6000)：顶部/左上/右上让位给标题栏拖动和窗口按钮，
+   左/右/下边缘及左下/右下角可 resize。 */
+.rz { position: fixed; z-index: 5500; }
+.rz-t  { top: 0; left: 8px; right: 8px; height: 4px; cursor: ns-resize; }
+.rz-b  { bottom: 0; left: 8px; right: 8px; height: 4px; cursor: ns-resize; }
+.rz-l  { left: 0; top: 8px; bottom: 8px; width: 4px; cursor: ew-resize; }
+.rz-r  { right: 0; top: 8px; bottom: 8px; width: 4px; cursor: ew-resize; }
+.rz-tl { top: 0; left: 0; width: 8px; height: 8px; cursor: nwse-resize; }
+.rz-tr { top: 0; right: 0; width: 8px; height: 8px; cursor: nesw-resize; }
+.rz-bl { bottom: 0; left: 0; width: 8px; height: 8px; cursor: nesw-resize; }
+.rz-br { bottom: 0; right: 0; width: 8px; height: 8px; cursor: nwse-resize; }

@@ -41,6 +41,7 @@ __all__ = [
     "enable_resize_border",
     "suppress_nc_frame",
     "set_rounded_corners",
+    "resize_delta",
 ]
 
 GWL_STYLE = -16
@@ -96,10 +97,12 @@ _sig(user32.SetWindowPos, wintypes.BOOL, wintypes.HWND, wintypes.HWND,
      ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint)
 _sig(user32.LoadImageW, wintypes.HANDLE, wintypes.HINSTANCE, wintypes.LPCWSTR,
      wintypes.UINT, ctypes.c_int, ctypes.c_int, wintypes.UINT)
-_sig(user32.SendMessageW, LRESULT,
-     wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
 _sig(user32.CallWindowProcW, LRESULT, ctypes.c_void_p,
      wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+_sig(user32.GetWindowRect, wintypes.BOOL, wintypes.HWND,
+     ctypes.POINTER(wintypes.RECT))
+_sig(user32.SetWindowPos, wintypes.BOOL, wintypes.HWND, wintypes.HWND,
+     ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint)
 _sig(user32.IsZoomed, wintypes.BOOL, wintypes.HWND)
 _sig(user32.GetSystemMetrics, ctypes.c_int, ctypes.c_int)
 _sig(dwmapi.DwmSetWindowAttribute, ctypes.c_long,
@@ -219,12 +222,11 @@ def _make_wndproc(key):
 def suppress_nc_frame(hwnd):
     """子类化窗口过程，拦 WM_NCCALCSIZE 去掉 DWM 画的框架亮边。
 
-    拉伸不受影响：WM_NCHITTEST 的命中测试依据是**窗口矩形 + 样式位**，
-    不看客户区矩形，WS_THICKFRAME 仍在，最外圈依旧判定为 HTTOP/HTLEFT 等。
-
-    代价（与 Electron 无边框窗口一致）：最外约 8px 现在压在 HTML 内容之上，
-    且非客户区命中测试优先于客户区鼠标消息 —— 自定义标题栏最顶几像素是
-    「拉伸」而不是「拖动」。
+    resize 不在这里做：pywebview 的 WebView2 子控件铺满客户区，鼠标消息被它
+    先吃掉，系统对顶层窗口的边缘命中测试（WS_THICKFRAME 默认行为）收不到；
+    发 WM_NCLBUTTONDOWN(HT*) 让系统进 sizing loop 也起不来（光标变但拖不动）。
+    所以彻底绕开 Win32 sizing —— 前端 JS 自己算鼠标 delta，每帧调 resize_delta()
+    用 GetWindowRect + SetWindowPos 直接落尺寸。详见 resize_delta。
     """
     if not hwnd:
         return False
@@ -242,4 +244,66 @@ def suppress_nc_frame(hwnd):
 
     # 主动触发一次 WM_NCCALCSIZE，让新的客户区矩形立即生效。
     user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, _SWP_RESTYLE)
+    return True
+
+
+# 方向 -> 该边是否随鼠标移动。key 与前端 .rz 触发条的 data-dir 对齐。
+# 每项 (move_left, move_top, move_right, move_bottom)：True 表示这条边跟着鼠标走。
+_DIR_EDGES = {
+    "left":        (True,  False, False, False),
+    "right":       (False, False, True,  False),
+    "top":         (False, True,  False, False),
+    "bottom":      (False, False, False, True),
+    "topleft":     (True,  True,  False, False),
+    "topright":    (False, True,  True,  False),
+    "bottomleft":  (True,  False, False, True),
+    "bottomright": (False, False, True,  True),
+}
+
+# 最小尺寸兜底，低于这个值 SetWindowPos 拒绝执行（main.py 设的 min_size 是 900x600，
+# 这里取略小一点，避免拖到极小后卡死；前端也会在 JS 端 clamp，这里是双保险）。
+_MIN_W = 400
+_MIN_H = 300
+
+
+def resize_delta(hwnd, direction, dx, dy):
+    """前端 JS 每帧调用，按鼠标增量直接改窗口矩形。
+
+    不走 Win32 sizing modal loop（在 frameless + WebView2 下起不来），而是每帧
+    GetWindowRect 拿当前矩形，按方向把 dx/dy 作用到对应边，SetWindowPos 落回去。
+    等价于自己实现一遍系统 sizing，但完全在应用层，不依赖任何系统 sizing 状态。
+
+    dx/dy 是这一帧的鼠标位移（逻辑像素），符号：鼠标右下移为正。
+    direction 决定哪些边跟着鼠标走、以及反向边的尺寸如何变（拖左边时右边不动、
+    宽度随 dx 减小，表现为左缘跟随鼠标）。
+    """
+    if not hwnd:
+        return False
+    edges = _DIR_EDGES.get(direction)
+    if edges is None:
+        return False
+    if user32.IsZoomed(hwnd):
+        # 最大化状态下不允许 resize，否则窗口矩形会脱离工作区。
+        return False
+
+    move_left, move_top, move_right, move_bottom = edges
+    rect = wintypes.RECT()
+    if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+        return False
+
+    left, top, right, bottom = rect.left, rect.top, rect.right, rect.bottom
+
+    # 拖左边/上边时，那条边跟随鼠标，对边不动 —— 尺寸变化方向与 dx/dy 相反。
+    if move_left:
+        left = min(left + dx, right - _MIN_W)
+    if move_top:
+        top = min(top + dy, bottom - _MIN_H)
+    if move_right:
+        right = max(right + dx, left + _MIN_W)
+    if move_bottom:
+        bottom = max(bottom + dy, top + _MIN_H)
+
+    # SWP_NOZORDER=0x0004 | SWP_NOACTIVATE=0x0010：不动 Z 序、不抢焦点。
+    user32.SetWindowPos(hwnd, None, left, top, right - left, bottom - top,
+                        0x0004 | 0x0010)
     return True

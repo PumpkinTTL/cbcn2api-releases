@@ -81,6 +81,29 @@ class GuiApi:
             self._window.destroy()
         return json.dumps({"ok": True})
 
+    def resize_delta(self, direction: str, dx: int, dy: int) -> str:
+        """前端 JS 拖动边缘时按帧调用：直接改窗口尺寸。
+
+        这是 frameless + WebView2 架构下唯一可靠的 resize 方案 ——
+        系统原生 sizing（WS_THICKFRAME 默认 hit-test）和发 WM_NCLBUTTONDOWN
+        让系统进 sizing loop 都不工作：前者鼠标消息被 WebView2 子控件吃掉，
+        后者 sizing loop 起不来（光标变但拖不动）。
+
+        所以彻底绕开 Win32 sizing，改成前端自己算鼠标 delta，每帧调本方法，
+        Python 端用 GetWindowRect + SetWindowPos 直接落尺寸。不依赖系统
+        任何 sizing 状态，跨线程调用 SetWindowPos 是安全的。
+
+        direction 决定 dx/dy 作用到哪些边以及符号方向；dx/dy 单位是逻辑像素，
+        与 GetWindowRect 出来的物理像素一致（pywebview 6.2 + WebView2 在
+        非 per-monitor DPI 下 scale=1；高 DPI 场景若出现缩放偏差，再补 scale 换算）。
+        """
+        hwnd = self._hwnd()
+        if not hwnd:
+            return json.dumps({"ok": False})
+        from src.gui import win_chrome
+        ok = win_chrome.resize_delta(hwnd, direction, dx, dy)
+        return json.dumps({"ok": ok})
+
     # ========== Account Management ==========
 
     def list_accounts(self, platform: str) -> str:
