@@ -83,7 +83,7 @@
       <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> 切换主题
     </button>
     <div style="text-align:center;font-size:11px;margin-top:8px">
-      <span class="version-link" onclick="showChangelog()">v1.0.3</span>
+      <span class="version-link" onclick="showChangelog()">v1.0.5</span>
     </div>
   </div>
 </aside>
@@ -374,28 +374,31 @@
       <button class="modal-close" onclick="closeModal('changelogModal')"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="modal-body">
-      <div class="changelog-version">v1.0.3</div>
-      <div class="changelog-date">2026-07-26</div>
+      <div class="changelog-version">v1.0.5</div>
+      <div class="changelog-date">2026-07-27</div>
 
-      <div class="changelog-section-title">🔧 额度计算修复</div>
+      <div class="changelog-section-title">🎨 UI 全面升级</div>
       <ul class="changelog-list">
-        <li>修复个人体验版等套餐额度显示为 0 的问题</li>
-        <li>对齐官方计算逻辑，正确合并多个资源包</li>
-        <li>仪表盘统计和卡片显示同步修正</li>
+        <li>全新 Claude 暖米色 / 暖浓咖啡设计系统</li>
+        <li>浅色模式升级为护眼暖米色，长时间使用更舒适</li>
+        <li>自定义标题栏，窗口更精致</li>
+        <li>主题切换新增圆形扩散过渡动画</li>
       </ul>
 
-      <div class="changelog-section-title">📋 运行日志</div>
+      <div class="changelog-section-title">🛡️ 代理链路加固</div>
       <ul class="changelog-list">
-        <li>新增运行日志面板，记录每次请求的账号和状态</li>
-        <li>支持按类型筛选（请求 / 成功 / 错误）</li>
-        <li>可一键清空，可关闭记录节省性能</li>
+        <li>修复代理链路「请求永不返回」问题</li>
+        <li>修复故障转移在某些场景失效的问题</li>
+        <li>全链路审核修复（11 项）</li>
+        <li>阈值切换确保备选账号额度充足，防止切换死循环</li>
       </ul>
 
-      <div class="changelog-section-title">⚡ 调度优化</div>
+      <div class="changelog-section-title">⚡ 体验优化</div>
       <ul class="changelog-list">
-        <li>冷却状态重启不丢失，到期自动恢复</li>
-        <li>区分额度耗尽、非法请求、临时错误的不同冷却策略</li>
-        <li>手动启用账号时自动清除运行时冷却</li>
+        <li>刷新额度时局部更新，不再整体重排</li>
+        <li>网关栏标签更直观：端口 / Key / 切号阈值</li>
+        <li>窗口支持原生拉伸边框</li>
+        <li>去掉了 DWM 白边，视觉效果更干净</li>
       </ul>
 
       <div class="changelog-version" style="margin-top:24px">v1.0.2</div>
@@ -958,6 +961,16 @@ function updateCardsInPlace() {
       const quotaSec = card.querySelector('.quota-section');
       if (quotaSec) quotaSec.insertAdjacentHTML('afterend', newStats);
     }
+    // 状态徽章：只替换 .badge-status-* span，不动 .card-meta 里的当前号/plan/企业名。
+    // 阈值自动切号会把 acc.status 改成 disabled，不刷这里卡片就一直显示「正常」。
+    const oldBadge = card.querySelector('.card-meta .badge-status-normal, .card-meta .badge-status-disabled, .card-meta .badge-status-banned');
+    if (oldBadge) {
+      const newBadgeHtml = getStatusBadge(a);
+      if (oldBadge.outerHTML !== newBadgeHtml) oldBadge.outerHTML = newBadgeHtml;
+    }
+    // 按钮区：status 变了，启用/禁用按钮和优先调度按钮都要跟着换。
+    const oldActions = card.querySelector('.card-actions');
+    if (oldActions) oldActions.innerHTML = cardActionsHtml(a);
   });
 }
 
@@ -1023,14 +1036,7 @@ function renderAccounts() {
         ${cardStatsHtml(a)}
 
         <div class="card-footer">
-          <div class="card-actions">
-            <button class="btn btn-ghost btn-sm" onclick="showQuotaDetail('${a.id}')" title="额度详情"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M4 16l4-8 4 4 4-6 4 8"/></svg> 详情</button>
-            <button class="btn btn-ghost btn-sm" onclick="doCheckin('${a.id}')" title="签到"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> 签到</button>
-            <button class="btn btn-ghost btn-sm" onclick="refreshOne('${a.id}')" title="刷新"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg> 刷新</button>
-            ${(a.status || 'normal') === 'normal' ? `<button class="btn btn-ghost btn-sm btn-icon" onclick="setPriorityAccount('${a.id}')" title="设为优先调度"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></button>` : ''}
-            ${(a.status || 'normal') === 'banned' ? '' : `<button class="btn btn-ghost btn-sm" style="color:${(a.status || 'normal') === 'disabled' ? '#22c55e' : '#f59e0b'}" onclick="toggleAccountStatus('${a.id}')">${(a.status || 'normal') === 'disabled' ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg> 启用' : '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> 禁用'}</button>`}
-            <button class="btn btn-danger btn-sm btn-icon" onclick="deleteOne('${a.id}')" title="删除"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
-          </div>
+          <div class="card-actions">${cardActionsHtml(a)}</div>
         </div>
       </div>
     `;
@@ -1051,6 +1057,19 @@ function getStatusBadge(a) {
   if (s === 'banned') return '<span class="badge-status-banned">封禁</span>';
   if (s === 'disabled') return '<span class="badge-status-disabled">已禁用</span>';
   return '<span class="badge-status-normal">正常</span>';
+}
+
+// 卡片底部按钮区 HTML。renderAccounts 和 updateCardsInPlace 共用，保证两处渲染一致。
+function cardActionsHtml(a) {
+  const st = a.status || 'normal';
+  return `
+            <button class="btn btn-ghost btn-sm" onclick="showQuotaDetail('${a.id}')" title="额度详情"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M4 16l4-8 4 4 4-6 4 8"/></svg> 详情</button>
+            <button class="btn btn-ghost btn-sm" onclick="doCheckin('${a.id}')" title="签到"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> 签到</button>
+            <button class="btn btn-ghost btn-sm" onclick="refreshOne('${a.id}')" title="刷新"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg> 刷新</button>
+            ${st === 'normal' ? `<button class="btn btn-ghost btn-sm btn-icon" onclick="setPriorityAccount('${a.id}')" title="设为优先调度"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></button>` : ''}
+            ${st === 'banned' ? '' : `<button class="btn btn-ghost btn-sm" style="color:${st === 'disabled' ? '#22c55e' : '#f59e0b'}" onclick="toggleAccountStatus('${a.id}')">${st === 'disabled' ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg> 启用' : '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> 禁用'}</button>`}
+            <button class="btn btn-danger btn-sm btn-icon" onclick="deleteOne('${a.id}')" title="删除"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
+  `;
 }
 
 async function toggleAccountStatus(id) {
@@ -1585,6 +1604,9 @@ async function pollProxyInfo() {
       } else {
         showToast(`账号 ${info.threshold_switch} 额度低于阈值，已自动切换`, 'warning');
       }
+      // 阈值事件必定伴随账号状态变化（disabled 或额度变化），无条件重载卡片，
+      // 让 updateCardsInPlace 刷新被禁用账号的徽章和按钮。不依赖「当前号是否变化」。
+      loadAccountsLight();
     }
   } catch {}
 }
