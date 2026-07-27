@@ -1100,6 +1100,7 @@ function renderAccounts() {
                 ${getStatusBadge(a)}
                 ${planBadge}
                 ${a.enterprise_name ? `<span style="font-size:11px;color:var(--text-muted)"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><rect x="4" y="2" width="16" height="20" rx="1"/><path d="M9 6h2M13 6h2M9 10h2M13 10h2M9 14h2M13 14h2"/></svg> ${escapeHtml(a.enterprise_name)}</span>` : ''}
+                ${a.created_at ? `<span style="font-size:11px;color:var(--text-muted)"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg> ${dateStr(new Date(a.created_at * 1000))}</span>` : ''}
               </div>
             </div>
           </div>
