@@ -1,6 +1,5 @@
 import json
 import os
-import subprocess
 import sys
 import tempfile
 from typing import Optional
@@ -20,66 +19,31 @@ def _parse_version(tag: str) -> tuple:
         return (0, 0, 0)
 
 
-def _find_gh() -> Optional[str]:
-    for candidate in [
-        "gh",
-        r"C:\Program Files\GitHub CLI\gh.exe",
-        r"C:\Program Files (x86)\GitHub CLI\gh.exe",
-    ]:
-        try:
-            subprocess.run([candidate, "--version"], capture_output=True, timeout=5)
-            return candidate
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            continue
-    return None
+def _proxy():
+    p = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or ""
+    return {"http": p, "https": p} if p else {}
 
 
-def _fetch_via_gh() -> Optional[dict]:
-    gh = _find_gh()
-    if not gh:
-        return None
-    try:
-        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or ""
-        env = os.environ.copy()
-        if proxy:
-            env["HTTPS_PROXY"] = proxy
-        result = subprocess.run(
-            [gh, "release", "view", "--repo", REPO,
-             "--json", "tagName,name,body,assets"],
-            capture_output=True, text=True, timeout=15, env=env,
-            encoding="utf-8", errors="replace",
-        )
-        if result.returncode != 0 or not (result.stdout or "").strip():
-            return None
-        data = json.loads(result.stdout)
-        assets = data.get("assets", [])
-        download_url = ""
-        for a in assets:
-            name = a.get("name", "")
-            if name.endswith(".exe"):
-                download_url = a.get("url", "")
-                break
-        return {
-            "tag_name": data["tagName"],
-            "html_url": f"https://github.com/{REPO}/releases/tag/{data['tagName']}",
-            "name": data.get("name", ""),
-            "body": data.get("body", ""),
-            "download_url": download_url,
-        }
-    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
-        return None
-
-
-def _fetch_via_api() -> Optional[dict]:
+def check_latest() -> dict:
     try:
         resp = requests.get(
             GITHUB_API,
-            headers={"User-Agent": f"AI-Gateway/{APP_VERSION}", "Accept": "application/vnd.github+json"},
+            headers={
+                "User-Agent": f"AI-Gateway/{APP_VERSION}",
+                "Accept": "application/vnd.github+json",
+            },
+            proxies=_proxy(),
             timeout=10,
         )
         if resp.status_code != 200:
-            return None
+            return {"error": f"GitHub API 返回 {resp.status_code}"}
         data = resp.json()
+        latest_tag = data.get("tag_name", "")
+        if not latest_tag:
+            return {"error": "无法获取版本信息"}
+        latest_ver = _parse_version(latest_tag)
+        current_ver = _parse_version(APP_VERSION)
+        has_update = latest_ver > current_ver
         assets = data.get("assets", [])
         download_url = ""
         for a in assets:
@@ -88,54 +52,26 @@ def _fetch_via_api() -> Optional[dict]:
                 download_url = a.get("browser_download_url", "")
                 break
         return {
-            "tag_name": data.get("tag_name", ""),
-            "html_url": data.get("html_url", ""),
-            "name": data.get("name", ""),
-            "body": data.get("body", ""),
+            "has_update": has_update,
+            "latest_version": latest_tag,
+            "current_version": APP_VERSION,
             "download_url": download_url,
+            "release_url": data.get("html_url", ""),
+            "release_name": data.get("name", ""),
+            "release_body": (data.get("body", "") or "")[:500],
         }
-    except requests.RequestException:
-        return None
-
-
-def check_latest() -> dict:
-    data = _fetch_via_gh() or _fetch_via_api()
-    if not data:
-        return {"error": "检查更新失败: 无法连接 GitHub"}
-    latest_tag = data.get("tag_name", "")
-    if not latest_tag:
-        return {"error": "无法获取版本信息"}
-    latest_ver = _parse_version(latest_tag)
-    current_ver = _parse_version(APP_VERSION)
-    has_update = latest_ver > current_ver
-    return {
-        "has_update": has_update,
-        "latest_version": latest_tag,
-        "current_version": APP_VERSION,
-        "download_url": data.get("download_url", ""),
-        "release_url": data.get("html_url", ""),
-        "release_name": data.get("name", ""),
-        "release_body": (data.get("body", "") or "")[:500],
-    }
-
-
-def _ensure_proxy():
-    proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") or ""
-    if proxy:
-        return {"http": proxy, "https": proxy}
-    return {}
+    except requests.RequestException as e:
+        return {"error": f"检查更新失败: {e}"}
 
 
 def download_update(download_url: str, progress_callback=None) -> dict:
     try:
-        proxies = _ensure_proxy()
-        resp = requests.get(download_url, stream=True, timeout=30, proxies=proxies)
+        resp = requests.get(download_url, stream=True, timeout=30, proxies=_proxy())
         if resp.status_code != 200:
             return {"error": f"下载失败: HTTP {resp.status_code}"}
         total = int(resp.headers.get("content-length", 0))
         downloaded = 0
-        ext = ".exe"
-        fd, tmp_path = tempfile.mkstemp(suffix=ext, prefix="ai-gateway-update-")
+        fd, tmp_path = tempfile.mkstemp(suffix=".exe", prefix="ai-gateway-update-")
         os.close(fd)
         chunk_size = 65536
         with open(tmp_path, "wb") as f:
@@ -163,43 +99,38 @@ def apply_update(download_path: str) -> dict:
     current_exe = _get_current_exe()
     if not current_exe:
         return {"error": "仅在打包后可执行更新"}
-    bat_path = os.path.join(tempfile.gettempdir(), "ai-gateway-update.bat")
-    # bat 全程无交互（无 echo/pause）：窗口本就要隐藏，echo 给谁看。
-    # 失败时写日志文件到临时目录，方便排查，不弹窗阻塞。
+    vbs_path = os.path.join(tempfile.gettempdir(), "ai-gateway-update.vbs")
     log_path = os.path.join(tempfile.gettempdir(), "ai-gateway-update.err")
-    bat_content = f"""@echo off
-chcp 65001 >nul
-:wait
-tasklist /fi "PID eq {os.getpid()}" 2>nul | find "{os.getpid()}" >nul
-if not errorlevel 1 (
-    timeout /t 1 /nobreak >nul
-    goto wait
-)
-copy /y "{download_path}" "{current_exe}" >nul
-if errorlevel 1 (
-    echo update failed: copy error >> "{log_path}"
-    del /q "{download_path}" >nul 2>&1
-    exit /b 1
-)
-del /q "{download_path}" >nul 2>&1
-start "" "{current_exe}"
-"""
+    pid = os.getpid()
+    src = download_path.replace("\\", "\\\\")
+    dst = current_exe.replace("\\", "\\\\")
+    log = log_path.replace("\\", "\\\\")
+    vbs_content = (
+        "Set WshShell = CreateObject(\"WScript.Shell\")\n"
+        "Set fso = CreateObject(\"Scripting.FileSystemObject\")\n"
+        "pid = \"" + str(pid) + "\"\n"
+        "Do\n"
+        "  WScript.Sleep 1000\n"
+        "  On Error Resume Next\n"
+        "  Set proc = GetObject(\"winmgmts:root\\cimv2:Win32_Process.Handle='\" & pid & \"'\")\n"
+        "  If Err.Number <> 0 Then Exit Do\n"
+        "  Set proc = Nothing\n"
+        "  On Error Goto 0\n"
+        "Loop\n"
+        "On Error Resume Next\n"
+        "fso.CopyFile \"" + src + "\", \"" + dst + "\", True\n"
+        "If Err.Number <> 0 Then\n"
+        "  Set f = fso.CreateTextFile(\"" + log + "\", True)\n"
+        "  f.WriteLine \"copy failed: \" & Err.Description\n"
+        "  f.Close\n"
+        "End If\n"
+        "fso.DeleteFile \"" + src + "\", True\n"
+        "WshShell.Run \"\"\"\" & \"" + dst + "\" & \"\"\"\"\", 0, False\n"
+    )
     try:
-        with open(bat_path, "w", encoding="utf-8") as f:
-            f.write(bat_content)
-        # 关键：用 subprocess + CREATE_NO_WINDOW 启动 bat，避免 os.startfile 弹 cmd 黑窗。
-        # DETACHED_PROCESS 让它脱离父进程，父进程（本应用）退出后 bat 继续跑完覆盖+重启。
-        # SW_HIDE 通过 STARTUPINFO 再兜一层隐藏（对部分 Windows 版本更稳）。
-        import subprocess
-        si = subprocess.STARTUPINFO()
-        si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        si.wShowWindow = 0  # SW_HIDE
-        subprocess.Popen(
-            ["cmd", "/c", bat_path],
-            startupinfo=si,
-            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
-            close_fds=True,
-        )
+        with open(vbs_path, "w", encoding="utf-8") as f:
+            f.write(vbs_content)
+        os.startfile(vbs_path)
         return {"ok": True}
     except Exception as e:
         return {"error": f"启动更新程序失败: {e}"}

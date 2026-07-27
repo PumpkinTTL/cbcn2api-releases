@@ -2179,10 +2179,7 @@ function init() {
     } catch(e) { setTimeout(tryTheme, 200); }
   };
   tryTheme();
-  setTimeout(() => { try { pywebview.api.check_update().then(raw => {
-    const r = JSON.parse(raw);
-    if (r.has_update) document.getElementById('updateBadge') && (document.getElementById('updateBadge').style.display = '');
-  }).catch(() => {}); } catch(e) {} }, 3000);
+
   if (_LICENSE_ENABLED) {
     const tryLicense = (attempt = 0) => {
       try {
