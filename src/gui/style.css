@@ -543,13 +543,14 @@ body {
   overflow-y: auto;
 }
 
-/* Stats Bar —— 两张卡等分整行宽度 */
+/* Stats Bar —— 3 卡片绝美标准列比例 (单行，零侧向挤压，零粘连) */
 .stats {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr 1fr 2.3fr;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
+
 .stat-card {
   display: flex;
   align-items: center;
@@ -557,24 +558,181 @@ body {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 13px 15px;
+  padding: 10px 14px;
   transition: var(--transition);
   min-width: 0;
   box-shadow: var(--shadow);
+  height: 54px;
+  box-sizing: border-box;
 }
-.stat-card:hover { border-color: var(--border-hover); box-shadow: var(--shadow-lg); }
+
+.stat-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-lg);
+}
+
 .stat-icon {
-  display: flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px; border-radius: 9px; flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  flex-shrink: 0;
 }
-.stat-icon svg { width: 18px; height: 18px; }
+
+.stat-icon svg {
+  width: 17px;
+  height: 17px;
+}
+
 .stat-icon.blue { background: var(--primary-light); color: var(--primary); border: 1px solid var(--primary-border); }
 .stat-icon.purple { background: rgba(168, 85, 247, 0.15); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.25); }
 .stat-icon.green { background: var(--success-light); color: var(--success); border: 1px solid rgba(56, 142, 60, 0.25); }
+.stat-icon.amber { background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.25); }
 
-.stat-text { flex: 1; min-width: 0; }
-.stat-label { font-size: 12px; font-weight: 500; color: var(--text-secondary); margin-bottom: 3px; }
-.stat-value { font-size: 16px; font-weight: 700; color: var(--text); line-height: 1.3; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.3px; }
+.stat-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.stat-combined-card {
+  padding: 9px 14px;
+}
+
+.stat-combined-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.stat-combined-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.stat-combined-col.col-requests {
+  flex: 1.1;
+}
+
+.stat-combined-col.col-tokens {
+  flex: 1.25;
+}
+
+.stat-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 2px;
+}
+
+.stat-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-right: 6px; /* 强制像素级隔离距，绝对防止文字撞贴印章边框 */
+}
+
+.stat-cache-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.stat-combined-divider {
+  width: 1px;
+  height: 26px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.stat-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.stat-value {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: -0.2px;
+  margin-top: 1px;
+}
+
+.stat-badge {
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 1px 4px;
+  border-radius: 3px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.stat-badge.success {
+  background: var(--success-light);
+  color: var(--success);
+  border: 1px solid rgba(56, 142, 60, 0.2);
+}
+
+.stat-unit {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 2px;
+}
+
+.token-split-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--surface-hover, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--border);
+  padding: 1px 4.5px;
+  border-radius: 4px;
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+
+.token-split-pill i.dot-in {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #3b82f6;
+  flex-shrink: 0;
+}
+
+.token-split-pill i.dot-out {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #f97316;
+  margin-left: 2px;
+  flex-shrink: 0;
+}
 
 /* Integrated Gateway Sub-Header Strip */
 .proxy-panel {

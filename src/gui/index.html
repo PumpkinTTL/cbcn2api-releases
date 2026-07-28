@@ -307,6 +307,31 @@
             <div class="stat-value" :title="statQuota">{{ statQuota }}</div>
           </div>
         </div>
+        <div class="stat-card stat-combined-card">
+          <div class="stat-icon green">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+          </div>
+          <div class="stat-combined-content">
+            <div class="stat-combined-col col-requests">
+              <div class="stat-label-row">
+                <span class="stat-label">总请求</span>
+                <span class="stat-badge success stat-cache-badge" v-if="usageCacheRate > 0">命中率 {{ usageCacheRate }}%</span>
+              </div>
+              <div class="stat-value">{{ (usageSummary.total_requests || 0).toLocaleString() }} <span class="stat-unit">次</span></div>
+            </div>
+            <div class="stat-combined-divider"></div>
+            <div class="stat-combined-col col-tokens">
+              <div class="stat-label-row">
+                <span class="stat-label">总 Token</span>
+                <span class="token-split-pill" :title="'输入 Token: ' + fmtK(usageSummary.prompt_tokens||0) + '\n输出 Token: ' + fmtK(usageSummary.completion_tokens||0)">
+                  <i class="dot-in"></i>{{ fmtK(usageSummary.prompt_tokens||0) }}
+                  <i class="dot-out"></i>{{ fmtK(usageSummary.completion_tokens||0) }}
+                </span>
+              </div>
+              <div class="stat-value">{{ fmtK(usageSummary.total_tokens || 0) }}</div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Filter Bar -->
@@ -905,6 +930,7 @@ const vApp = createApp({
     const accountStats = reactive({});
     const statTotal = ref('-');
     const statQuota = ref('-');
+    const usageSummary = ref({});
 
     // ── 过滤 ──
     const statusFilter = ref('all');
@@ -1049,6 +1075,13 @@ const vApp = createApp({
     function friendlyDate(val) { if(!val)return ''; const p=val.split('-'); if(p.length!==3)return val; return `${p[0]}年${parseInt(p[1],10)}月${parseInt(p[2],10)}日`; }
     function getHitRate(s) { if(!s)return '0.0'; const h=s.cache_hits||0,m=s.cache_misses||0; return (h+m)>0?(h/(h+m)*100).toFixed(1):'0.0'; }
 
+    const usageCacheRate = computed(() => {
+      const s = usageSummary.value;
+      if (!s) return '0.0';
+      const h = s.cache_hits||0, m = s.cache_misses||0;
+      return (h+m) > 0 ? (h/(h+m)*100).toFixed(1) : '0.0';
+    });
+
     function getStatusBadgeClass(a) { const s=a.status||'normal'; if(s==='banned')return 'badge-status-banned'; if(s==='disabled')return 'badge-status-disabled'; return 'badge-status-normal'; }
     function getStatusText(a) { const s=a.status||'normal'; if(s==='banned')return '封禁'; if(s==='disabled')return '已禁用'; return '正常'; }
     function getPlanBadgeClass(a) {
@@ -1132,6 +1165,7 @@ const vApp = createApp({
       window.__THEME__ = theme;
       try { localStorage.setItem('theme', theme); } catch(_) {}
       try { await pywebview.api.set_theme(theme); } catch(e) {}
+      setTimeout(() => { if (usageChart) usageChart.dispose(); usageChart = null; renderUsageChart(); }, 50);
     }
 
     // ─── Accounts ───
@@ -1164,6 +1198,7 @@ const vApp = createApp({
         } catch {}
         loadStats();
         loadQuotaThreshold();
+        loadUsageSummary();
         if (!proxyRunning.value) {
           try {
             const pr = JSON.parse(await pywebview.api.get_priority_account());
@@ -1198,6 +1233,13 @@ const vApp = createApp({
         const sd = JSON.parse(await pywebview.api.get_all_stats(currentPlatform.value));
         Object.keys(accountStats).forEach(k => delete accountStats[k]);
         (sd.stats||[]).forEach(s => { accountStats[s.account_id]=s; });
+      } catch {}
+    }
+
+    async function loadUsageSummary() {
+      try {
+        const r = JSON.parse(await pywebview.api.get_usage_chart_data(currentPlatform.value));
+        usageSummary.value = r.summary || {};
       } catch {}
     }
 
@@ -1953,6 +1995,7 @@ const vApp = createApp({
       exportLoading, checkinAllLoading, refreshAllLoading, cardLoading,
       selectMode, selectedIds, batchDeleteLoading, batchExportLoading,
       allSelected, someSelected, selectedCount,
+      usageSummary, usageCacheRate,
       oauthUrlText, oauthStatusHtml,
       importJsonText, importLoading,
       quotaAccountId, detailAccountName, detailLoading, detailError, detailData, detailStats, quotaContentHtml,
@@ -1970,6 +2013,7 @@ const vApp = createApp({
       toggleTheme,
       setFilterDate, saveQuotaThreshold,
       exportAccounts, checkinAll, refreshAll,
+      loadUsageSummary,
       doCheckin, refreshOne, deleteOne, setPriorityAccount, toggleAccountStatus,
       toggleSelectMode, toggleSelect, toggleSelectAll, clearSelection, batchExport, batchDelete,
       showQuotaDetail, refreshQuota,

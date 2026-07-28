@@ -428,6 +428,7 @@ def update_account_stats(platform: str, account_id: str, usage: dict):
         hits = _i(usage.get("prompt_cache_hit_tokens", 0))
         misses = _i(usage.get("prompt_cache_miss_tokens", 0))
         now = int(time.time())
+        today = time.strftime("%Y-%m-%d", time.localtime(now))
         conn.execute("""
             INSERT INTO account_stats (account_id, platform, prompt_tokens, completion_tokens, total_tokens, total_credit, lifetime_credit, cache_hits, cache_misses, request_count, updated_at)
             VALUES (?,?,?,?,?,?,?,?,?,1,?)
@@ -472,8 +473,26 @@ def list_account_stats(platform: str) -> list[dict]:
         conn.close()
 
 
-def reset_account_credit(platform: str, account_id: str):
-    """刷新账号时仅清零代理累积积分，保留 token/缓存统计。"""
+def get_usage_summary(platform: str) -> dict:
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) as active_accounts, "
+            "COALESCE(SUM(request_count),0) as total_requests, "
+            "COALESCE(SUM(prompt_tokens),0) as prompt_tokens, "
+            "COALESCE(SUM(completion_tokens),0) as completion_tokens, "
+            "COALESCE(SUM(total_tokens),0) as total_tokens, "
+            "COALESCE(SUM(total_credit),0) as total_credit, "
+            "COALESCE(SUM(cache_hits),0) as cache_hits, "
+            "COALESCE(SUM(cache_misses),0) as cache_misses "
+            "FROM account_stats WHERE platform=?", (platform,)
+        ).fetchone()
+        return dict(row) if row else {}
+    finally:
+        conn.close()
+
+
+def reset_account_stats(platform: str = "", account_id: str = ""):
     conn = _get_conn()
     try:
         conn.execute(

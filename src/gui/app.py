@@ -486,6 +486,11 @@ class GuiApi:
         stats = list_account_stats(platform)
         return json.dumps({"stats": stats})
 
+    def get_usage_chart_data(self, platform: str, days: int = 30) -> str:
+        from src.storage.store import get_usage_summary
+        summary = get_usage_summary(platform)
+        return json.dumps({"daily": [], "summary": summary})
+
     def reset_stats(self, platform: str = "", account_id: str = "") -> str:
         from src.storage.store import reset_account_stats
         reset_account_stats(platform, account_id)
