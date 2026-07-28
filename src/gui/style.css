@@ -546,7 +546,7 @@ body {
 /* Stats Bar —— 3 卡片绝美标准列比例 (单行，零侧向挤压，零粘连) */
 .stats {
   display: grid;
-  grid-template-columns: 1fr 1fr 2.3fr;
+  grid-template-columns: 0.7fr 1fr 2.3fr;
   gap: 12px;
   margin-bottom: 14px;
 }
@@ -1240,20 +1240,23 @@ body {
 .card { transition: var(--transition), padding-left 0.18s ease; }
 .card.select-mode { padding-left: 42px; }
 
-/* 去掉 contain: paint —— 改为紧凑的 mask 边框环，不再需要 paint containment */
+/* 激光环：完全向内贴边（inset:0 + border-box），不向外溢出 1px。
+   配合 contain 隔离布局/绘制，持续动画不再撑动同行卡片高度。
+   box-shadow 改用 inset，外发光也收入卡片内部，彻底不影响外部尺寸。 */
 .card.active {
   position: relative;
   border-color: transparent !important;
-  box-shadow: 0 4px 18px var(--primary-light, rgba(234, 115, 83, 0.25)) !important;
+  contain: layout paint;
 }
 
-/* 环绕四边的旋转高亮激光束 — 改用 @property 动画角度，避免大型溢出 */
+/* 环绕四边的旋转高亮激光束 — @property 动画角度，向内贴边不溢出 */
 .card.active::before {
   content: '';
   position: absolute;
-  inset: -1px;
-  border-radius: calc(var(--radius) + 1px);
+  inset: 0;
+  border-radius: inherit;
   padding: 1px;
+  box-sizing: border-box;
   background: conic-gradient(
     from var(--bg-angle),
     transparent 0%,
@@ -1461,19 +1464,20 @@ body {
 .badge-enterprise { background: var(--warning-light); color: var(--warning); border: 1px solid rgba(217,119,6,0.3); }
 .badge-trial { background: var(--success-light); color: var(--success); border: 1px solid rgba(56,142,60,0.3); }
 
-/* Quota Section */
-.quota-section { margin-top: 8px; margin-bottom: 12px; }
+/* Quota Section：min-height 固定占位，有无额度数据卡片高度都不变 */
+.quota-section { margin-top: 8px; margin-bottom: 12px; min-height: 28px; }
 .quota-header { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 5px; }
 .quota-header span:last-child { font-weight: 600; color: var(--text); }
 .quota-bar { height: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
 .quota-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; background: var(--primary); }
 .quota-fill.warning { background: var(--warning); }
-/* Card Stats Pills */
+/* Card Stats Pills：min-height 固定占位，有无统计数据卡片高度都不变 */
 .card-stats-row {
   display: flex;
   gap: 6px;
   align-items: center;
   flex-wrap: wrap;
+  min-height: 34px;        /* pill(约22) + 上下 margin(12) 等高预留，避免 v-if 切换撑高 */
   margin-top: 8px;
   margin-bottom: 6px;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);

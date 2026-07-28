@@ -466,23 +466,27 @@
             </div>
           </div>
 
-          <!-- Quota -->
-          <div class="quota-section" v-if="getCardQuota(a)">
-            <div class="quota-header">
-              <span>已用 {{ fmt(getCardQuota(a).adjUsed) }} / 剩余 {{ fmt(getCardQuota(a).adjRemain) }}</span>
-              <span>{{ fmt(getCardQuota(a).total) }}</span>
-            </div>
-            <div class="quota-bar">
-              <div class="quota-fill" :class="getCardQuota(a).cls" :style="{ width: getCardQuota(a).pct + '%' }"></div>
-            </div>
+          <!-- Quota：常驻占位（min-height 固定），避免有/无额度数据时卡片高度跳动 -->
+          <div class="quota-section" :class="{ empty: !getCardQuota(a) }">
+            <template v-if="getCardQuota(a)">
+              <div class="quota-header">
+                <span>已用 {{ fmt(getCardQuota(a).adjUsed) }} / 剩余 {{ fmt(getCardQuota(a).adjRemain) }}</span>
+                <span>{{ fmt(getCardQuota(a).total) }}</span>
+              </div>
+              <div class="quota-bar">
+                <div class="quota-fill" :class="getCardQuota(a).cls" :style="{ width: getCardQuota(a).pct + '%' }"></div>
+              </div>
+            </template>
           </div>
 
-          <!-- Stats Row -->
-          <div class="card-stats-row" v-if="accountStats[a.id] && accountStats[a.id].request_count">
-            <span class="stat-pill" title="总请求次数">请求 {{ accountStats[a.id].request_count }} 次</span>
-            <span class="stat-pill" title="输入/输出 Token">Token ↑{{ fmtK(accountStats[a.id].prompt_tokens) }} ↓{{ fmtK(accountStats[a.id].completion_tokens) }}</span>
-            <span class="stat-pill" title="累计消耗积分">消耗 {{ fmtL(accountStats[a.id].lifetime_credit) }}</span>
-            <span class="stat-pill" title="缓存命中率">缓存 {{ getHitRate(accountStats[a.id]) }}%</span>
+          <!-- Stats Row：常驻占位（min-height 固定），避免有/无统计数据时卡片高度跳动 -->
+          <div class="card-stats-row" :class="{ empty: !(accountStats[a.id] && accountStats[a.id].request_count) }">
+            <template v-if="accountStats[a.id] && accountStats[a.id].request_count">
+              <span class="stat-pill" title="总请求次数">请求 {{ accountStats[a.id].request_count }} 次</span>
+              <span class="stat-pill" title="输入/输出 Token">Token ↑{{ fmtK(accountStats[a.id].prompt_tokens) }} ↓{{ fmtK(accountStats[a.id].completion_tokens) }}</span>
+              <span class="stat-pill" title="累计消耗积分">消耗 {{ fmtL(accountStats[a.id].lifetime_credit) }}</span>
+              <span class="stat-pill" title="缓存命中率">缓存 {{ getHitRate(accountStats[a.id]) }}%</span>
+            </template>
           </div>
 
           <!-- Actions -->
@@ -565,27 +569,27 @@
     <div class="shop-cards" id="shopCardsView" v-show="currentView === 'shop-cards'">
       <div class="shop-cards-header">联营店铺</div>
       <div class="shop-cards-desc">
-        <h4>精选合作店铺</h4>
-        <p>提供稳定优质的大模型 Token / 账号支持，由<span class="desc-highlight">官方认证</span>合作伙伴运营。<br>支持<span class="desc-highlight">按量计费</span>，购买1积分不到1分钱，每次对话消耗1积分。<span class="desc-highlight">低价保证</span>，比官方更便宜的流量套餐。</p>
+        <h4>关于流量卡</h4>
+        <p>市面上大多数便宜流量卡其实是<span class="desc-highlight">物联卡</span>——虚标流量、限速断网、充进去的钱说没就没了。<br>本店上架的华玥通讯和北极工坊，全是<span class="desc-highlight">正规运营商手机卡</span>，11 位手机号，官方 app 可查套餐，<span class="desc-highlight">不限速不虚标</span>，月租多少就是多少。觉得合适就办一张，不合适看看也无妨。</p>
       </div>
       <div class="shop-cards-grid">
-        <div class="shop-card" @click="openShop('https://buy.bitlesu.com/', '卡旺流量')">
+        <div class="shop-card" @click="openShop('https://buy.bitlesu.com/', '奥瑞斯·星域')">
           <img src="icons/kawang.png" class="shop-card-icon" alt="">
-          <span class="shop-card-name">卡旺流量</span>
-          <span class="shop-card-desc">WorkBuddy 官方合作流量店铺</span>
-          <span class="shop-card-btn">前往购买</span>
+          <span class="shop-card-name">奥瑞斯·星域</span>
+          <span class="shop-card-desc">WorkBuddy 等卡密自助秒发，寄卖即用</span>
+          <span class="shop-card-btn">进入店铺</span>
         </div>
-        <div class="shop-card" @click="openShop('https://sztc.rimian666.cn/ProductEn/Index/498fe9ed5fc34753', '六两流量')">
+        <div class="shop-card" @click="openShop('https://sztc.rimian666.cn/ProductEn/Index/498fe9ed5fc34753', '华玥通讯')">
           <img src="icons/liulaing1.png" class="shop-card-icon" alt="">
-          <span class="shop-card-name">六两流量</span>
-          <span class="shop-card-desc">专注于AI模型流量销售，稳定可靠</span>
-          <span class="shop-card-btn">前往购买</span>
+          <span class="shop-card-name">华玥通讯</span>
+          <span class="shop-card-desc">正规运营商大流量套餐，官方可查，不限速不虚标</span>
+          <span class="shop-card-btn">进入店铺</span>
         </div>
-        <div class="shop-card" @click="openShop('https://h5.dandanhou.net/index?k=QlA1TGwvZVVFelk9', '蛋蛋猴流量')">
+        <div class="shop-card" @click="openShop('https://h5.dandanhou.net/index?k=QlA1TGwvZVVFelk9', '北极工坊')">
           <img src="icons/liuliang2.png" class="shop-card-icon" alt="">
-          <span class="shop-card-name">蛋蛋猴流量</span>
-          <span class="shop-card-desc">特惠活动进行中，11月大促活动</span>
-          <span class="shop-card-btn">前往购买</span>
+          <span class="shop-card-name">北极工坊</span>
+          <span class="shop-card-desc">多运营商套餐严选，11 位手机号，月租透明无套路</span>
+          <span class="shop-card-btn">进入店铺</span>
         </div>
       </div>
     </div>
