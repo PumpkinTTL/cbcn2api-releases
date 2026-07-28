@@ -9,6 +9,14 @@
    Vue 接管后自动移除 v-cloak 属性，元素恢复显示。 */
 [v-cloak] { display: none !important; }
 
+/* @property：让 conic-gradient 的角度可被 CSS 动画驱动。
+   WebView2 (Chromium 85+) 完美支持。 */
+@property --bg-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
 :root {
   /* Default Dark Espresso Mode */
   --bg: #191816;
@@ -143,28 +151,55 @@ body {
 .titlebar-drag {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding-left: 14px;
+  padding-left: 0;
   flex: 1;
   height: 100%;
 }
-.titlebar-icon {
-  width: 20px;
-  height: 20px;
-  border-radius: 5px;
-  background: var(--primary);
+
+/* 顶角绝对对齐侧栏品牌通栏 (Top-Left Edge Attached Sidebar Header Block) */
+.titlebar-brand {
+  width: 230px; /* 100% 对齐下方 230px Sidebar 的宽 */
+  height: 36px; /* 填满 36px Titlebar 高度 */
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: #fff;
+  padding: 0 16px;
+  gap: 9px;
+  border-right: 1px solid var(--border); /* 与侧边栏右边框全贯通对齐 */
+  box-sizing: border-box;
+  user-select: none;
+  background: var(--surface);
   flex-shrink: 0;
-  box-shadow: 0 1px 4px rgba(218, 119, 86, 0.3);
 }
+
+.titlebar-icon-inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 0;
+  transform: translateY(-0.5px);
+}
+
 .titlebar-title {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--text);
   letter-spacing: 0.2px;
+  line-height: 1;
+  display: inline-block;
+}
+
+.titlebar-pro-badge {
+  font-size: 8.5px;
+  font-weight: 700;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--primary-light, rgba(234, 115, 83, 0.12));
+  color: var(--primary, #D9704E);
+  border: 1px solid var(--primary-border, rgba(234, 115, 83, 0.25));
+  line-height: 1;
+  letter-spacing: 0.5px;
+  margin-left: auto;
 }
 .titlebar-controls {
   display: flex;
@@ -234,40 +269,14 @@ body {
   margin: 0 auto 10px;
 }
 
-/* Sidebar */
 .sidebar {
   width: 230px;
   flex-shrink: 0;
   background: var(--surface);
   border-right: 1px solid var(--border);
-  padding: 18px 14px;
+  padding: 16px 14px;
   display: flex;
   flex-direction: column;
-}
-/* 图标已移除 —— 标题栏左上角已有同一个图标，重复出现反而分散注意力 */
-.sidebar-logo {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 6px 14px 6px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 12px;
-}
-.sidebar-logo-title {
-  font-size: 14.5px;
-  font-weight: 700;
-  color: var(--text);
-  letter-spacing: -0.2px;
-}
-.sidebar-logo-badge {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 6px;
-  background: var(--primary-light);
-  color: var(--primary);
-  margin-left: auto;
-  border: 1px solid var(--primary-border);
 }
 .sidebar-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
 .sidebar-nav-section {
@@ -1073,43 +1082,35 @@ body {
 .card { transition: var(--transition), padding-left 0.18s ease; }
 .card.select-mode { padding-left: 42px; }
 
+/* 去掉 contain: paint —— 改为紧凑的 mask 边框环，不再需要 paint containment */
 .card.active {
   position: relative;
   border-color: transparent !important;
   box-shadow: 0 4px 18px var(--primary-light, rgba(234, 115, 83, 0.25)) !important;
-  contain: paint;
 }
 
-/* 环绕四边的旋转高亮激光束 */
+/* 环绕四边的旋转高亮激光束 — 改用 @property 动画角度，避免大型溢出 */
 .card.active::before {
   content: '';
   position: absolute;
-  top: -120px;
-  left: -120px;
-  right: -120px;
-  bottom: -120px;
-  margin: auto;
+  inset: -1px;
+  border-radius: calc(var(--radius) + 1px);
+  padding: 1px;
   background: conic-gradient(
-    from 0deg,
+    from var(--bg-angle),
     transparent 0%,
     transparent 62%,
     var(--primary) 78%,
     #ffffff 90%,
     var(--primary-hover, #ea7353) 100%
   );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
   animation: fx-orbit-spin 2.4s linear infinite;
   z-index: 0;
-  pointer-events: none;
-}
-
-/* 1px 内置盖板 */
-.card.active::after {
-  content: '';
-  position: absolute;
-  inset: 1px;
-  background: var(--surface);
-  border-radius: calc(var(--radius) - 1px);
-  z-index: 1;
   pointer-events: none;
 }
 
@@ -1119,8 +1120,7 @@ body {
 }
 
 @keyframes fx-orbit-spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  to { --bg-angle: 360deg; }
 }
 .current-badge {
   display: inline-flex;
