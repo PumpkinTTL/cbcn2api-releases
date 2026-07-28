@@ -31,6 +31,26 @@ _HTML_URL = pathlib.Path(_GUI_HTML).as_uri()
 
 _ICO_PATH = _resource("gateway.ico")
 
+
+def _write_theme_bootstrap():
+    """启动时根据 theme.txt 生成 src/gui/theme.js。
+
+    解决「首次进入/刷新时暗色一闪而过」：旧流程要等 Vue mount + IPC 往返才设
+    data-theme，期间用 :root 默认暗色渲染一帧。改为 theme.js 在 <head> 同步加载，
+    CSS 应用前就把 data-theme 设对。
+
+    生成逻辑在 store.regenerate_theme_js，save_theme 也会调它 ——
+    用户切换主题时立即更新 theme.js，刷新页面就是新值（不会读到旧值把主题冲掉）。
+    """
+    try:
+        from src.storage import store
+        store.regenerate_theme_js(store.load_theme() or "light")
+    except Exception as e:
+        print(f"[theme] bootstrap 写入失败: {e!r}")
+
+
+_write_theme_bootstrap()
+
 def _apply_window_chrome():
     """窗口出现后补上图标和圆角。
 

@@ -4,6 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI大模型网关</title>
+<!-- theme.js 必须在 style.css 之前同步加载并设 data-theme：
+     否则 :root 默认暗色会先渲染一帧，造成「首次进入/刷新暗色一闪而过」。
+     文件由 main.py 启动时根据 store.load_theme() 生成。 -->
+<script src="theme.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
@@ -44,8 +48,33 @@
   </div>
 </div>
 
+<!-- 全局 loading 层：在 Vue app 外，HTML 解析时立即显示。
+     Vue mount 完成后由 onMounted 隐藏。独立的 div，后续可塞开屏特效。
+     v-cloak 保证 #app 在 Vue 接管前不显示（避免 {{ }} 闪现）。 -->
+<div id="app-loading" class="app-loading">
+  <div class="app-loading-box">
+    <div class="app-loading-orbit-stage">
+      <div class="app-loading-ripple-wave"></div>
+      <div class="app-loading-ripple-wave"></div>
+      <div class="app-loading-ring-outer"></div>
+      <div class="app-loading-ring-inner"></div>
+      <div class="app-loading-core-icon">
+        <svg class="loading-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+        </svg>
+        <svg class="success-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 13l4 4L19 7"/>
+        </svg>
+      </div>
+    </div>
+    <div class="app-loading-desc-wrapper">
+      <div class="app-loading-desc" id="appLoadingDesc">智能 API 网关初始化中...</div>
+    </div>
+  </div>
+</div>
+
 <!-- ── Vue 3 App Root ── -->
-<div id="app" style="display:contents">
+<div id="app" v-cloak style="display:contents">
 
   <!-- Titlebar -->
   <div class="titlebar" id="appTitlebar">
@@ -781,6 +810,35 @@ function setThemeUI(theme) {
   document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'dark' : 'light');
 }
 
+// 全局 loading 隐藏：首屏数据加载完后调用。先过渡到绿光成功状态（文字滑块过场），再圆环切幕消融。
+let _appLoadingHidden = false;
+function hideAppLoading() {
+  if (_appLoadingHidden) return;
+  _appLoadingHidden = true;
+  const el = document.getElementById('app-loading');
+  if (!el) return;
+  
+  // 1. 描述文字平滑向上滑出并切换为就绪
+  const desc = document.getElementById('appLoadingDesc');
+  if (desc) {
+    desc.classList.add('text-out');
+    setTimeout(() => {
+      desc.textContent = '网关服务就绪';
+      desc.classList.remove('text-out');
+      desc.classList.add('text-in');
+    }, 140);
+  }
+
+  // 2. 过渡到绿光成功状态
+  el.classList.add('is-success');
+
+  // 3. 停顿 480ms 展现绿光勾圈与就绪文字，然后圆环切幕揭幕
+  setTimeout(() => {
+    el.classList.add('hide');
+    setTimeout(() => el.remove(), 600);
+  }, 480);
+}
+
 // License (outside Vue – needs to show before Vue mounts)
 let appStarted = false;
 const _LICENSE_ENABLED = true;
@@ -1067,6 +1125,13 @@ const vApp = createApp({
           { duration:420, easing:'ease-in-out', pseudoElement:'::view-transition-new(root)' }
         )).catch(()=>{});
       } else { apply(); }
+      // 同步 window.__THEME__ + localStorage：
+      // - localStorage 是刷新页面时 theme.js 读取的来源（刷新不重启 Python，main.py
+      //   不会重写 theme.js，但 localStorage 浏览器持久存储，刷新后仍在）
+      // - window.__THEME__ 供同会话内逻辑读
+      // - set_theme 存库，下次应用启动 main.py 据此生成 theme.js
+      window.__THEME__ = theme;
+      try { localStorage.setItem('theme', theme); } catch(_) {}
       try { await pywebview.api.set_theme(theme); } catch(e) {}
     }
 
@@ -1829,6 +1894,10 @@ const vApp = createApp({
         try {
           loadAccounts().then(async()=>{
             try { await refreshProxyStatus(); } catch {}
+            // 首屏数据（账号列表 + 网关状态）加载完毕，隐藏全局 loading。
+            // 放这里而不是 onMounted —— onMounted 时 Vue 虽接管但数据还没回来，
+            // 用户会看到空界面。这里等数据真正就绪再揭幕。
+            hideAppLoading();
           }).catch(()=>{ if(attempt<10) setTimeout(()=>tryLoad(attempt+1),500); });
         } catch(e){ if(attempt<10) setTimeout(()=>tryLoad(attempt+1),500); }
       };
@@ -1844,12 +1913,18 @@ const vApp = createApp({
     }
 
     onMounted(() => {
-      // Init theme
-      const tryTheme=()=>{
-        try{pywebview.api.get_theme().then(raw=>setThemeUI(raw==='dark'?'dark':'light')).catch(()=>{});}
-        catch(e){setTimeout(tryTheme,200);}
-      };
-      tryTheme();
+      // Init theme：theme.js 已在 <head> 阶段设好 data-theme 并写到 window.__THEME__，
+      // 这里直接读，不走 IPC（避免往返期间主题闪烁）。
+      // 保留 IPC 兜底：万一 theme.js 没加载到（打包路径异常），再从后端拉一次。
+      if (window.__THEME__) {
+        setThemeUI(window.__THEME__ === 'dark' ? 'dark' : 'light');
+      } else {
+        const tryTheme=()=>{
+          try{pywebview.api.get_theme().then(raw=>setThemeUI(raw==='dark'?'dark':'light')).catch(()=>{});}
+          catch(e){setTimeout(tryTheme,200);}
+        };
+        tryTheme();
+      }
 
       // License check → startApp
       if (_LICENSE_ENABLED) {

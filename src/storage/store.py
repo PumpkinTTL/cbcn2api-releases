@@ -254,6 +254,12 @@ THEME_FILE = DB_DIR / "theme.txt"
 def save_theme(theme: str):
     DB_DIR.mkdir(parents=True, exist_ok=True)
     THEME_FILE.write_text(theme, encoding="utf-8")
+    # 立即重新生成 theme.js，保证刷新页面时读到的是最新主题。
+    # 旧 bug：只在 main.py 启动时生成，用户切换主题后不重启就刷新，theme.js 还是旧值。
+    try:
+        regenerate_theme_js(theme)
+    except Exception:
+        pass
 
 
 def load_theme() -> str:
@@ -261,6 +267,45 @@ def load_theme() -> str:
         return THEME_FILE.read_text(encoding="utf-8").strip()
     except (FileNotFoundError, OSError):
         return "light"
+
+
+def regenerate_theme_js(theme: str):
+    """根据主题生成 src/gui/theme.js，让前端在 <head> 阶段同步设置 data-theme。
+
+    消除「首次进入/刷新时默认暗色一闪而过」：旧流程要等 Vue mount + IPC 往返
+    才设 data-theme，期间用 :root 默认暗色渲染了一帧。改为 theme.js 在 CSS
+    应用前就把 data-theme 设对。
+
+    在两处调用：main.py 启动时、save_theme 切换主题时。
+    """
+    import sys
+    if theme not in ("light", "dark"):
+        theme = "light"
+    # 找 gui 目录：dev 模式在源码树，打包模式在 sys._MEIPASS（只读，写入会失败，
+    # 由调用方 try/except 兜底，回退到 onMounted 的 IPC 读主题）
+    if getattr(sys, "frozen", False):
+        base = sys._MEIPASS
+    else:
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base = os.path.dirname(base)  # src/storage → src → 项目根
+    theme_js_path = os.path.join(base, "src", "gui", "theme.js")
+    t_repr = repr(theme)
+    # localStorage 优先（刷新时浏览器持久存储，不重启 Python 时 theme.js 不会重写，
+    # 靠 localStorage 保留用户上次选择）；Python theme.txt 兜底（首次进入无 localStorage）。
+    # window.__THEME__ 必须取最终解析值，否则 Vue onMounted 读到硬编码旧值会把 data-theme 覆盖错。
+    content = (
+        f'window.__THEME__=(function(){{'
+        f'var d={t_repr};'
+        f'try{{'
+        f'var s=localStorage.getItem("theme");'
+        f'if(s==="light"||s==="dark")d=s;'
+        f'document.documentElement.setAttribute("data-theme",d);'
+        f'}}catch(e){{document.documentElement.setAttribute("data-theme",d);}}'
+        f'return d;'
+        f'}})();'
+    )
+    with open(theme_js_path, "w", encoding="utf-8") as f:
+        f.write(content)
 
 
 def get_stats(platform: str) -> dict:

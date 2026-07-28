@@ -5,6 +5,10 @@
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* v-cloak：Vue mount 前隐藏 #app，避免 {{ }} 模板未编译时裸露闪现。
+   Vue 接管后自动移除 v-cloak 属性，元素恢复显示。 */
+[v-cloak] { display: none !important; }
+
 :root {
   /* Default Dark Espresso Mode */
   --bg: #191816;
@@ -208,13 +212,15 @@ body {
 
 .spinner-sm {
   display: inline-block;
-  width: 14px;
-  height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.35);
+  width: 13px;
+  height: 13px;
+  border: 1.8px solid rgba(255, 255, 255, 0.35);
   border-top-color: currentColor;
   border-radius: 50%;
   animation: spin 0.7s linear infinite !important;
-  vertical-align: middle;
+  vertical-align: -1px;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .spinner {
@@ -1070,30 +1076,33 @@ body {
 .card.active {
   position: relative;
   border-color: transparent !important;
-  box-shadow: 0 4px 18px rgba(218, 119, 86, 0.18);
-  overflow: hidden;
+  box-shadow: 0 4px 18px var(--primary-light, rgba(234, 115, 83, 0.25)) !important;
+  contain: paint;
 }
 
+/* 环绕四边的旋转高亮激光束 */
 .card.active::before {
   content: '';
   position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
+  top: -120px;
+  left: -120px;
+  right: -120px;
+  bottom: -120px;
+  margin: auto;
   background: conic-gradient(
     from 0deg,
-    var(--primary) 0%,
-    rgba(255, 255, 255, 0.95) 25%,
-    var(--primary-hover) 50%,
-    var(--primary-light) 75%,
-    var(--primary) 100%
+    transparent 0%,
+    transparent 62%,
+    var(--primary) 78%,
+    #ffffff 90%,
+    var(--primary-hover, #ea7353) 100%
   );
-  animation: rotate-4sides-spin 5.5s linear infinite;
+  animation: fx-orbit-spin 2.4s linear infinite;
   z-index: 0;
   pointer-events: none;
 }
 
+/* 1px 内置盖板 */
 .card.active::after {
   content: '';
   position: absolute;
@@ -1109,18 +1118,28 @@ body {
   z-index: 2;
 }
 
-@keyframes rotate-4sides-spin {
+@keyframes fx-orbit-spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
 }
 .current-badge {
-  display: inline-flex; align-items: center; gap: 3px;
-  font-size: 10px; font-weight: 600; padding: 2px 7px;
-  border-radius: 4px; background: var(--primary); color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  height: 18px;
+  line-height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--primary);
+  color: #fff;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
-.badge-status-normal { font-size: 10px; padding: 2px 7px; border-radius: 4px; background: var(--success-light); color: var(--success); border: 1px solid rgba(56,142,60,0.25); }
-.badge-status-banned { font-size: 10px; padding: 2px 7px; border-radius: 4px; background: var(--danger-light); color: var(--danger); border: 1px solid rgba(217,83,79,0.25); }
-.badge-status-disabled { font-size: 10px; padding: 2px 7px; border-radius: 4px; background: var(--warning-light); color: var(--warning); border: 1px solid rgba(217,119,6,0.25); }
+.badge-status-normal { font-size: 10px; height: 18px; line-height: 16px; padding: 0 6px; border-radius: 4px; background: var(--success-light); color: var(--success); border: 1px solid rgba(56,142,60,0.25); box-sizing: border-box; flex-shrink: 0; }
+.badge-status-banned { font-size: 10px; height: 18px; line-height: 16px; padding: 0 6px; border-radius: 4px; background: var(--danger-light); color: var(--danger); border: 1px solid rgba(217,83,79,0.25); box-sizing: border-box; flex-shrink: 0; }
+.badge-status-disabled { font-size: 10px; height: 18px; line-height: 16px; padding: 0 6px; border-radius: 4px; background: var(--warning-light); color: var(--warning); border: 1px solid rgba(217,119,6,0.25); box-sizing: border-box; flex-shrink: 0; }
 .status-filter-group { display: flex; gap: 4px; margin-left: auto; }
 
 /* 自定义贴合主题的状态下拉框 (Custom Status Dropdown) */
@@ -1269,7 +1288,7 @@ body {
 .card-info { flex: 1; min-width: 0; }
 .card-name { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.3; }
 .card-email { font-size: 12px; color: var(--text-secondary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card-meta { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.card-meta { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; min-height: 18px; line-height: 18px; }
 .badge {
   display: inline-flex;
   align-items: center;
@@ -1299,6 +1318,7 @@ body {
   flex-wrap: wrap;
   margin-top: 8px;
   margin-bottom: 6px;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stat-pill {
   display: inline-flex;
@@ -1317,7 +1337,7 @@ body {
 /* Footer & Checkin */
 .card-footer {
   display: flex; align-items: center; justify-content: space-between;
-  margin-top: 12px; gap: 8px; flex-wrap: wrap;
+  margin-top: auto !important; padding-top: 12px; gap: 8px; flex-wrap: wrap;
 }
 .checkin-status { display: flex; align-items: center; gap: 8px; }
 .checkin-badge {
