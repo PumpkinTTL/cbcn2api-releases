@@ -1764,6 +1764,14 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
 }
 .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .confirm-actions .btn { padding: 7px 15px; }
+.confirm-check {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 12px; line-height: 1.5; color: var(--text-secondary);
+  padding: 10px 12px; margin-bottom: 16px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); cursor: pointer; user-select: none;
+}
+.confirm-check input { margin-top: 2px; accent-color: var(--primary); }
 
 /* License */
 .license-overlay { position: fixed; inset: 0; z-index: 5000; display: none; align-items: center; justify-content: center; background: var(--bg); }

@@ -378,6 +378,9 @@
             <span v-if="detecting" class="detect-count">{{ detectProgress.done }}/{{ detectProgress.total }}</span>
           </button>
         </div>
+        <button class="btn btn-sm btn-ghost" @click="openRecycle" title="回收站：查看/恢复软删除的账号">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M12 11v6M9.5 14.5L12 17l2.5-2.5"/></svg> 回收站
+        </button>
         <!-- 贴合主题的状态下拉组件 (保持 Dropdown 下拉交互形式) —— margin-left:auto 靠最右 -->
         <div class="status-dropdown" :class="{ open: statusDropdownOpen }" @click.stop="statusDropdownOpen = !statusDropdownOpen">
           <div class="status-dropdown-trigger">
@@ -705,6 +708,59 @@
     </div>
   </div>
 
+  <!-- Recycle Modal -->
+  <div class="modal-overlay" id="recycleModal" :class="{ show: activeModal === 'recycle' }">
+    <div class="modal" style="max-width:540px">
+      <div class="modal-header">
+        <h2>回收站</h2>
+        <p>软删除账号仍保留在数据库，可随时恢复或彻底删除</p>
+      </div>
+      <div class="modal-body" style="max-height:420px;overflow:auto">
+        <div v-if="deletedAccounts.length > 0" style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap">
+          <button v-for="f in deletedFilters" :key="f.value" class="btn btn-sm" :class="deletedFilter === f.value ? 'btn-primary' : 'btn-ghost'"
+            @click="deletedFilter = f.value" :style="f.value !== 'all' && deletedFilter === f.value ? '' : ''">
+            {{ f.label }}<span v-if="deletedFilterCounts[f.value] > 0" style="opacity:.75;margin-left:3px">{{ deletedFilterCounts[f.value] }}</span>
+          </button>
+        </div>
+        <div v-if="filteredDeletedAccounts.length === 0" style="padding:24px 0;text-align:center;color:var(--text-muted);font-size:13px">
+          {{ deletedAccounts.length === 0 ? '回收站是空的' : '没有符合条件的账号' }}
+        </div>
+        <div v-for="d in filteredDeletedAccounts" :key="d.id"
+          style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;background:var(--bg)">
+          <input type="checkbox" :checked="!!deletedSelected[d.id]" @click.stop @change="toggleDeletedSelect(d.id)"
+            style="flex-shrink:0;accent-color:var(--primary)">
+          <span class="badge-status" :class="getStatusBadgeClass(d)" style="flex-shrink:0">{{ getStatusText(d) }}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+              {{ d.nickname || d.email || d.id }}
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);line-height:1.6">
+              <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block">{{ d.email || '无邮箱' }} · {{ d.id }}</span>
+              <span v-if="d.deleted_at" style="color:var(--warning)">删除于 {{ new Date(d.deleted_at * 1000).toLocaleString('zh-CN', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) }}</span>
+            </div>
+          </div>
+          <button class="btn btn-sm btn-primary" :disabled="recycleBusy" @click="restoreDeleted(d.id)">恢复</button>
+          <button class="btn btn-sm btn-danger" :disabled="recycleBusy" @click="destroyDeleted(d.id)">彻底删除</button>
+        </div>
+      </div>
+      <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;gap:6px;align-items:center">
+          <label style="font-size:12px;color:var(--text-secondary);cursor:pointer;user-select:none">
+            <input type="checkbox" :checked="allDeletedSelected" @change="selectAllDeleted" style="accent-color:var(--primary);margin-right:4px">全选{{ deletedFilter !== 'all' ? '当前筛选' : '' }}
+          </label>
+          <span v-if="deletedSelectedCount > 0" style="font-size:11px;color:var(--text-muted)">已选 {{ deletedSelectedCount }}</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost" @click="activeModal = null">关闭</button>
+          <button class="btn btn-sm btn-ghost" :disabled="deletedSelectedCount === 0 || recycleBusy" @click="restoreSelected">恢复选中</button>
+          <button class="btn btn-primary" :disabled="filteredDeletedAccounts.length === 0 || recycleBusy" @click="restoreAllDeleted">恢复{{ deletedFilter !== 'all' ? '筛选' : '全部' }}</button>
+          <button class="btn btn-sm btn-danger" :disabled="deletedSelectedCount === 0 || recycleBusy" @click="destroySelected">彻底删除选中</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
   <!-- Quota Detail Modal -->
   <div class="modal-overlay" id="quotaModal" :class="{ show: activeModal === 'quotaDetail' }">
     <div class="modal">
@@ -851,15 +907,19 @@ function showToast(msg, type='info', detail='', persistent=false) {
 function hideToast() { clearTimeout(_toastTimer); document.getElementById('toast')?.classList.remove('show'); }
 
 // Confirm Dialog
+// opts.checkbox = { label, checked } 时弹窗带勾选框，resolve 返回 { ok, checked }；
+// 无 checkbox 时返回布尔（旧调用方兼容）。
 function showConfirm(msg, title, opts) {
   opts = opts || {};
   const okText = opts.okText || '确定', cancelText = opts.cancelText || '取消', danger = opts.danger !== false;
+  const cb = opts.checkbox || null;
   return new Promise(resolve => {
     const ov = document.createElement('div');
     ov.className = 'confirm-overlay';
     ov.innerHTML =
       '<div class="confirm-box" role="dialog" aria-modal="true">' +
         '<div class="confirm-title"></div><div class="confirm-msg"></div>' +
+        (cb ? '<label class="confirm-check"><input type="checkbox"><span></span></label>' : '') +
         '<div class="confirm-actions">' +
           '<button class="btn btn-ghost btn-sm confirm-no"></button>' +
           '<button class="btn btn-sm confirm-yes"></button>' +
@@ -869,6 +929,11 @@ function showConfirm(msg, title, opts) {
     ov.querySelector('.confirm-msg').textContent = msg;
     no.textContent = cancelText; yes.textContent = okText;
     yes.classList.add(danger ? 'btn-danger' : 'btn-primary');
+    if (cb) {
+      const input = ov.querySelector('.confirm-check input');
+      input.checked = cb.checked !== false;
+      ov.querySelector('.confirm-check span').textContent = cb.label;
+    }
     document.body.appendChild(ov);
     requestAnimationFrame(() => ov.classList.add('show'));
     let settled = false;
@@ -876,7 +941,9 @@ function showConfirm(msg, title, opts) {
       if (settled) return; settled = true;
       document.removeEventListener('keydown', onKey);
       ov.classList.remove('show');
-      setTimeout(() => ov.remove(), 160); resolve(v);
+      setTimeout(() => ov.remove(), 160);
+      if (cb) resolve({ ok: v, checked: ov.querySelector('.confirm-check input').checked });
+      else resolve(v);
     }
     function onKey(e) { if (e.key==='Escape') done(false); else if (e.key==='Enter') done(true); }
     yes.onclick = () => done(true); no.onclick = () => done(false);
@@ -1021,6 +1088,31 @@ const vApp = createApp({
     const enableThreshold = ref(0);
     const detecting = ref(false);
     const detectProgress = reactive({ done:0, total:0, enabled:0, skipped:0, banned:0, checked:0, failed:0, summary:'' });
+    const deletedAccounts = ref([]);
+    const recycleBusy = ref(false);
+    const deletedSelected = ref({});
+    const deletedFilter = ref('all');
+    const deletedFilters = [
+      { value: 'all', label: '全部' },
+      { value: 'normal', label: '正常' },
+      { value: 'banned', label: '封禁' },
+      { value: 'disabled', label: '禁用' },
+    ];
+    const filteredDeletedAccounts = computed(() =>
+      deletedFilter.value === 'all'
+        ? deletedAccounts.value
+        : deletedAccounts.value.filter(a => a.status === deletedFilter.value)
+    );
+    const deletedFilterCounts = computed(() => {
+      const c = { all: deletedAccounts.value.length, normal: 0, banned: 0, disabled: 0 };
+      deletedAccounts.value.forEach(a => { if (c[a.status] !== undefined) c[a.status]++; });
+      return c;
+    });
+    const deletedSelectedCount = computed(() => Object.keys(deletedSelected.value).length);
+    const allDeletedSelected = computed(() =>
+      filteredDeletedAccounts.value.length > 0 &&
+      filteredDeletedAccounts.value.every(a => !!deletedSelected.value[a.id])
+    );
     let detectTimer = null;
     const proxyToggling = ref(false);
     let proxyInfoTimer = null;
@@ -1462,15 +1554,19 @@ const vApp = createApp({
     }
 
     async function deleteOne(id) {
-      if (!await showConfirm('确定删除该账号吗？', '删除确认')) return;
+      const c = await showConfirm('确定删除该账号吗？', '删除确认', {
+        checkbox: { label: '软删除：数据存入回收站，可随时恢复（取消勾选则永久删除）', checked: true }
+      });
+      if (!c.ok) return;
+      if (!c.checked && !await showConfirm('硬删除将永久清除该账号及所有数据，确认删除吗？', '不可逆操作', { okText: '删除', danger: true })) return;
       cardLoading[id+'_delete'] = true;
       try {
-        const r = JSON.parse(await pywebview.api.delete_account(currentPlatform.value, id));
+        const r = JSON.parse(await pywebview.api.delete_account(currentPlatform.value, id, c.checked ? '1' : '0'));
         if (r.success === false) {
           showToast(r.error || '删除失败', 'error');
           await loadAccountsLight();
         } else {
-          showToast('删除成功', 'success');
+          showToast(c.checked ? '已软删除（回收站可恢复）' : '已彻底删除', 'success');
           await loadAccounts();
         }
       } catch(e) { showToast('删除失败: '+e, 'error'); }
@@ -1540,19 +1636,121 @@ const vApp = createApp({
       finally { batchDetectLoading.value = false; }
     }
 
+    // ─── 回收站（软删除恢复/多选/彻底删除）───
+    async function openRecycle() {
+      activeModal.value = 'recycle';
+      deletedSelected.value = {};
+      try {
+        deletedAccounts.value = JSON.parse(await pywebview.api.list_deleted_accounts(currentPlatform.value));
+      } catch(e) { showToast('加载回收站失败: '+e, 'error'); }
+    }
+
+    function toggleDeletedSelect(id) {
+      if (deletedSelected.value[id]) { const n = {...deletedSelected.value}; delete n[id]; deletedSelected.value = n; }
+      else { deletedSelected.value[id] = true; }
+    }
+
+    function selectAllDeleted() {
+      if (allDeletedSelected.value) deletedSelected.value = {};
+      else { const m = {}; filteredDeletedAccounts.value.forEach(a => m[a.id] = true); deletedSelected.value = m; }
+    }
+
+    async function restoreDeleted(id) {
+      if (recycleBusy.value) return;
+      recycleBusy.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.restore_accounts(currentPlatform.value, JSON.stringify([id])));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        showToast('已恢复账号', 'success');
+        deletedAccounts.value = deletedAccounts.value.filter(a => a.id !== id);
+        delete deletedSelected.value[id];
+        await loadAccounts();
+        await refreshProxyStatus();
+      } catch(e) { showToast('恢复失败: '+e, 'error'); }
+      finally { recycleBusy.value = false; }
+    }
+
+    async function restoreSelected() {
+      const ids = Object.keys(deletedSelected.value);
+      if (!ids.length || recycleBusy.value) return;
+      recycleBusy.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.restore_accounts(currentPlatform.value, JSON.stringify(ids)));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        const failedN = r.failed || 0, restoredN = r.restored || 0;
+        deletedAccounts.value = JSON.parse(await pywebview.api.list_deleted_accounts(currentPlatform.value));
+        deletedSelected.value = {};
+        showToast(`已恢复 ${restoredN} 个${failedN ? '，失败 '+failedN+' 个' : ''}`, restoredN>0?'success':'warning');
+        await loadAccounts();
+        await refreshProxyStatus();
+      } catch(e) { showToast('恢复失败: '+e, 'error'); }
+      finally { recycleBusy.value = false; }
+    }
+
+    async function restoreAllDeleted() {
+      const ids = filteredDeletedAccounts.value.map(a => a.id);
+      if (!ids.length || recycleBusy.value) return;
+      recycleBusy.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.restore_accounts(currentPlatform.value, JSON.stringify(ids)));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        const failedN = r.failed || 0, restoredN = r.restored || 0;
+        deletedAccounts.value = JSON.parse(await pywebview.api.list_deleted_accounts(currentPlatform.value));
+        deletedSelected.value = {};
+        showToast(`已恢复 ${restoredN} 个${failedN ? '，失败 '+failedN+' 个' : ''}`, restoredN>0?'success':'warning');
+        await loadAccounts();
+        await refreshProxyStatus();
+      } catch(e) { showToast('恢复失败: '+e, 'error'); }
+      finally { recycleBusy.value = false; }
+    }
+
+    async function destroyDeleted(id) {
+      if (recycleBusy.value) return;
+      if (!await showConfirm('确定彻底删除该账号吗？所有数据将永久清除，不可恢复', '彻底删除确认', { okText: '删除', danger: true })) return;
+      recycleBusy.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.destroy_accounts(currentPlatform.value, JSON.stringify([id])));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        deletedAccounts.value = deletedAccounts.value.filter(a => a.id !== id);
+        delete deletedSelected.value[id];
+        showToast('已彻底删除', 'success');
+      } catch(e) { showToast('彻底删除失败: '+e, 'error'); }
+      finally { recycleBusy.value = false; }
+    }
+
+    async function destroySelected() {
+      const ids = Object.keys(deletedSelected.value);
+      if (!ids.length || recycleBusy.value) return;
+      if (!await showConfirm(`确定彻底删除选中的 ${ids.length} 个账号吗？所有数据将永久清除`, '彻底删除确认', { okText: '删除', danger: true })) return;
+      recycleBusy.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.destroy_accounts(currentPlatform.value, JSON.stringify(ids)));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        deletedAccounts.value = JSON.parse(await pywebview.api.list_deleted_accounts(currentPlatform.value));
+        deletedSelected.value = {};
+        showToast(`已彻底删除 ${r.destroyed || ids.length} 个`, 'success');
+      } catch(e) { showToast('彻底删除失败: '+e, 'error'); }
+      finally { recycleBusy.value = false; }
+    }
+
     async function batchDelete() {
       const ids = Object.keys(selectedIds);
       if (!ids.length) return;
-      if (!await showConfirm(`确定删除选中的 ${ids.length} 个账号吗？`, '批量删除确认', { okText: '删除' })) return;
+      const c = await showConfirm(`确定删除选中的 ${ids.length} 个账号吗？`, '批量删除确认', {
+        okText: '删除',
+        checkbox: { label: '软删除：数据存入回收站，可随时恢复（取消勾选则永久删除）', checked: true }
+      });
+      if (!c.ok) return;
+      if (!c.checked && !await showConfirm(`硬删除将永久清除选中的 ${ids.length} 个账号及所有数据，确认删除吗？`, '不可逆操作', { okText: '删除', danger: true })) return;
       batchDeleteLoading.value = true;
       try {
-        const r = JSON.parse(await pywebview.api.delete_accounts(currentPlatform.value, JSON.stringify(ids)));
+        const r = JSON.parse(await pywebview.api.delete_accounts(currentPlatform.value, JSON.stringify(ids), c.checked ? '1' : '0'));
         if (r.success === false) {
           // 后端拒绝（删完池空）：不删任何账号，提示用户取消一些勾选
           showToast(r.error || '删除失败', 'error');
           await loadAccountsLight();
         } else {
-          showToast(`已删除 ${ids.length} 个账号`, 'success');
+          showToast(c.checked ? `已软删除 ${ids.length} 个账号（回收站可恢复）` : `已彻底删除 ${ids.length} 个账号`, 'success');
           selectMode.value = false;   // 删完退出多选模式
           clearSelection();
           await loadAccounts();
@@ -2160,6 +2358,8 @@ const vApp = createApp({
       syncLoading, syncLabel, wbExportLoading, wbExportLabel, chatMessagesRef,
       exportLoading, checkinAllLoading, refreshAllLoading, cardLoading, moreOpenId,
       selectMode, selectedIds, batchDeleteLoading, batchExportLoading, batchDetectLoading,
+      deletedAccounts, recycleBusy, deletedSelected, deletedSelectedCount, allDeletedSelected,
+      deletedFilter, deletedFilters, filteredDeletedAccounts, deletedFilterCounts,
       allSelected, someSelected, selectedCount,
       usageSummary, usageCacheRate,
       oauthUrlText, oauthStatusHtml,
@@ -2182,6 +2382,8 @@ const vApp = createApp({
       loadUsageSummary,
       doCheckin, refreshOne, detectOne, deleteOne, setPriorityAccount, toggleAccountStatus,
       toggleSelectMode, toggleSelect, toggleSelectAll, clearSelection, batchExport, batchDetect, batchDelete,
+      openRecycle, restoreDeleted, restoreAllDeleted, restoreSelected, destroyDeleted, destroySelected,
+      toggleDeletedSelect, selectAllDeleted,
       showQuotaDetail, refreshQuota,
       showOAuthModal, cancelOAuth,
       showImportModal, doImport, handleFileImport,

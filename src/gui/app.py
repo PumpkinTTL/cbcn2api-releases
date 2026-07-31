@@ -125,17 +125,23 @@ class GuiApi:
             return json.dumps(account.to_dict())
         return json.dumps({"error": "账号不存在"})
 
-    def delete_account(self, platform: str, account_id: str) -> str:
+    def delete_account(self, platform: str, account_id: str, soft: str = "1") -> str:
         # 最后号保护：删完若池中没有任何可用账号，拒绝删除。
         # 与 set_account_status 的禁用保护同一套判定（has_usable_besides）。
+        is_soft = str(soft).lower() not in ("0", "false", "no")
         try:
             from src.proxy.token_rotator import token_rotator
             token_rotator.ensure_loaded(platform)
             if not token_rotator.has_usable_besides(account_id):
-                return json.dumps({"success": False, "error": "至少保留一个可用账号"})
+                return json.dumps({"success": False, "error": "这是最后一个可用账号，删除后网关将无法工作，已拒绝操作"})
         except Exception:
             pass
-        store.remove_account(platform, account_id)
+        if is_soft:
+            # 软删除：status='deleted'，数据保留在库（回收站可见），可随时恢复
+            store.soft_delete_account(platform, account_id)
+        else:
+            # 硬删除：物理删除 + tombstone 防快照并发回写复活
+            store.remove_account(platform, account_id)
         # 同步调度器内存池：否则被删账号（尤其是当前调度的号）会留在 _accounts
         # 和 _current_id 里，get_next 仍会返回它发请求（幽灵调度）。
         # reload 会清掉无效 _current_id 并自动选下一个可用号。
@@ -146,7 +152,7 @@ class GuiApi:
             pass
         return json.dumps({"success": True})
 
-    def delete_accounts(self, platform: str, account_ids_json: str) -> str:
+    def delete_accounts(self, platform: str, account_ids_json: str, soft: str = "1") -> str:
         ids = json.loads(account_ids_json)
         # 最后号保护：批量删完后若池中没有任何可用账号，拒绝整批删除。
         # 注意是「删完整批之后」而不是「每删一个查一次」—— 用户批量选中
@@ -156,11 +162,15 @@ class GuiApi:
                 from src.proxy.token_rotator import token_rotator
                 token_rotator.ensure_loaded(platform)
                 if not token_rotator.has_usable_besides(ids):
-                    return json.dumps({"success": False, "error": "至少保留一个可用账号"})
+                    return json.dumps({"success": False, "error": "这是最后一个可用账号，删除后网关将无法工作，已拒绝操作"})
             except Exception:
                 pass
+        is_soft = str(soft).lower() not in ("0", "false", "no")
         for aid in ids:
-            store.remove_account(platform, aid)
+            if is_soft:
+                store.soft_delete_account(platform, aid)
+            else:
+                store.remove_account(platform, aid)
         # 循环外只 reload 一次：每删一个都 reload 会反复重建内存池并竞争锁，
         # 没必要；删完一次性同步即可。
         try:
@@ -169,6 +179,64 @@ class GuiApi:
         except Exception:
             pass
         return json.dumps({"success": True})
+
+    def list_deleted_accounts(self, platform: str) -> str:
+        """回收站：软删除账号（含删除时间，数据仍在库，可恢复/彻底删除）。"""
+        return json.dumps(store.list_deleted_accounts(platform), ensure_ascii=False)
+
+    def restore_accounts(self, platform: str, account_ids_json: str) -> str:
+        """回收站恢复：软删除账号去掉 deleted 标记、还原原状态并重新入池。
+        恢复后清调度器运行时残留（冷却/banned 计数），否则恢复的号冷却未到期
+        仍不可调度，或 _banned_fail 残留导致很快再次被标记封禁。"""
+        try:
+            ids = [str(i) for i in json.loads(account_ids_json or "[]")]
+        except (ValueError, TypeError):
+            return json.dumps({"error": "无效的账号列表"})
+        if not ids:
+            return json.dumps({"error": "没有选中账号"})
+        from src.proxy.token_rotator import token_rotator
+        restored = 0
+        failed = 0
+        for aid in ids:
+            try:
+                if store.restore_account(platform, aid):
+                    restored += 1
+                    token_rotator.clear_disabled(aid)
+                else:
+                    failed += 1
+            except Exception:
+                failed += 1
+        if restored == 0:
+            return json.dumps({"error": "没有可恢复的账号"})
+        try:
+            token_rotator.reload(platform)
+        except Exception:
+            pass
+        return json.dumps({"success": True, "restored": restored, "failed": failed})
+
+    def destroy_accounts(self, platform: str, account_ids_json: str) -> str:
+        """回收站彻底删除：物理删除软删除账号（走硬删除路径，tombstone + 清统计）。"""
+        try:
+            ids = [str(i) for i in json.loads(account_ids_json or "[]")]
+        except (ValueError, TypeError):
+            return json.dumps({"error": "无效的账号列表"})
+        if not ids:
+            return json.dumps({"error": "没有选中账号"})
+        destroyed = 0
+        for aid in ids:
+            try:
+                store.remove_account(platform, aid)
+                destroyed += 1
+            except Exception:
+                pass
+        if destroyed == 0:
+            return json.dumps({"error": "没有可删除的账号"})
+        try:
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.reload(platform)
+        except Exception:
+            pass
+        return json.dumps({"success": True, "destroyed": destroyed})
 
     def import_from_json(self, platform: str, json_content: str) -> str:
         content = (json_content or "").strip()
@@ -202,6 +270,14 @@ class GuiApi:
         for idx, item in enumerate(items):
             try:
                 account = self._payload_to_account(item, platform)
+                # 显式导入 = 恢复意图：清硬删 tombstone + 软删号回原状态，
+                # 并清调度器残留冷却/封禁计数
+                try:
+                    if store.revive_account(platform, account.id):
+                        from src.proxy.token_rotator import token_rotator
+                        token_rotator.clear_disabled(account.id)
+                except Exception:
+                    pass
                 saved = store.upsert_account(platform, account)
                 # 导入即刷新额度：复用 refresh_token 的完整逻辑（拉 dosage/payment/
                 # userResource）。否则裸 token 走 build_payload_from_token 拉额度可能
@@ -379,9 +455,16 @@ class GuiApi:
             last_used=now,
         )
 
+        # 显式登录 = 恢复意图：清硬删 tombstone + 软删号回原状态，
+        # 并清调度器残留冷却/封禁计数
+        try:
+            if store.revive_account(platform, account_id):
+                from src.proxy.token_rotator import token_rotator
+                token_rotator.clear_disabled(account_id)
+        except Exception:
+            pass
         saved = store.upsert_account(platform, account)
-        # 登录即刷新额度：复用 refresh_token 的完整逻辑拉 dosage/payment/userResource。
-        # 否则新登录的号额度条为空，用户还得手动点刷新（与 import_from_json 保持一致）。
+        # 登录即刷新额度：复用 refresh_token 的完整逻辑拉 dosage/payment/userResource。        # 否则新登录的号额度条为空，用户还得手动点刷新（与 import_from_json 保持一致）。
         # 失败不影响账号已保存，只是额度暂缺。
         try:
             refreshed = json.loads(self.refresh_token(platform, saved.id))
@@ -665,35 +748,46 @@ class GuiApi:
         返回汇总：{total, counts:{normal,banned,unknown,failed}, results}。
         """
         import concurrent.futures
+        # 与阈值检测互斥：避免同一账号被双重探测浪费额度/触发风控（B5）
+        started = False
+        with self._detect_lock:
+            if self._detect_state.get("running"):
+                return json.dumps({"error": "阈值检测正在进行中，请稍后再试"})
+            self._detect_state["running"] = True
+            started = True
         try:
-            ids = [str(i) for i in json.loads(account_ids_json or "[]")]
-        except (ValueError, TypeError):
-            return json.dumps({"error": "无效的账号列表"})
-        if not ids:
-            return json.dumps({"error": "请先勾选账号"})
+            try:
+                ids = [str(i) for i in json.loads(account_ids_json or "[]")]
+            except (ValueError, TypeError):
+                return json.dumps({"error": "无效的账号列表"})
+            if not ids:
+                return json.dumps({"error": "请先勾选账号"})
 
-        targets = [a for a in store.list_accounts(platform) if a.id in ids]
-        if not targets:
-            return json.dumps({"error": "账号不存在"})
+            targets = [a for a in store.list_accounts(platform) if a.id in ids]
+            if not targets:
+                return json.dumps({"error": "账号不存在"})
 
-        from src.proxy.token_rotator import token_rotator
-        results = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
-            futs = [ex.submit(self._detect_one, platform, a) for a in targets]
-            for fut in concurrent.futures.as_completed(futs):
-                try:
-                    results.append(fut.result())
-                except Exception as e:
-                    results.append({"id": "?", "name": "?", "status": "failed", "reason": str(e)})
-        try:
-            token_rotator.reload(platform)
-        except Exception:
-            pass
+            from src.proxy.token_rotator import token_rotator
+            results = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+                futs = [ex.submit(self._detect_one, platform, a) for a in targets]
+                for fut in concurrent.futures.as_completed(futs):
+                    try:
+                        results.append(fut.result())
+                    except Exception as e:
+                        results.append({"id": "?", "name": "?", "status": "failed", "reason": str(e)})
+            try:
+                token_rotator.reload(platform)
+            except Exception:
+                pass
 
-        counts = {"normal": 0, "banned": 0, "unknown": 0, "failed": 0}
-        for r in results:
-            counts[r["status"]] = counts.get(r["status"], 0) + 1
-        return json.dumps({"total": len(results), "counts": counts, "results": results})
+            counts = {"normal": 0, "banned": 0, "unknown": 0, "failed": 0}
+            for r in results:
+                counts[r["status"]] = counts.get(r["status"], 0) + 1
+            return json.dumps({"total": len(results), "counts": counts, "results": results})
+        finally:
+            with self._detect_lock:
+                self._detect_state["running"] = False
 
     def refresh_all(self, platform: str) -> str:
         accounts = store.list_accounts(platform)

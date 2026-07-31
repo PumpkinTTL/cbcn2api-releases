@@ -1,4 +1,5 @@
 import json
+import logging
 import sqlite3
 import threading
 import time
@@ -6,6 +7,8 @@ from pathlib import Path
 from typing import Optional
 
 from src.models.account import Account
+
+logger = logging.getLogger(__name__)
 
 DB_DIR = Path.home() / ".cbcn2api"
 DB_PATH = DB_DIR / "accounts.db"
@@ -25,7 +28,24 @@ def _get_conn() -> sqlite3.Connection:
                 conn.execute("PRAGMA journal_mode=WAL")
                 _ensure_schema(conn)
                 conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+    # 列级迁移无条件执行（幂等）：老库 user_version 已是 1 时不会再走 _ensure_schema，
+    # 新增列必须在这里补，否则报 "no such column"。
+    _run_migrations(conn)
     return conn
+
+
+def _run_migrations(conn: sqlite3.Connection):
+    """所有幂等列级迁移。每次连接都跑（ALTER ... ADD COLUMN 失败即已存在，忽略）。
+    不能依赖 user_version —— 老库版本号已置 1，新增列不会自动补上。"""
+    try:
+        conn.execute("ALTER TABLE account_stats ADD COLUMN lifetime_credit REAL DEFAULT 0")
+        conn.execute("UPDATE account_stats SET lifetime_credit=total_credit WHERE lifetime_credit=0")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE accounts ADD COLUMN deleted_at INTEGER")
+    except sqlite3.OperationalError:
+        pass
 
 
 def _ensure_schema(conn: sqlite3.Connection):
@@ -90,23 +110,34 @@ def _ensure_schema(conn: sqlite3.Connection):
             PRIMARY KEY (account_id, platform)
         )
     """)
-    try:
-        conn.execute("ALTER TABLE account_stats ADD COLUMN lifetime_credit REAL DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
-    conn.execute("UPDATE account_stats SET lifetime_credit=total_credit WHERE lifetime_credit=0")
+    # 列级迁移（lifetime_credit / deleted_at）统一在 _run_migrations 无条件执行，
+    # 这里不重复加，避免老库 user_version=1 时漏补。
 
 
 def upsert_account(platform: str, account: Account) -> Account:
     now = int(time.time())
     conn = _get_conn()
     try:
-        existing = _load_by_id(conn, platform, account.id)
+        # 防复活防线 1：硬删除后 24h 内的 tombstone —— 拦截快照类并发回写
+        # （checkin_all / batch_checkin_status 等先取列表快照再逐个 upsert，
+        # 删除进行中它们的循环会把刚删的账号整行写回，表现为「删了又回来，
+        # 删第二遍才行」）。tombstone 期间一律不落库，调用方无感。
+        if _is_tombstoned(account.id):
+            logger.warning("[store] 拦截已删除账号回写: %s (tombstone)", account.id)
+            return account
+        row = conn.execute(
+            "SELECT * FROM accounts WHERE id=? AND platform=?", (account.id, platform)
+        ).fetchone()
+        existing = _row_to_account(row) if row else None
         if existing:
             account.created_at = existing.created_at
         else:
             account.created_at = now
         account.last_used = now
+        # 防复活防线 2：软删除账号不允许被后台快照/状态操作覆盖回正常，
+        # 恢复只能走显式恢复接口（restore_account / revive_account）。
+        if existing and existing.status == "deleted" and account.status != "deleted":
+            account.status = "deleted"
 
         conn.execute("""
             INSERT INTO accounts (
@@ -162,7 +193,8 @@ def load_account(platform: str, account_id: str) -> Optional[Account]:
 
 def _load_by_id(conn: sqlite3.Connection, platform: str, account_id: str) -> Optional[Account]:
     row = conn.execute(
-        "SELECT * FROM accounts WHERE id=? AND platform=?", (account_id, platform)
+        "SELECT * FROM accounts WHERE id=? AND platform=? AND status != 'deleted'",
+        (account_id, platform)
     ).fetchone()
     if not row:
         return None
@@ -198,20 +230,179 @@ def list_accounts(platform: str) -> list[Account]:
         # 不用 last_used —— upsert 每次都无脑刷 last_used=now，导致禁用/启用/刷新 token
         # 后卡片飘走。created_at 稳定不变，顺序才稳。当前调度号的置顶在前端 filteredAccounts 里做。
         rows = conn.execute(
-            "SELECT * FROM accounts WHERE platform=? ORDER BY created_at DESC, id ASC", (platform,)
+            "SELECT * FROM accounts WHERE platform=? AND status != 'deleted' ORDER BY created_at DESC, id ASC", (platform,)
         ).fetchall()
         return [_row_to_account(r) for r in rows]
     finally:
         conn.close()
 
 
-def remove_account(platform: str, account_id: str):
+def list_deleted_accounts(platform: str) -> list[dict]:
+    """回收站列表：返回原状态（软删前 normal/banned/disabled）+ 删除时间的精简 dict。
+    展示和筛选用原状态——用户关心的是恢复后它回到什么状态。"""
     conn = _get_conn()
     try:
-        conn.execute(
-            "DELETE FROM accounts WHERE id=? AND platform=?", (account_id, platform)
-        )
-        conn.commit()
+        rows = conn.execute(
+            "SELECT id, email, nickname, deleted_at FROM accounts "
+            "WHERE platform=? AND status='deleted' ORDER BY deleted_at DESC, id ASC",
+            (platform,)
+        ).fetchall()
+        states = _soft_states()
+        return [
+            {
+                "id": r["id"],
+                "email": r["email"] or "",
+                "nickname": r["nickname"],
+                "status": states.get(r["id"], "normal"),
+                "deleted_at": r["deleted_at"] or 0,
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+def soft_delete_account(platform: str, account_id: str):
+    """软删除：status='deleted' + 记录删除时间，数据保留在库，各读路径自动过滤，可随时恢复。
+    恢复时还原软删前的原状态（banned 还是 banned、disabled 还是 disabled）。
+    整个 SELECT+UPDATE+_soft_states 写入在同一锁内，与 restore 互斥，无竞态窗口。"""
+    with _soft_states_lock:
+        conn = _get_conn()
+        try:
+            row = conn.execute(
+                "SELECT status FROM accounts WHERE id=? AND platform=? AND status != 'deleted'",
+                (account_id, platform)
+            ).fetchone()
+            if not row:
+                return
+            conn.execute(
+                "UPDATE accounts SET status='deleted', deleted_at=? WHERE id=? AND platform=? AND status != 'deleted'",
+                (int(time.time()), account_id, platform)
+            )
+            conn.commit()
+            prev = row["status"] or "normal"
+        finally:
+            conn.close()
+        st = _soft_states()
+        st[account_id] = prev
+        _save_soft_states(st)
+
+
+def restore_account(platform: str, account_id: str) -> bool:
+    """软删除恢复：去掉 deleted 标记、清删除时间，还原软删前的原状态（仅作用于软删除的账号）。
+    整个读 prev+UPDATE+清记录在同一锁内，与 soft_delete 互斥，无竞态窗口。"""
+    with _soft_states_lock:
+        st = _soft_states()
+        prev = st.get(account_id, "normal")
+        conn = _get_conn()
+        try:
+            cur = conn.execute(
+                "UPDATE accounts SET status=?, deleted_at=NULL WHERE id=? AND platform=? AND status='deleted'",
+                (prev, account_id, platform)
+            )
+            conn.commit()
+            ok = cur.rowcount > 0
+        finally:
+            conn.close()
+        if ok and account_id in st:
+            st.pop(account_id)
+            _save_soft_states(st)
+        return ok
+
+
+def revive_account(platform: str, account_id: str) -> bool:
+    """显式恢复（重新导入 / OAuth 登录同号）：清 tombstone + 软删号回原状态。"""
+    clear_tombstone(account_id)
+    return restore_account(platform, account_id)
+
+
+# ── 软删除原状态记录：恢复时还原（banned 还是 banned，不强制回 normal）──
+_SOFT_DELETE_STATES_KEY = "soft_deleted_states"
+_soft_states_lock = threading.RLock()  # 读-改-写跨连接，防并发丢原状态记录
+
+
+def _soft_states() -> dict:
+    try:
+        raw = json.loads(get_setting(_SOFT_DELETE_STATES_KEY, "{}"))
+        if not isinstance(raw, dict):
+            raw = {}
+    except Exception as e:
+        logger.warning("[store] 读取软删原状态映射失败，恢复将默认回 normal: %r", e)
+        raw = {}
+    return raw
+
+
+def _save_soft_states(states: dict):
+    try:
+        save_setting(_SOFT_DELETE_STATES_KEY, json.dumps(states))
+    except Exception as e:
+        # 原状态映射丢失会让 banned/disabled 账号被错误恢复成 normal，必须可见
+        logger.warning("[store] 保存软删原状态映射失败，恢复可能丢失原状态: %r", e)
+
+
+# ── 硬删除 tombstone：永久防快照类并发回写复活 ──
+# 24h TTL 曾导致理论复活窗口（极长寿命快照循环）；改为永久，由 revive_account
+# （重新导入/OAuth 同号）显式清理，兼顾「删了想导回」场景。
+_DELETED_TOMBSTONE_KEY = "deleted_tombstones"
+_tombstones_lock = threading.RLock()  # 读-改-写跨连接，防并发丢 tombstone（可重入：锁内再调 _tombstones()）
+
+
+def _tombstones() -> dict:
+    with _tombstones_lock:
+        try:
+            raw = json.loads(get_setting(_DELETED_TOMBSTONE_KEY, "{}"))
+            if not isinstance(raw, dict):
+                raw = {}
+        except Exception as e:
+            logger.warning("[store] 读取 tombstone 失败: %r", e)
+            raw = {}
+        return raw
+
+
+def _is_tombstoned(account_id: str) -> bool:
+    return account_id in _tombstones()
+
+
+def clear_tombstone(account_id: str):
+    with _tombstones_lock:
+        try:
+            ts = _tombstones()
+            if account_id in ts:
+                ts.pop(account_id)
+                save_setting(_DELETED_TOMBSTONE_KEY, json.dumps(ts))
+        except Exception:
+            pass
+
+
+def remove_account(platform: str, account_id: str):
+    """硬删除。tombstone 与 DELETE + 统计清理同一连接同一事务原子写入：
+    快照类并发 upsert 要么看到已删无行、要么看到 tombstone，不存在中间窗口。"""
+    conn = _get_conn()
+    try:
+        with _tombstones_lock:
+            conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key=?", (_DELETED_TOMBSTONE_KEY,)
+            ).fetchone()
+            try:
+                raw = json.loads(row["value"]) if row and row["value"] else {}
+                if not isinstance(raw, dict):
+                    raw = {}
+            except Exception:
+                raw = {}
+            raw[account_id] = time.time()
+            conn.execute(
+                "DELETE FROM accounts WHERE id=? AND platform=?", (account_id, platform)
+            )
+            # 同步清理统计行，避免孤儿数据污染汇总（B3）
+            conn.execute(
+                "DELETE FROM account_stats WHERE account_id=? AND platform=?", (account_id, platform)
+            )
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (_DELETED_TOMBSTONE_KEY, json.dumps(raw)),
+            )
+            conn.commit()
     finally:
         conn.close()
 
@@ -449,11 +640,13 @@ def update_account_stats(platform: str, account_id: str, usage: dict):
         conn.close()
 
 
-def get_account_stats(platform: str, account_id: str) -> dict:
+def get_account_stats(platform: str, account_id: str) -> Optional[dict]:
     conn = _get_conn()
     try:
         row = conn.execute(
-            "SELECT * FROM account_stats WHERE account_id=? AND platform=?",
+            "SELECT s.* FROM account_stats s "
+            "LEFT JOIN accounts a ON s.account_id=a.id AND s.platform=a.platform "
+            "WHERE s.account_id=? AND s.platform=? AND (a.status IS NULL OR a.status != 'deleted')",
             (account_id, platform)
         ).fetchone()
         return dict(row) if row else None
@@ -465,7 +658,9 @@ def list_account_stats(platform: str) -> list[dict]:
     conn = _get_conn()
     try:
         rows = conn.execute(
-            "SELECT * FROM account_stats WHERE platform=? ORDER BY updated_at DESC",
+            "SELECT s.* FROM account_stats s "
+            "LEFT JOIN accounts a ON s.account_id=a.id AND s.platform=a.platform "
+            "WHERE s.platform=? AND (a.status IS NULL OR a.status != 'deleted') ORDER BY s.updated_at DESC",
             (platform,)
         ).fetchall()
         return [dict(r) for r in rows]
@@ -478,21 +673,25 @@ def get_usage_summary(platform: str) -> dict:
     try:
         row = conn.execute(
             "SELECT COUNT(*) as active_accounts, "
-            "COALESCE(SUM(request_count),0) as total_requests, "
-            "COALESCE(SUM(prompt_tokens),0) as prompt_tokens, "
-            "COALESCE(SUM(completion_tokens),0) as completion_tokens, "
-            "COALESCE(SUM(total_tokens),0) as total_tokens, "
-            "COALESCE(SUM(total_credit),0) as total_credit, "
-            "COALESCE(SUM(cache_hits),0) as cache_hits, "
-            "COALESCE(SUM(cache_misses),0) as cache_misses "
-            "FROM account_stats WHERE platform=?", (platform,)
+            "COALESCE(SUM(s.request_count),0) as total_requests, "
+            "COALESCE(SUM(s.prompt_tokens),0) as prompt_tokens, "
+            "COALESCE(SUM(s.completion_tokens),0) as completion_tokens, "
+            "COALESCE(SUM(s.total_tokens),0) as total_tokens, "
+            "COALESCE(SUM(s.total_credit),0) as total_credit, "
+            "COALESCE(SUM(s.cache_hits),0) as cache_hits, "
+            "COALESCE(SUM(s.cache_misses),0) as cache_misses "
+            "FROM account_stats s "
+            "LEFT JOIN accounts a ON s.account_id=a.id AND s.platform=a.platform "
+            "WHERE s.platform=? AND (a.status IS NULL OR a.status != 'deleted')", (platform,)
         ).fetchone()
         return dict(row) if row else {}
     finally:
         conn.close()
 
 
-def reset_account_stats(platform: str = "", account_id: str = ""):
+def reset_account_credit(platform: str, account_id: str):
+    """刷新额度后清零本次消耗积分（total_credit），保留累计 lifetime_credit。
+    原先与 reset_account_stats 同名被覆盖成死代码，导致积分条长期漂移。"""
     conn = _get_conn()
     try:
         conn.execute(
@@ -505,6 +704,7 @@ def reset_account_stats(platform: str = "", account_id: str = ""):
 
 
 def reset_account_stats(platform: str = "", account_id: str = ""):
+    """清空统计行（删行）：单号 / 整平台 / 全部。"""
     conn = _get_conn()
     try:
         if account_id and platform:
