@@ -25,6 +25,12 @@ class GuiApi:
         self._current_oauth_login_id = None
         self._window = None
         self._cached_hwnd = 0
+        self._detect_lock = threading.Lock()
+        self._detect_state = {
+            "running": False, "finished": False, "total": 0, "done": 0,
+            "enabled": 0, "skipped": 0, "banned": 0, "failed": 0,
+            "last_account": "", "summary": "",
+        }
 
     def set_window(self, window):
         self._window = window
@@ -481,6 +487,21 @@ class GuiApi:
         token_rotator.set_threshold(v)
         return json.dumps({"ok": True, "threshold": v})
 
+    def get_enable_threshold(self) -> str:
+        from src.proxy.token_rotator import token_rotator
+        return json.dumps({"threshold": token_rotator.get_enable_threshold()})
+
+    def set_enable_threshold(self, value: float) -> str:
+        from src.proxy.token_rotator import token_rotator
+        try:
+            v = float(value)
+        except (ValueError, TypeError):
+            return json.dumps({"error": f"无效的阈值: {value}"})
+        if v < 0:
+            v = 0
+        token_rotator.set_enable_threshold(v)
+        return json.dumps({"ok": True, "threshold": v})
+
     def get_all_stats(self, platform: str) -> str:
         from src.storage.store import list_account_stats
         stats = list_account_stats(platform)
@@ -525,6 +546,49 @@ class GuiApi:
 
     # ========== Token Operations ==========
 
+    def _persist_refreshed(self, platform: str, account: Account, payload: dict,
+                           quota_error: Optional[str], force_normal: bool = False) -> Account:
+        """把 refresh_full_payload 的结果写回账号并落库，返回落库后的账号。
+
+        force_normal=True 时，只要未被明确封禁就把状态置为 normal —— 用于
+        「检测并启用」：达标的禁用/封禁号需要重新启用。force_normal=False 时
+        保持与原 refresh 完全一致的状态策略（不动手动禁用/封禁的号）。
+        """
+        account.access_token = payload["access_token"]
+        account.refresh_token = payload.get("refresh_token") or account.refresh_token
+        account.expires_at = payload.get("expires_at") or account.expires_at
+        account.domain = payload.get("domain") or account.domain
+        account.dosage_notify_code = payload.get("dosage_notify_code") or account.dosage_notify_code
+        account.dosage_notify_zh = payload.get("dosage_notify_zh") or account.dosage_notify_zh
+        account.dosage_notify_en = payload.get("dosage_notify_en") or account.dosage_notify_en
+        account.payment_type = payload.get("payment_type") or account.payment_type
+        account.quota_raw = payload.get("quota_raw") or account.quota_raw
+        account.usage_raw = payload.get("usage_raw") or account.usage_raw
+
+        if payload.get("status"):
+            new_status = payload["status"]
+            if new_status == "banned":
+                account.status = "banned"
+            elif force_normal:
+                account.status = "normal"
+            elif account.status not in ("disabled", "banned"):
+                account.status = new_status
+
+        if quota_error:
+            account.quota_query_last_error = quota_error
+            account.quota_query_last_error_at = int(time.time() * 1000)
+        else:
+            account.quota_query_last_error = None
+            account.quota_query_last_error_at = None
+
+        account.last_used = Account.now_ts()
+        saved = store.upsert_account(platform, account)
+        try:
+            store.reset_account_credit(platform, account.id)
+        except Exception:
+            pass
+        return saved
+
     def refresh_token(self, platform: str, account_id: str) -> str:
         account = store.load_account(platform, account_id)
         if not account:
@@ -532,36 +596,7 @@ class GuiApi:
 
         try:
             payload, quota_error = refresh_full_payload(account)
-
-            account.access_token = payload["access_token"]
-            account.refresh_token = payload.get("refresh_token") or account.refresh_token
-            account.expires_at = payload.get("expires_at") or account.expires_at
-            account.domain = payload.get("domain") or account.domain
-            account.dosage_notify_code = payload.get("dosage_notify_code") or account.dosage_notify_code
-            account.dosage_notify_zh = payload.get("dosage_notify_zh") or account.dosage_notify_zh
-            account.dosage_notify_en = payload.get("dosage_notify_en") or account.dosage_notify_en
-            account.payment_type = payload.get("payment_type") or account.payment_type
-            account.quota_raw = payload.get("quota_raw") or account.quota_raw
-            account.usage_raw = payload.get("usage_raw") or account.usage_raw
-
-            if payload.get("status"):
-                new_status = payload["status"]
-                if new_status == "banned" or account.status not in ("disabled", "banned"):
-                    account.status = new_status
-
-            if quota_error:
-                account.quota_query_last_error = quota_error
-                account.quota_query_last_error_at = int(time.time() * 1000)
-            else:
-                account.quota_query_last_error = None
-                account.quota_query_last_error_at = None
-
-            account.last_used = Account.now_ts()
-            saved = store.upsert_account(platform, account)
-            try:
-                store.reset_account_credit(platform, account_id)
-            except Exception:
-                pass
+            saved = self._persist_refreshed(platform, account, payload, quota_error, force_normal=False)
             try:
                 from src.proxy.token_rotator import token_rotator
                 token_rotator.reload(platform)
@@ -571,6 +606,95 @@ class GuiApi:
         except Exception as e:
             return json.dumps({"error": str(e)})
 
+    def _detect_one(self, platform: str, account: Account) -> dict:
+        """单账号封禁检测核心（按 cbcn-cloud 号池封禁机制）：
+        refresh 续期 + 拉额度落库 → 发真实 chat 请求探测 11140：
+          全 11140 → 标记 banned（封号）；
+          任意 200 → 检测通过，若原是 banned 则恢复 normal；
+          其他错误 → unknown，不封不禁。
+        只写状态不 reload（reload 由调用方统一做，批量时避免反复重载）。
+        """
+        from src.proxy.probe import probe_chat_available
+        from src.proxy.token_rotator import token_rotator
+
+        name = account.nickname or account.email or account.id
+        try:
+            payload, quota_error = refresh_full_payload(account)
+        except Exception as e:
+            return {"id": account.id, "name": name, "status": "failed", "reason": f"刷新失败: {e}"}
+        try:
+            self._persist_refreshed(platform, account, payload, quota_error, force_normal=False)
+        except Exception as e:
+            return {"id": account.id, "name": name, "status": "failed", "reason": f"落库失败: {e}"}
+
+        try:
+            result = probe_chat_available(account, payload.get("access_token") or account.access_token)
+        except Exception as e:
+            return {"id": account.id, "name": name, "status": "unknown", "reason": f"探测异常: {e}"}
+
+        if result == "banned":
+            account.status = "banned"
+            store.upsert_account(platform, account)
+            return {"id": account.id, "name": name, "status": "banned",
+                    "reason": "真实请求 3 次均被拒(11140 封号)"}
+        if result == "ok":
+            was_banned = account.status == "banned"
+            account.status = "normal"
+            store.upsert_account(platform, account)
+            token_rotator.clear_disabled(account.id)
+            return {"id": account.id, "name": name, "status": "normal",
+                    "reason": "检测通过，已从封禁恢复为正常" if was_banned else "检测通过"}
+        return {"id": account.id, "name": name, "status": "unknown",
+                "reason": "非封号错误，未判定（限流/额度/网络等）"}
+
+    def detect_account(self, platform: str, account_id: str) -> str:
+        from src.proxy.token_rotator import token_rotator
+        account = store.load_account(platform, account_id)
+        if not account:
+            return json.dumps({"error": "账号不存在"})
+        try:
+            r = self._detect_one(platform, account)
+            token_rotator.reload(platform)
+            return json.dumps({"status": r["status"], "reason": r["reason"]})
+        except Exception as e:
+            return json.dumps({"error": str(e)})
+
+    def detect_accounts(self, platform: str, account_ids_json: str) -> str:
+        """并发批量检测（线程池 8，单账号同款真实 chat 探测），统一 reload。
+
+        返回汇总：{total, counts:{normal,banned,unknown,failed}, results}。
+        """
+        import concurrent.futures
+        try:
+            ids = [str(i) for i in json.loads(account_ids_json or "[]")]
+        except (ValueError, TypeError):
+            return json.dumps({"error": "无效的账号列表"})
+        if not ids:
+            return json.dumps({"error": "请先勾选账号"})
+
+        targets = [a for a in store.list_accounts(platform) if a.id in ids]
+        if not targets:
+            return json.dumps({"error": "账号不存在"})
+
+        from src.proxy.token_rotator import token_rotator
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+            futs = [ex.submit(self._detect_one, platform, a) for a in targets]
+            for fut in concurrent.futures.as_completed(futs):
+                try:
+                    results.append(fut.result())
+                except Exception as e:
+                    results.append({"id": "?", "name": "?", "status": "failed", "reason": str(e)})
+        try:
+            token_rotator.reload(platform)
+        except Exception:
+            pass
+
+        counts = {"normal": 0, "banned": 0, "unknown": 0, "failed": 0}
+        for r in results:
+            counts[r["status"]] = counts.get(r["status"], 0) + 1
+        return json.dumps({"total": len(results), "counts": counts, "results": results})
+
     def refresh_all(self, platform: str) -> str:
         accounts = store.list_accounts(platform)
         success = 0
@@ -579,6 +703,120 @@ class GuiApi:
             if "error" not in result:
                 success += 1
         return json.dumps({"success": success, "total": len(accounts)})
+
+    def detect_and_enable_accounts(self, platform: str, threshold: float = -1) -> str:
+        """并发检测全部账号：拉取最新额度，达标的禁用号自动启用。
+
+        threshold<0 时用已持久化的启动阈值。后台线程池跑（8 并发），
+        前端通过 detect_enable_status 轮询进度。
+
+        判定：
+          - 封禁（refresh 判 banned 或原状态 banned）→ 跳过，保持封禁（恢复需真实 chat 检测）；
+          - normal 账号 → 保持启用，刷新额度数据；
+          - disabled 账号剩余(total-used) >= 阈值（阈值=0 时不卡门槛）→ 启用；
+          - 额度拉取失败但非封禁（超时/网络等）→ 视为无法判定但可能可用 → 仍启用。
+        """
+        import concurrent.futures
+        from src.api.quota import calc_totals
+        from src.proxy.token_rotator import token_rotator
+
+        try:
+            th = float(threshold)
+        except (ValueError, TypeError):
+            th = -1.0
+        if th < 0:
+            th = token_rotator.get_enable_threshold()
+
+        with self._detect_lock:
+            if self._detect_state.get("running"):
+                return json.dumps({"error": "检测正在进行中"})
+            accounts = store.list_accounts(platform)
+            targets = list(accounts)
+            self._detect_state = {
+                "running": True, "finished": False,
+                "total": len(targets), "done": 0,
+                "enabled": 0, "skipped": 0, "banned": 0, "checked": 0, "failed": 0,
+                "last_account": "", "summary": "",
+            }
+
+        if not targets:
+            with self._detect_lock:
+                self._detect_state["running"] = False
+                self._detect_state["finished"] = True
+                self._detect_state["summary"] = "没有账号可检测"
+            return json.dumps({"ok": True, "started": False, "message": "没有账号可检测"})
+
+        def worker(acc):
+            name = acc.nickname or acc.email or acc.id
+            was = acc.status or "normal"
+            try:
+                payload, quota_error = refresh_full_payload(acc)
+            except Exception as e:
+                return ("failed", name, f"检测异常: {e}")
+            if payload.get("status") == "banned" or was == "banned":
+                return ("banned", name, "账号已封禁，跳过（恢复需真实 chat 检测）")
+            if was == "normal":
+                try:
+                    self._persist_refreshed(platform, acc, payload, quota_error, force_normal=False)
+                except Exception:
+                    pass
+                return ("checked", name, "正常，已刷新额度")
+            remain = None
+            if quota_error is None:
+                try:
+                    total, used = calc_totals(payload.get("quota_raw"), payload.get("usage_raw"))
+                except Exception:
+                    total, used = 0.0, 0.0
+                remain = max(0.0, float(total) - float(used))
+                if th > 0 and remain < th:
+                    return ("skipped", name, f"剩余{remain:.2f}<{th}，未启用")
+            try:
+                self._persist_refreshed(platform, acc, payload, quota_error, force_normal=True)
+            except Exception as e:
+                return ("failed", name, f"启用落库失败: {e}")
+            try:
+                token_rotator.clear_disabled(acc.id)
+            except Exception:
+                pass
+            if remain is None:
+                return ("enabled", name, "额度拉取失败但未封禁，已启用")
+            return ("enabled", name, f"剩余{remain:.2f}≥{th}，已启用")
+
+        def run():
+            counts = {"enabled": 0, "skipped": 0, "banned": 0, "checked": 0, "failed": 0}
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+                    futs = [ex.submit(worker, a) for a in targets]
+                    for fut in concurrent.futures.as_completed(futs):
+                        try:
+                            kind, name, _msg = fut.result()
+                        except Exception:
+                            kind, name = "failed", "?"
+                        with self._detect_lock:
+                            counts[kind] = counts.get(kind, 0) + 1
+                            self._detect_state["done"] += 1
+                            self._detect_state[kind] = counts[kind]
+                            self._detect_state["last_account"] = name
+                try:
+                    token_rotator.reload(platform)
+                except Exception:
+                    pass
+            finally:
+                with self._detect_lock:
+                    self._detect_state["running"] = False
+                    self._detect_state["finished"] = True
+                    self._detect_state["summary"] = (
+                        f"启用 {counts['enabled']} / 跳过 {counts['skipped']} / "
+                        f"封禁 {counts['banned']} / 正常 {counts['checked']} / "
+                        f"失败 {counts['failed']}"
+                    )
+
+        threading.Thread(target=run, daemon=True).start()
+        return json.dumps({"ok": True, "started": True, "total": len(targets)})
+
+    def detect_enable_status(self) -> str:
+        with self._detect_lock:
+            return json.dumps(self._detect_state)
 
     # ========== Check-in ==========
 

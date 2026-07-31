@@ -88,20 +88,31 @@ def parse_sse_line(line: str) -> Optional[dict]:
 
 
 def _classify_upstream_error(status_code: int, body: str) -> Optional[str]:
-    """解析上游错误体，返回可重试类型：'quota' | 'auth' | 'transient' | None(不可重试)。"""
+    """解析上游错误体，返回可重试类型：'banned' | 'quota' | 'auth' | 'transient' | None(不可重试)。
+
+    11140（封号）的响应体是顶层 {"code":11140,"msg":"request illegal"}，无 error 包裹，
+    与普通错误的嵌套结构不同，须单独识别 —— 只有真正的封号才返回 'banned'，
+    普通 403 仍归 'auth'（临时鉴权，渐进冷却，不封号）。
+    """
+    if "request illegal" in body.lower():
+        return "banned"
     code = None
     try:
         obj = json.loads(body)
     except (ValueError, TypeError):
         obj = None
     if isinstance(obj, dict):
-        err = obj.get("error")
-        if isinstance(err, dict):
-            data = err.get("data")
-            if isinstance(data, dict) and data.get("code") is not None:
-                code = data.get("code")
-            elif err.get("code") is not None:
-                code = err.get("code")
+        code = obj.get("code")  # 顶层 code（11140 等无 error 包裹的情况）
+        if code is None:
+            err = obj.get("error")
+            if isinstance(err, dict):
+                data = err.get("data")
+                if isinstance(data, dict) and data.get("code") is not None:
+                    code = data.get("code")
+                elif err.get("code") is not None:
+                    code = err.get("code")
+    if code == 11140:
+        return "banned"
     if code in QUOTA_ERROR_CODES:
         return "quota"
     if status_code in QUOTA_STATUS_CODES:

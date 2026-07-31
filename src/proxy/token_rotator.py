@@ -14,9 +14,11 @@ logger = logging.getLogger(__name__)
 QUOTA_COOLDOWN = 3600   # 额度耗尽（429）：1 小时后重试
 AUTH_COOLDOWN = 600     # 非法请求（403）：10 分钟后重试
 TRANSIENT_COOLDOWN = 60  # 临时错误（401/502/503/504/超时）：1 分钟后重试
+BANNED_COOLDOWNS = (30, 60, 120, 300, 600)  # 11140 封号：渐进冷却 30s→1m→2m→5m→10m
 
 _COOLDOWN_SETTING_KEY = "cooldowns"
 _THRESHOLD_SETTING_KEY = "quota_threshold"
+_ENABLE_THRESHOLD_SETTING_KEY = "enable_threshold"
 
 _COOLDOWNS = {
     "quota": QUOTA_COOLDOWN,
@@ -47,7 +49,10 @@ class TokenRotator:
         # id -> 估算剩余额度（从 quota_raw 初始化，每次请求扣减）
         self._estimated_remain: dict[str, float] = {}
         self._threshold: float = 0.0
+        self._enable_threshold: float = 0.0
         self._platform: str = "workbuddy"
+        # id -> 连续 11140 次数（banned 渐进冷却累计，5 次落库封禁）
+        self._banned_fail: dict[str, int] = {}
         self._threshold_switch: Optional[str] = None
         self._threshold_no_fallback: bool = False
         self._threshold_no_fallback_id: Optional[str] = None
@@ -62,6 +67,7 @@ class TokenRotator:
 
             self._restore_cooldowns()
             self._load_threshold()
+            self._load_enable_threshold()
             self._refresh_estimates()
             self._threshold_no_fallback = False
 
@@ -144,16 +150,45 @@ class TokenRotator:
             return None
 
     def mark_disabled(self, account_id: str, reason: str):
-        """标记账号不可用，自动持久化冷却记录到 settings 表。"""
+        """标记账号不可用，自动持久化冷却记录到 settings 表。
+
+        banned（11140 封号）：渐进冷却 30s→1m→2m→5m→10m，给临时风控恢复机会；
+        连续第 5 次在 DB 标记 status='banned'（永久隔离）+ reload 立即生效。
+        落库/reload 放到锁外 —— store 是同步 sqlite，锁内写库会卡住事件循环。
+        """
+        to_persist = None
         with self._lock:
-            cd = _COOLDOWNS.get(reason, TRANSIENT_COOLDOWN)
-            self._disabled[account_id] = {
-                "reason": reason,
-                "until": time.time() + cd,
-            }
+            if reason == "banned":
+                n = self._banned_fail.get(account_id, 0) + 1
+                self._banned_fail[account_id] = n
+                if n >= 5:
+                    acc = next((a for a in self._accounts if a.id == account_id), None)
+                    if acc:
+                        acc.status = "banned"
+                        to_persist = acc
+                    self._disabled.pop(account_id, None)
+                    self._banned_fail.pop(account_id, None)
+                else:
+                    cd = BANNED_COOLDOWNS[min(n - 1, len(BANNED_COOLDOWNS) - 1)]
+                    self._disabled[account_id] = {"reason": "banned", "until": time.time() + cd}
+            else:
+                cd = _COOLDOWNS.get(reason, TRANSIENT_COOLDOWN)
+                self._disabled[account_id] = {
+                    "reason": reason,
+                    "until": time.time() + cd,
+                }
             if account_id == self._current_id:
                 self._current_id = None
         self._persist_cooldowns()
+        if to_persist is not None:
+            try:
+                store.upsert_account(self._platform, to_persist)
+            except Exception as e:
+                logger.warning("[调度] banned 标记持久化失败: %r", e)
+            try:
+                self.reload(self._platform)
+            except Exception:
+                pass
 
     def set_active(self, active: bool):
         """标记网关是否正在处理请求（用于 UI 边框动画）。"""
@@ -172,6 +207,7 @@ class TokenRotator:
         """清除指定账号的所有运行时冷却（手动启用时调用）。"""
         with self._lock:
             self._disabled.pop(account_id, None)
+            self._banned_fail.pop(account_id, None)
         self._persist_cooldowns()
 
     def on_disable(self, account_id: str) -> bool:
@@ -281,6 +317,27 @@ class TokenRotator:
             self._threshold = float(store.get_setting(_THRESHOLD_SETTING_KEY, "0") or "0")
         except (ValueError, TypeError):
             self._threshold = 0.0
+
+    def set_enable_threshold(self, value: float):
+        with self._lock:
+            self._enable_threshold = value
+            try:
+                store.save_setting(_ENABLE_THRESHOLD_SETTING_KEY, str(value))
+            except Exception:
+                pass
+
+    def get_enable_threshold(self) -> float:
+        with self._lock:
+            if self._enable_threshold == 0.0:
+                self._load_enable_threshold()
+            return self._enable_threshold
+
+    def _load_enable_threshold(self):
+        try:
+            self._enable_threshold = float(
+                store.get_setting(_ENABLE_THRESHOLD_SETTING_KEY, "0") or "0")
+        except (ValueError, TypeError):
+            self._enable_threshold = 0.0
 
     def _refresh_estimates(self):
         """重算每个账号的估算剩余额度。

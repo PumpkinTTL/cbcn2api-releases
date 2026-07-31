@@ -336,15 +336,15 @@
 
       <!-- Filter Bar -->
       <div class="filter-bar" id="filterBar" v-show="accounts.length > 0">
-        <div style="position:relative">
-          <input type="date" v-model="filterDate" id="filterDate" :class="{ empty: !filterDate }">
-          <span id="datePh" v-show="!filterDate" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:12px;pointer-events:none">选择日期</span>
-        </div>
         <!-- 多选按钮：点击进入多选模式，卡片复选框出现 + 批量操作区出现。激活态高亮。
              非激活时不占额外空间，避免常驻复选框影响 UI 布局。 -->
         <button class="filter-icon-btn" :class="{ active: selectMode }" @click="toggleSelectMode" title="多选：勾选账号批量导出/删除">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><path d="M14 6.5h7M14 17.5h7"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
         </button>
+        <div style="position:relative">
+          <input type="date" v-model="filterDate" id="filterDate" :class="{ empty: !filterDate }">
+          <span id="datePh" v-show="!filterDate" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:12px;pointer-events:none">选择日期</span>
+        </div>
         <!-- 批量操作：仅多选模式时出现，放在多选按钮右边。选中数合并进「全选」标签。 -->
         <div class="filter-batch-actions" v-if="selectMode">
           <label class="batch-select-all" :class="{ checked: allSelected, indeterminate: someSelected && !allSelected }">
@@ -359,9 +359,23 @@
             <span v-if="batchExportLoading" class="spinner-sm"></span>
             <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/></svg> 导出</template>
           </button>
+          <button class="btn btn-sm btn-ghost" :disabled="selectedCount === 0 || batchDetectLoading" @click="batchDetect" title="真实 chat 检测选中账号是否封禁（11140 自动标记）">
+            <span v-if="batchDetectLoading" class="spinner-sm"></span>
+            <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg> 检测</template>
+          </button>
           <button class="btn btn-sm btn-danger" :disabled="selectedCount === 0 || batchDeleteLoading" @click="batchDelete">
             <span v-if="batchDeleteLoading" class="spinner-sm"></span>
             <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg> 删除</template>
+          </button>
+        </div>
+        <!-- 检测并启用：填启动阈值，回车或点右侧图标并发检测全部账号，剩余积分≥阈值则启用 -->
+        <div class="proxy-field detect-field" title="检测全部账号：拉取最新额度，剩余积分≥此值的禁用号将被启用（0=不卡门槛）">
+          <span>启动阈值</span>
+          <input type="number" v-model.number="enableThreshold" min="0" step="0.01" placeholder="0=不卡门槛" @change="saveEnableThreshold" @keyup.enter="openDetectModal">
+          <button class="detect-trigger" :disabled="detecting" @click="openDetectModal" :title="detecting ? `检测中 ${detectProgress.done}/${detectProgress.total}` : '检测全部账号并启用达标的'">
+            <span v-if="detecting" class="spinner-sm"></span>
+            <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg></template>
+            <span v-if="detecting" class="detect-count">{{ detectProgress.done }}/{{ detectProgress.total }}</span>
           </button>
         </div>
         <!-- 贴合主题的状态下拉组件 (保持 Dropdown 下拉交互形式) —— margin-left:auto 靠最右 -->
@@ -492,9 +506,6 @@
           <!-- Actions -->
           <div class="card-footer">
             <div class="card-actions">
-              <button class="btn btn-ghost btn-sm" @click="showQuotaDetail(a.id)" title="额度详情">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M4 16l4-8 4 4 4-6 4 8"/></svg> 详情
-              </button>
               <button class="btn btn-ghost btn-sm" :disabled="cardLoading[a.id + '_checkin']" @click="doCheckin(a.id)" title="签到">
                 <span v-if="cardLoading[a.id + '_checkin']" class="spinner-sm"></span>
                 <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> 签到</template>
@@ -520,6 +531,22 @@
                 <span v-if="cardLoading[a.id + '_delete']" class="spinner-sm"></span>
                 <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
               </button>
+              <!-- 更多：额度详情 + 封禁检测（发真实 chat 探测 11140） -->
+              <div class="more-dropdown" :class="{ open: moreOpenId === a.id }" @click.stop="moreOpenId = moreOpenId === a.id ? null : a.id">
+                <div class="more-dropdown-trigger">
+                  <span>更多</span>
+                  <svg class="more-dropdown-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                </div>
+                <div class="more-dropdown-menu" v-show="moreOpenId === a.id">
+                  <div class="more-dropdown-item" @click.stop="showQuotaDetail(a.id); moreOpenId = null" title="额度详情">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M4 16l4-8 4 4 4-6 4 8"/></svg> 额度详情
+                  </div>
+                  <div class="more-dropdown-item" :class="{ busy: cardLoading[a.id + '_detect'] }" @click.stop="detectOne(a.id)" title="发真实请求检测是否封号">
+                    <span v-if="cardLoading[a.id + '_detect']" class="spinner-sm"></span>
+                    <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8 2 9.2h7.6z"/></svg> 检测
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -649,6 +676,31 @@
           <span v-if="importLoading" class="spinner-sm"></span>
           {{ importLoading ? '导入中..' : '开始导入' }}
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Detect Modal -->
+  <div class="modal-overlay" id="detectModal" :class="{ show: activeModal === 'detect' }">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-header">
+        <h2>启动检测</h2>
+        <p>并发检测全部账号，达标自动启用</p>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>启动阈值（剩余积分 ≥ 此值才启用，0=不卡门槛）</label>
+          <input type="number" v-model.number="detectThresholdTemp" min="0" step="0.01" placeholder="0=不卡门槛"
+            style="width:100%;height:32px;padding:0 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:13px;outline:none;font-family:inherit;box-sizing:border-box">
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);line-height:1.7;margin:0">
+          将并发检测 <b style="color:var(--primary)">{{ detectTargetCount }}</b> 个账号：
+          拉取最新额度并刷新，剩余积分 ≥ 阈值的自动启用（已封禁账号跳过，恢复需单独检测）。
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" @click="activeModal = null">取消</button>
+        <button class="btn btn-primary" @click="confirmDetect">开始检测</button>
       </div>
     </div>
   </div>
@@ -966,6 +1018,10 @@ const vApp = createApp({
     const proxyPort = ref(8001);
     const proxyKey = ref('');
     const quotaThreshold = ref(0);
+    const enableThreshold = ref(0);
+    const detecting = ref(false);
+    const detectProgress = reactive({ done:0, total:0, enabled:0, skipped:0, banned:0, checked:0, failed:0, summary:'' });
+    let detectTimer = null;
     const proxyToggling = ref(false);
     let proxyInfoTimer = null;
     let _proxyFetchFailCount = 0, _statsRefreshCounter = 0, _noUsableWarned = false;
@@ -995,9 +1051,11 @@ const vApp = createApp({
     const selectedIds = reactive({});
     const batchDeleteLoading = ref(false);
     const batchExportLoading = ref(false);
+    const batchDetectLoading = ref(false);
 
     // ── 卡片按钮加载态（key = accountId + '_op'）──
     const cardLoading = reactive({});
+    const moreOpenId = ref(null);
 
     // ── OAuth ──
     const oauthUrlText = ref('正在生成授权链接...');
@@ -1202,6 +1260,7 @@ const vApp = createApp({
         } catch {}
         loadStats();
         loadQuotaThreshold();
+        loadEnableThreshold();
         loadUsageSummary();
         if (!proxyRunning.value) {
           try {
@@ -1232,6 +1291,13 @@ const vApp = createApp({
       } catch {}
     }
 
+    async function loadEnableThreshold() {
+      try {
+        const r = JSON.parse(await pywebview.api.get_enable_threshold());
+        enableThreshold.value = r.threshold || 0;
+      } catch {}
+    }
+
     async function refreshAccountStats() {
       try {
         const sd = JSON.parse(await pywebview.api.get_all_stats(currentPlatform.value));
@@ -1258,6 +1324,66 @@ const vApp = createApp({
       try {
         await pywebview.api.set_quota_threshold(quotaThreshold.value);
         showToast(`切号阈值已设为 ${quotaThreshold.value}`, 'success');
+      } catch {}
+    }
+
+    async function saveEnableThreshold() {
+      try {
+        await pywebview.api.set_enable_threshold(enableThreshold.value);
+        showToast(`启动阈值已设为 ${enableThreshold.value}`, 'success');
+      } catch {}
+    }
+
+    // ─── Detect & enable（并发检测全部账号，达标则启用）───
+    const detectThresholdTemp = ref(0);
+    const detectTargetCount = computed(() => accounts.value.length);
+
+    function openDetectModal() {
+      if (detecting.value) return;
+      detectThresholdTemp.value = enableThreshold.value;
+      activeModal.value = 'detect';
+    }
+
+    async function confirmDetect() {
+      enableThreshold.value = detectThresholdTemp.value;
+      try { await pywebview.api.set_enable_threshold(enableThreshold.value); } catch {}
+      activeModal.value = null;
+      detectAndEnable();
+    }
+
+    async function detectAndEnable() {
+      if (detecting.value) return;
+      detecting.value = true;
+      detectProgress.done = 0; detectProgress.total = 0;
+      detectProgress.enabled = 0; detectProgress.skipped = 0;
+      detectProgress.banned = 0; detectProgress.checked = 0; detectProgress.failed = 0; detectProgress.summary = '';
+      try {
+        const r = JSON.parse(await pywebview.api.detect_and_enable_accounts(currentPlatform.value, enableThreshold.value));
+        if (r.error) { showToast(r.error, 'error'); detecting.value = false; return; }
+        if (!r.started) { showToast(r.message || '没有需要检测的账号', 'info'); detecting.value = false; return; }
+        detectProgress.total = r.total;
+        detectTimer = setInterval(pollDetectStatus, 600);
+      } catch(e) { showToast('启动检测失败: '+e, 'error'); detecting.value = false; }
+    }
+
+    async function pollDetectStatus() {
+      try {
+        const s = JSON.parse(await pywebview.api.detect_enable_status());
+        detectProgress.done = s.done||0; detectProgress.total = s.total||0;
+        detectProgress.enabled = s.enabled||0; detectProgress.skipped = s.skipped||0;
+        detectProgress.banned = s.banned||0; detectProgress.checked = s.checked||0; detectProgress.failed = s.failed||0;
+        if (s.finished) {
+          if (detectTimer) { clearInterval(detectTimer); detectTimer = null; }
+          detecting.value = false;
+          detectProgress.summary = s.summary || '';
+          if (detectProgress.enabled > 0) {
+            showToast(`检测完成：${s.summary}`, 'success');
+          } else {
+            showToast(`检测完成：${s.summary || '无账号被启用'}`, 'info');
+          }
+          await loadAccounts();
+          await refreshProxyStatus();
+        }
       } catch {}
     }
 
@@ -1320,6 +1446,21 @@ const vApp = createApp({
       finally { cardLoading[id+'_refresh'] = false; }
     }
 
+    async function detectOne(id) {
+      if (cardLoading[id+'_detect']) return;
+      cardLoading[id+'_detect'] = true;
+      try {
+        const r = JSON.parse(await pywebview.api.detect_account(currentPlatform.value, id));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        if (r.status === 'banned') showToast(`账号已封禁：${r.reason}`, 'error');
+        else if (r.status === 'normal') showToast(r.reason || '检测通过', 'success');
+        else showToast(r.reason || '检测未判定', 'info');
+        await loadAccountsLight();
+        await refreshProxyStatus();
+      } catch(e) { showToast('检测失败: '+e, 'error'); }
+      finally { cardLoading[id+'_detect'] = false; moreOpenId.value = null; }
+    }
+
     async function deleteOne(id) {
       if (!await showConfirm('确定删除该账号吗？', '删除确认')) return;
       cardLoading[id+'_delete'] = true;
@@ -1378,6 +1519,25 @@ const vApp = createApp({
         else { showToast(`已导出 ${r.count} 个账号`, 'success', r.path || ''); }
       } catch(e) { showToast('导出失败: '+e, 'error'); }
       finally { batchExportLoading.value = false; }
+    }
+
+    async function batchDetect() {
+      const ids = Object.keys(selectedIds);
+      if (!ids.length) return;
+      batchDetectLoading.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.detect_accounts(currentPlatform.value, JSON.stringify(ids)));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        const c = r.counts || {};
+        const okN = c.normal||0, banN = c.banned||0, otherN = (c.unknown||0) + (c.failed||0);
+        showToast(
+          `检测完成：共 ${r.total} 个，正常 ${okN}，封禁 ${banN}（已自动标记），其他 ${otherN}`,
+          banN > 0 ? 'warning' : 'success'
+        );
+        await loadAccounts();
+        await refreshProxyStatus();
+      } catch(e) { showToast('批量检测失败: '+e, 'error'); }
+      finally { batchDetectLoading.value = false; }
     }
 
     async function batchDelete() {
@@ -1789,6 +1949,7 @@ const vApp = createApp({
     }
     // Close dropdown on outside click
     document.addEventListener('click', () => { modelDropdownOpen.value = false; });
+    document.addEventListener('click', () => { moreOpenId.value = null; });
 
     async function syncModels() {
       syncLoading.value = true; syncLabel.value = '同步中..';
@@ -1994,10 +2155,11 @@ const vApp = createApp({
       accounts, accountStats, statTotal, statQuota,
       statusFilter, filterDate, statusDropdownOpen,
       proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, quotaThreshold, proxyToggling,
+      enableThreshold, detecting, detectProgress, detectThresholdTemp, detectTargetCount,
       chatCardCollapsed, chatMessages, chatInput, chatSending, modelList, currentModel, modelDropdownOpen,
       syncLoading, syncLabel, wbExportLoading, wbExportLabel, chatMessagesRef,
-      exportLoading, checkinAllLoading, refreshAllLoading, cardLoading,
-      selectMode, selectedIds, batchDeleteLoading, batchExportLoading,
+      exportLoading, checkinAllLoading, refreshAllLoading, cardLoading, moreOpenId,
+      selectMode, selectedIds, batchDeleteLoading, batchExportLoading, batchDetectLoading,
       allSelected, someSelected, selectedCount,
       usageSummary, usageCacheRate,
       oauthUrlText, oauthStatusHtml,
@@ -2015,11 +2177,11 @@ const vApp = createApp({
       selectStatusFilter, getStatusDotClass, getStatusFilterLabel,
       showConsole, showLogs, showShopCards, openShop, openShopExternal, openModal,
       toggleTheme,
-      setFilterDate, saveQuotaThreshold,
+      setFilterDate, saveQuotaThreshold, saveEnableThreshold, detectAndEnable, openDetectModal, confirmDetect,
       exportAccounts, checkinAll, refreshAll,
       loadUsageSummary,
-      doCheckin, refreshOne, deleteOne, setPriorityAccount, toggleAccountStatus,
-      toggleSelectMode, toggleSelect, toggleSelectAll, clearSelection, batchExport, batchDelete,
+      doCheckin, refreshOne, detectOne, deleteOne, setPriorityAccount, toggleAccountStatus,
+      toggleSelectMode, toggleSelect, toggleSelectAll, clearSelection, batchExport, batchDetect, batchDelete,
       showQuotaDetail, refreshQuota,
       showOAuthModal, cancelOAuth,
       showImportModal, doImport, handleFileImport,

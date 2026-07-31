@@ -1080,6 +1080,64 @@ body {
   height: 28px;
   flex-shrink: 0;
 }
+/* 检测并启用：输入框 + 右侧主色按钮一体，常驻筛选条 */
+.detect-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 0 0 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.detect-field:focus-within { border-color: var(--primary); }
+.detect-field span {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-muted);
+  user-select: none;
+}
+.detect-field input {
+  width: 52px;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 11px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  padding: 0;
+}
+.detect-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 28px;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  background: var(--primary);
+  border: none;
+  outline: none;
+  cursor: pointer;
+  color: #fff;
+  border-radius: 0;
+  transition: background var(--transition);
+  flex-shrink: 0;
+}
+.detect-trigger:hover:not(:disabled) { background: var(--primary-hover); }
+.detect-trigger:disabled { cursor: default; }
+.detect-count {
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: #fff;
+}
 .batch-select-all {
   display: inline-flex;
   align-items: center;
@@ -1395,6 +1453,80 @@ body {
 .status-dot.dot-normal { background: var(--success); box-shadow: 0 0 5px var(--success-light); }
 .status-dot.dot-disabled { background: var(--warning); box-shadow: 0 0 5px var(--warning-light); }
 .status-dot.dot-banned { background: var(--danger); box-shadow: 0 0 5px var(--danger-light); }
+
+/* 卡片「更多」下拉（额度详情 + 检测） */
+.more-dropdown {
+  position: relative;
+  display: inline-flex;
+  user-select: none;
+}
+.more-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 26px;
+  padding: 0 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.more-dropdown-trigger:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+}
+.more-dropdown.open .more-dropdown-trigger {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+}
+.more-dropdown-arrow {
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+.more-dropdown.open .more-dropdown-arrow {
+  transform: rotate(180deg);
+  color: var(--primary);
+}
+.more-dropdown-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  min-width: 128px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  z-index: 100;
+  animation: dropdownFadeInUp 0.15s cubic-bezier(0, 0, 0.2, 1);
+}
+@keyframes dropdownFadeInUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.more-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-radius: calc(var(--radius-sm) - 2px);
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.more-dropdown-item:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.more-dropdown-item.busy {
+  cursor: default;
+  opacity: 0.7;
+}
 
 /* 统一的下拉样式。原先用系统原生箭头，配色和圆角都由 OS 决定，
    在暖米色界面里显得是外来控件。这里换成内嵌 SVG 箭头自己画。 */
