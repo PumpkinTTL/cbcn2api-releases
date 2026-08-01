@@ -341,9 +341,51 @@
         <button class="filter-icon-btn" :class="{ active: selectMode }" @click="toggleSelectMode" title="多选：勾选账号批量导出/删除">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><path d="M14 6.5h7M14 17.5h7"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
         </button>
-        <div style="position:relative">
-          <input type="date" v-model="filterDate" id="filterDate" :class="{ empty: !filterDate }">
-          <span id="datePh" v-show="!filterDate" style="position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:12px;pointer-events:none">选择日期</span>
+        <button class="filter-icon-btn" @click="openRecycle" title="回收站：查看/恢复软删除的账号">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.8-6.6L3 8"/><path d="M3 3v5h5"/><path d="M12 8v4l3 2"/></svg>
+        </button>
+        <div class="account-search">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+          <input v-model="accountSearch" type="text" placeholder="搜索昵称 / 邮箱 / ID" @input="onSearchInput">
+          <button v-if="accountSearch" class="account-search-clear" @click="accountSearch=''" title="清空">×</button>
+        </div>
+        <!-- 日期筛选下拉 -->
+        <div class="status-dropdown" :class="{ open: dateFilterOpen }" @click.stop="dateFilterOpen = !dateFilterOpen">
+          <div class="status-dropdown-trigger">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg>
+            <span>{{ dateFilterLabel }}</span>
+            <svg class="status-dropdown-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+          <div class="status-dropdown-menu" v-show="dateFilterOpen" style="min-width:140px">
+            <div class="status-dropdown-item" :class="{ active: !filterDate }" @click.stop="filterDate=''; dateFilterOpen=false">全部日期</div>
+            <div class="status-dropdown-item" :class="{ active: filterDate === dateStr(new Date()) }" @click.stop="setDatePreset(0)">今天</div>
+            <div class="status-dropdown-item" :class="{ active: filterDate === dateStr(new Date(Date.now()-86400000)) }" @click.stop="setDatePreset(-1)">昨天</div>
+            <div class="status-dropdown-item" :class="{ active: filterDate === 'last7' }" @click.stop="setLastDays(7)">近 7 天</div>
+            <div class="status-dropdown-item" :class="{ active: filterDate === 'last30' }" @click.stop="setLastDays(30)">近 30 天</div>
+            <div class="status-dropdown-item" @click.stop="pickCustomDate">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" style="opacity:.7"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg> 指定日期
+            </div>
+          </div>
+          <!-- 自定义日历弹层（相对日期下拉定位） -->
+          <div class="cal-panel" v-show="calOpen" @click.stop>
+            <div class="cal-head">
+              <button class="cal-nav" @click="calPrevMonth" title="上一月"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+              <span class="cal-title">{{ calTitle }}</span>
+              <button class="cal-nav" @click="calNextMonth" title="下一月"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
+            </div>
+            <div class="cal-grid">
+              <span v-for="w in ['一','二','三','四','五','六','日']" :key="w" class="cal-dow">{{ w }}</span>
+              <template v-for="(wk, wi) in calWeeks" :key="wi">
+                <button v-for="(d, di) in wk" :key="di" class="cal-day"
+                  :class="{ today: calIsToday(d), selected: calIsSelected(d), empty: d == null }"
+                  :disabled="d == null" @click="calPickDay(d)">{{ d == null ? '' : d }}</button>
+              </template>
+            </div>
+            <div class="cal-foot">
+              <button class="btn btn-sm btn-ghost" @click="filterDate=''; calOpen=false">清除</button>
+              <button class="btn btn-sm btn-primary" @click="calOpen=false; dateFilterOpen=false">完成</button>
+            </div>
+          </div>
         </div>
         <!-- 批量操作：仅多选模式时出现，放在多选按钮右边。选中数合并进「全选」标签。 -->
         <div class="filter-batch-actions" v-if="selectMode">
@@ -363,6 +405,22 @@
             <span v-if="batchDetectLoading" class="spinner-sm"></span>
             <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg> 检测</template>
           </button>
+          <button class="btn btn-sm btn-ghost" :disabled="selectedCount === 0 || batchStatusLoading" @click="batchEnable" title="启用选中的禁用账号">
+            <span v-if="batchStatusLoading" class="spinner-sm"></span>
+            <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg> 启用</template>
+          </button>
+          <button class="btn btn-sm btn-ghost" :disabled="selectedCount === 0 || batchStatusLoading" @click="batchDisable" title="禁用选中的账号">
+            <span v-if="batchStatusLoading" class="spinner-sm"></span>
+            <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> 禁用</template>
+          </button>
+          <button class="btn btn-sm btn-ghost" :disabled="selectedCount === 0 || batchRefreshLoading" @click="batchRefresh" title="刷新选中账号额度">
+            <span v-if="batchRefreshLoading" class="spinner-sm"></span>
+            <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg> 刷新</template>
+          </button>
+          <button class="btn btn-sm btn-ghost" :disabled="selectedCount === 0 || batchCheckinLoading" @click="batchCheckin" title="签到选中的账号">
+            <span v-if="batchCheckinLoading" class="spinner-sm"></span>
+            <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> 签到</template>
+          </button>
           <button class="btn btn-sm btn-danger" :disabled="selectedCount === 0 || batchDeleteLoading" @click="batchDelete">
             <span v-if="batchDeleteLoading" class="spinner-sm"></span>
             <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg> 删除</template>
@@ -378,28 +436,43 @@
             <span v-if="detecting" class="detect-count">{{ detectProgress.done }}/{{ detectProgress.total }}</span>
           </button>
         </div>
-        <button class="btn btn-sm btn-ghost" @click="openRecycle" title="回收站：查看/恢复软删除的账号">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M12 11v6M9.5 14.5L12 17l2.5-2.5"/></svg> 回收站
-        </button>
-        <!-- 贴合主题的状态下拉组件 (保持 Dropdown 下拉交互形式) —— margin-left:auto 靠最右 -->
-        <div class="status-dropdown" :class="{ open: statusDropdownOpen }" @click.stop="statusDropdownOpen = !statusDropdownOpen">
-          <div class="status-dropdown-trigger">
-            <span class="status-dot" :class="getStatusDotClass(statusFilter)"></span>
-            <span>{{ getStatusFilterLabel(statusFilter) }}</span>
-            <svg class="status-dropdown-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+        <!-- 过滤组：标签 + 状态筛选，靠右分区 -->
+        <div class="filter-tools">
+          <div class="status-dropdown" :class="{ open: tagFilterOpen }" @click.stop="tagFilterOpen = !tagFilterOpen">
+            <div class="status-dropdown-trigger">
+              <span v-if="tagFilter" class="tag-pill tag-pill-mini" style="margin:0">{{ tagFilter }}</span>
+              <span v-else>全部标签</span>
+              <svg class="status-dropdown-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+            <div class="status-dropdown-menu" v-show="tagFilterOpen" style="min-width:120px">
+              <div class="status-dropdown-item" :class="{ active: !tagFilter }" @click.stop="tagFilter=''; tagFilterOpen=false">
+                <span class="tag-pill tag-pill-mini" style="margin:0;opacity:.85">全部</span>全部标签
+              </div>
+              <div v-for="t in allTags" :key="t" class="status-dropdown-item" :class="{ active: tagFilter === t }" @click.stop="tagFilter=t; tagFilterOpen=false">
+                <span class="tag-pill tag-pill-mini" style="margin:0">{{ t }}</span>
+              </div>
+              <div v-if="allTags.length === 0" class="status-dropdown-item" style="color:var(--text-muted);cursor:default">暂无标签</div>
+            </div>
           </div>
-          <div class="status-dropdown-menu" v-show="statusDropdownOpen">
-            <div class="status-dropdown-item" :class="{ active: statusFilter === 'all' }" @click.stop="selectStatusFilter('all')">
-              <span class="status-dot dot-all"></span>全部状态
+          <div class="status-dropdown" :class="{ open: statusDropdownOpen }" @click.stop="statusDropdownOpen = !statusDropdownOpen">
+            <div class="status-dropdown-trigger">
+              <span class="status-dot" :class="getStatusDotClass(statusFilter)"></span>
+              <span>{{ getStatusFilterLabel(statusFilter) }}</span>
+              <svg class="status-dropdown-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
             </div>
-            <div class="status-dropdown-item" :class="{ active: statusFilter === 'normal' }" @click.stop="selectStatusFilter('normal')">
-              <span class="status-dot dot-normal"></span>正常
-            </div>
-            <div class="status-dropdown-item" :class="{ active: statusFilter === 'disabled' }" @click.stop="selectStatusFilter('disabled')">
-              <span class="status-dot dot-disabled"></span>已禁用
-            </div>
-            <div class="status-dropdown-item" :class="{ active: statusFilter === 'banned' }" @click.stop="selectStatusFilter('banned')">
-              <span class="status-dot dot-banned"></span>已封禁
+            <div class="status-dropdown-menu" v-show="statusDropdownOpen">
+              <div class="status-dropdown-item" :class="{ active: statusFilter === 'all' }" @click.stop="selectStatusFilter('all')">
+                <span class="status-dot dot-all"></span>全部状态
+              </div>
+              <div class="status-dropdown-item" :class="{ active: statusFilter === 'normal' }" @click.stop="selectStatusFilter('normal')">
+                <span class="status-dot dot-normal"></span>正常
+              </div>
+              <div class="status-dropdown-item" :class="{ active: statusFilter === 'disabled' }" @click.stop="selectStatusFilter('disabled')">
+                <span class="status-dot dot-disabled"></span>已禁用
+              </div>
+              <div class="status-dropdown-item" :class="{ active: statusFilter === 'banned' }" @click.stop="selectStatusFilter('banned')">
+                <span class="status-dot dot-banned"></span>已封禁
+              </div>
             </div>
           </div>
         </div>
@@ -461,6 +534,7 @@
                     <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg>
                     {{ dateStr(new Date(a.created_at * 1000)) }}
                   </span>
+                  <span v-for="t in (a.tags || [])" :key="t" class="tag-pill" @click.stop="tagFilter = t">{{ t }}</span>
                 </div>
               </div>
             </div>
@@ -547,6 +621,9 @@
                   <div class="more-dropdown-item" :class="{ busy: cardLoading[a.id + '_detect'] }" @click.stop="detectOne(a.id)" title="发真实请求检测是否封号">
                     <span v-if="cardLoading[a.id + '_detect']" class="spinner-sm"></span>
                     <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8 2 9.2h7.6z"/></svg> 检测
+                  </div>
+                  <div class="more-dropdown-item" @click.stop="editTags(a.id)" title="给账号打标签，便于分类管理">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.83z"/><circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg> 标签
                   </div>
                 </div>
               </div>
@@ -760,6 +837,30 @@
     </div>
   </div>
 
+
+  <!-- Tag Edit Modal -->
+  <div class="modal-overlay" id="tagModal" :class="{ show: activeModal === 'tagEdit' }">
+    <div class="modal" style="max-width:380px">
+      <div class="modal-header">
+        <h2>编辑标签</h2>
+        <p>{{ tagEditAccountName }}</p>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>标签（逗号或空格分隔，如：主号, 备用, 测试）</label>
+          <input v-model="tagEditInput" type="text" placeholder="主号, 备用, 测试" @keyup.enter="saveTags"
+            style="width:100%;height:32px;padding:0 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:13px;outline:none;font-family:inherit;box-sizing:border-box">
+        </div>
+        <div v-if="(tagEditAccount.tags || []).length" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px">
+          <span v-for="t in tagEditAccount.tags" :key="t" class="tag-pill" @click="removeTagChip(t)" title="点击移除">{{ t }} ×</span>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" @click="activeModal = null">取消</button>
+        <button class="btn btn-primary" @click="saveTags">保存</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Quota Detail Modal -->
   <div class="modal-overlay" id="quotaModal" :class="{ show: activeModal === 'quotaDetail' }">
@@ -1059,6 +1160,18 @@ const vApp = createApp({
     const statusFilter = ref('all');
     const filterDate = ref('');
     const statusDropdownOpen = ref(false);
+    const accountSearch = ref('');
+    const tagFilter = ref('');
+    const tagFilterOpen = ref(false);
+    const tagEditAccount = ref({});
+    const tagEditInput = ref('');
+    const tagEditAccountName = computed(() => tagEditAccount.value.nickname || tagEditAccount.value.email || tagEditAccount.value.id || '');
+    const allTags = computed(() => {
+      const set = new Set();
+      accounts.value.forEach(a => (a.tags || []).forEach(t => set.add(t)));
+      return [...set].sort();
+    });
+    function onSearchInput() { /* 触发响应式即可，过滤在 filteredAccounts 里做 */ }
 
     function selectStatusFilter(val) {
       statusFilter.value = val;
@@ -1144,6 +1257,9 @@ const vApp = createApp({
     const batchDeleteLoading = ref(false);
     const batchExportLoading = ref(false);
     const batchDetectLoading = ref(false);
+    const batchStatusLoading = ref(false);
+    const batchRefreshLoading = ref(false);
+    const batchCheckinLoading = ref(false);
 
     // ── 卡片按钮加载态（key = accountId + '_op'）──
     const cardLoading = reactive({});
@@ -1195,11 +1311,27 @@ const vApp = createApp({
     const filteredAccounts = computed(() => {
       let result = accounts.value;
       if (statusFilter.value !== 'all') result = result.filter(a => (a.status||'normal') === statusFilter.value);
-      if (filterDate.value) {
+      if (filterDate.value === 'last7' || filterDate.value === 'last30') {
+        const n = filterDate.value === 'last7' ? 7 : 30;
+        const cutoff = Date.now() - n * 86400000;
+        result = result.filter(a => a.created_at && a.created_at * 1000 >= cutoff);
+      } else if (filterDate.value) {
         result = result.filter(a => {
           if (!a.created_at) return false;
           return dateStr(new Date(a.created_at*1000)) === filterDate.value;
         });
+      }
+      const q = accountSearch.value.trim().toLowerCase();
+      if (q) {
+        result = result.filter(a => {
+          const nick = (a.nickname||'').toLowerCase();
+          const email = (a.email||'').toLowerCase();
+          const id = (a.id||'').toLowerCase();
+          return nick.includes(q) || email.includes(q) || id.includes(q);
+        });
+      }
+      if (tagFilter.value) {
+        result = result.filter(a => (a.tags || []).includes(tagFilter.value));
       }
       if (proxyCurrentAccount.value) {
         result = [...result].sort((a,b) => {
@@ -1411,6 +1543,71 @@ const vApp = createApp({
       filterDate.value = dateStr(d);
     }
 
+    const dateFilterOpen = ref(false);
+    const dateFilterLabel = computed(() => {
+      if (!filterDate.value) return '全部日期';
+      if (filterDate.value === 'last7') return '近 7 天';
+      if (filterDate.value === 'last30') return '近 30 天';
+      const y = +filterDate.value.slice(0,4), m = +filterDate.value.slice(5,7), d = +filterDate.value.slice(8,10);
+      return `${m}月${d}日`;
+    });
+
+    function setDatePreset(offset) {
+      const d = new Date(); d.setDate(d.getDate()+offset);
+      filterDate.value = dateStr(d);
+      dateFilterOpen.value = false;
+    }
+
+    function setLastDays(n) {
+      filterDate.value = n === 7 ? 'last7' : 'last30';
+      dateFilterOpen.value = false;
+    }
+
+    function pickCustomDate() {
+      dateFilterOpen.value = false;
+      calOpen.value = !calOpen.value;
+      if (calOpen.value) {
+        const d = filterDate.value && !filterDate.value.startsWith('last')
+          ? new Date(+filterDate.value.slice(0,4), +filterDate.value.slice(5,7)-1, +filterDate.value.slice(8,10))
+          : new Date();
+        calYear.value = d.getFullYear();
+        calMonth.value = d.getMonth();
+      }
+    }
+
+    const calOpen = ref(false);
+    const calYear = ref(new Date().getFullYear());
+    const calMonth = ref(new Date().getMonth());
+    const calWeeks = computed(() => {
+      const weeks = [];
+      const first = new Date(calYear.value, calMonth.value, 1);
+      const startDow = (first.getDay() + 6) % 7; // 周一开头
+      const daysInMonth = new Date(calYear.value, calMonth.value + 1, 0).getDate();
+      let cells = [];
+      for (let i = 0; i < startDow; i++) cells.push(null);
+      for (let d = 1; d <= daysInMonth; d++) {
+        cells.push(d);
+        if (cells.length === 7) { weeks.push(cells); cells = []; }
+      }
+      if (cells.length) { while (cells.length < 7) cells.push(null); weeks.push(cells); }
+      return weeks;
+    });
+    const calTitle = computed(() => `${calYear.value}年${calMonth.value + 1}月`);
+    function calPrevMonth() { calMonth.value--; if (calMonth.value < 0) { calMonth.value = 11; calYear.value--; } }
+    function calNextMonth() { calMonth.value++; if (calMonth.value > 11) { calMonth.value = 0; calYear.value++; } }
+    function calPickDay(day) {
+      if (day == null) return;
+      filterDate.value = `${calYear.value}-${String(calMonth.value+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      calOpen.value = false;
+    }
+    function calIsToday(day) {
+      const now = new Date();
+      return day != null && now.getFullYear() === calYear.value && now.getMonth() === calMonth.value && now.getDate() === day;
+    }
+    function calIsSelected(day) {
+      return day != null && filterDate.value === `${calYear.value}-${String(calMonth.value+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    }
+
     // ─── Save threshold ───
     async function saveQuotaThreshold() {
       try {
@@ -1521,6 +1718,8 @@ const vApp = createApp({
         if (r.error) { showToast(r.error, 'error'); return; }
         if (r.success) showToast(`签到成功! ${r.credit?'+'+r.credit+' 积分':''}`, 'success');
         else showToast(r.message||'签到完成(已签到)', 'info');
+        // 签到后自动刷新该账号额度（用量），失败静默不影响签到结果
+        try { await pywebview.api.refresh_token(currentPlatform.value, id); } catch(e) {}
         await loadAccounts();
       } catch(e) { showToast('签到失败: '+e, 'error'); }
       finally { cardLoading[id+'_checkin'] = false; }
@@ -1551,6 +1750,32 @@ const vApp = createApp({
         await refreshProxyStatus();
       } catch(e) { showToast('检测失败: '+e, 'error'); }
       finally { cardLoading[id+'_detect'] = false; moreOpenId.value = null; }
+    }
+
+    async function editTags(id) {
+      const acc = accounts.value.find(a => a.id === id);
+      if (!acc) return;
+      tagEditAccount.value = acc;
+      tagEditInput.value = (acc.tags || []).join(', ');
+      moreOpenId.value = null;
+      activeModal.value = 'tagEdit';
+    }
+
+    function removeTagChip(t) {
+      tagEditAccount.value.tags = (tagEditAccount.value.tags || []).filter(x => x !== t);
+      tagEditInput.value = tagEditAccount.value.tags.join(', ');
+    }
+
+    async function saveTags() {
+      const raw = (tagEditInput.value || '').split(/[,，\s]+/).map(s => s.trim()).filter(Boolean);
+      const tags = [...new Set(raw)];
+      try {
+        const r = JSON.parse(await pywebview.api.update_tags(currentPlatform.value, tagEditAccount.value.id, JSON.stringify(tags)));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        showToast(tags.length ? `已保存标签：${tags.join('、')}` : '已清空标签', 'success');
+        activeModal.value = null;
+        await loadAccountsLight();
+      } catch(e) { showToast('保存标签失败: '+e, 'error'); }
     }
 
     async function deleteOne(id) {
@@ -1634,6 +1859,61 @@ const vApp = createApp({
         await refreshProxyStatus();
       } catch(e) { showToast('批量检测失败: '+e, 'error'); }
       finally { batchDetectLoading.value = false; }
+    }
+
+    async function batchEnable() {
+      const ids = Object.keys(selectedIds);
+      if (!ids.length) return;
+      batchStatusLoading.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.set_account_statuses(currentPlatform.value, JSON.stringify(ids), 'normal'));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        showToast(`已启用 ${r.done} 个${r.failed ? '，失败 '+r.failed+' 个' : ''}`, 'success');
+        await loadAccountsLight();
+        await refreshProxyStatus();
+      } catch(e) { showToast('批量启用失败: '+e, 'error'); }
+      finally { batchStatusLoading.value = false; }
+    }
+
+    async function batchDisable() {
+      const ids = Object.keys(selectedIds);
+      if (!ids.length) return;
+      batchStatusLoading.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.set_account_statuses(currentPlatform.value, JSON.stringify(ids), 'disabled'));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        showToast(`已禁用 ${r.done} 个${r.failed ? '，失败 '+r.failed+' 个' : ''}`, 'success');
+        await loadAccountsLight();
+        await refreshProxyStatus();
+      } catch(e) { showToast('批量禁用失败: '+e, 'error'); }
+      finally { batchStatusLoading.value = false; }
+    }
+
+    async function batchRefresh() {
+      const ids = Object.keys(selectedIds);
+      if (!ids.length) return;
+      batchRefreshLoading.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.refresh_accounts(currentPlatform.value, JSON.stringify(ids)));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        showToast(`已刷新 ${r.success} 个${r.failed ? '，失败 '+r.failed+' 个' : ''}`, r.failed ? 'warning' : 'success');
+        await loadAccountsLight();
+        await refreshAccountStats();
+      } catch(e) { showToast('批量刷新失败: '+e, 'error'); }
+      finally { batchRefreshLoading.value = false; }
+    }
+
+    async function batchCheckin() {
+      const ids = Object.keys(selectedIds);
+      if (!ids.length) return;
+      batchCheckinLoading.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.checkin_accounts(currentPlatform.value, JSON.stringify(ids)));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        showToast(`签到完成：成功 ${r.success}，已签到 ${r.already}，失败 ${r.failed}`, r.failed ? 'warning' : 'success');
+        await loadAccountsLight();
+      } catch(e) { showToast('批量签到失败: '+e, 'error'); }
+      finally { batchCheckinLoading.value = false; }
     }
 
     // ─── 回收站（软删除恢复/多选/彻底删除）───
@@ -2351,13 +2631,17 @@ const vApp = createApp({
       // State
       currentPlatform, currentView, activeModal, hasUpdate,
       accounts, accountStats, statTotal, statQuota,
-      statusFilter, filterDate, statusDropdownOpen,
+      statusFilter, filterDate, statusDropdownOpen, accountSearch, onSearchInput,
+      dateFilterOpen, dateFilterLabel, setDatePreset, setLastDays, pickCustomDate,
+      calOpen, calTitle, calWeeks, calPrevMonth, calNextMonth, calPickDay, calIsToday, calIsSelected,
+      tagFilter, tagFilterOpen, allTags, tagEditAccount, tagEditInput, tagEditAccountName,
       proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, quotaThreshold, proxyToggling,
       enableThreshold, detecting, detectProgress, detectThresholdTemp, detectTargetCount,
       chatCardCollapsed, chatMessages, chatInput, chatSending, modelList, currentModel, modelDropdownOpen,
       syncLoading, syncLabel, wbExportLoading, wbExportLabel, chatMessagesRef,
       exportLoading, checkinAllLoading, refreshAllLoading, cardLoading, moreOpenId,
       selectMode, selectedIds, batchDeleteLoading, batchExportLoading, batchDetectLoading,
+      batchStatusLoading, batchRefreshLoading, batchCheckinLoading,
       deletedAccounts, recycleBusy, deletedSelected, deletedSelectedCount, allDeletedSelected,
       deletedFilter, deletedFilters, filteredDeletedAccounts, deletedFilterCounts,
       allSelected, someSelected, selectedCount,
@@ -2382,6 +2666,8 @@ const vApp = createApp({
       loadUsageSummary,
       doCheckin, refreshOne, detectOne, deleteOne, setPriorityAccount, toggleAccountStatus,
       toggleSelectMode, toggleSelect, toggleSelectAll, clearSelection, batchExport, batchDetect, batchDelete,
+      batchEnable, batchDisable, batchRefresh, batchCheckin,
+      editTags, saveTags, removeTagChip,
       openRecycle, restoreDeleted, restoreAllDeleted, restoreSelected, destroyDeleted, destroySelected,
       toggleDeletedSelect, selectAllDeleted,
       showQuotaDetail, refreshQuota,

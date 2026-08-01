@@ -1196,6 +1196,100 @@ class GuiApi:
             return _json.dumps({"ok": False, "error": str(e)})
         return _json.dumps({"ok": True})
 
+    def set_account_statuses(self, platform: str, account_ids_json: str, status: str) -> str:
+        """批量设置账号状态（normal / disabled）。
+        禁用时保护：不能把池中所有可用账号都禁掉（同删除的最后号保护）。"""
+        import json as _json
+        try:
+            ids = [str(i) for i in _json.loads(account_ids_json or "[]")]
+        except (ValueError, TypeError):
+            return _json.dumps({"error": "无效的账号列表"})
+        if not ids:
+            return _json.dumps({"error": "没有选中账号"})
+        from src.proxy.token_rotator import token_rotator
+        if status == "disabled":
+            try:
+                token_rotator.ensure_loaded(platform)
+                if not token_rotator.has_usable_besides(ids):
+                    return _json.dumps({"error": "不能禁用全部可用账号（至少保留一个可用账号）"})
+            except Exception:
+                pass
+        done = 0
+        failed = 0
+        for aid in ids:
+            try:
+                acc = store.load_account(platform, aid)
+                if not acc:
+                    failed += 1
+                    continue
+                if status == "disabled" and acc.status in ("disabled", "banned"):
+                    continue  # 已是禁用/封禁，跳过
+                if status == "normal" and acc.status == "normal":
+                    continue  # 已正常，跳过
+                acc.status = status
+                store.upsert_account(platform, acc)
+                if status == "normal":
+                    token_rotator.clear_disabled(aid)
+                done += 1
+            except Exception:
+                failed += 1
+        try:
+            token_rotator.reload(platform)
+        except Exception:
+            pass
+        return _json.dumps({"ok": True, "done": done, "failed": failed, "total": len(ids)})
+
+    def refresh_accounts(self, platform: str, account_ids_json: str) -> str:
+        """批量刷新选中账号额度（复用单号刷新逻辑）。"""
+        import json as _json
+        try:
+            ids = [str(i) for i in _json.loads(account_ids_json or "[]")]
+        except (ValueError, TypeError):
+            return _json.dumps({"error": "无效的账号列表"})
+        if not ids:
+            return _json.dumps({"error": "没有选中账号"})
+        success = 0
+        failed = 0
+        for aid in ids:
+            try:
+                r = _json.loads(self.refresh_token(platform, aid))
+                if "error" not in r:
+                    success += 1
+                else:
+                    failed += 1
+            except Exception:
+                failed += 1
+        return _json.dumps({"ok": True, "success": success, "failed": failed, "total": len(ids)})
+
+    def checkin_accounts(self, platform: str, account_ids_json: str) -> str:
+        """批量签到选中账号（复用单号签到逻辑）。"""
+        import json as _json
+        try:
+            ids = [str(i) for i in _json.loads(account_ids_json or "[]")]
+        except (ValueError, TypeError):
+            return _json.dumps({"error": "无效的账号列表"})
+        if not ids:
+            return _json.dumps({"error": "没有选中账号"})
+        success = 0
+        already = 0
+        failed = 0
+        for aid in ids:
+            try:
+                r = _json.loads(self.checkin(platform, aid))
+                if r.get("error"):
+                    failed += 1
+                elif r.get("success"):
+                    success += 1
+                else:
+                    msg = (r.get("message") or "").lower()
+                    if "already" in msg or "checked" in msg:
+                        already += 1
+                    else:
+                        failed += 1
+            except Exception:
+                failed += 1
+        return _json.dumps({"ok": True, "success": success, "already": already, "failed": failed, "total": len(ids)})
+
     def set_priority_account(self, platform: str, account_id: str) -> str:
         """手动设置优先调度账号，持久化到 DB。"""
         import json as _json

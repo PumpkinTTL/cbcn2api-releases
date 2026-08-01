@@ -982,6 +982,7 @@ body {
   display: flex; gap: 12px; align-items: center; margin-bottom: 14px; flex-wrap: wrap;
   padding: 8px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
   box-shadow: var(--shadow);
+  position: relative;
 }
 .filter-label {
   font-size: 11px; color: var(--text-muted); font-weight: 600;
@@ -1001,54 +1002,6 @@ body {
   align-items: center;
   position: relative;
 }
-.filter-bar input[type="date"] {
-  height: 28px;
-  padding: 0 8px 0 11px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--text) !important;
-  font-size: 12px;
-  font-weight: 500;              /* 与下拉一致，原来的 600 比同排控件都重 */
-  font-family: inherit;
-  font-variant-numeric: tabular-nums;
-  outline: none;
-  cursor: pointer;
-  min-width: 132px;
-  transition: var(--transition);
-}
-.filter-bar input[type="date"]:hover {
-  border-color: var(--border-hover);
-  background: var(--surface-hover);
-}
-.filter-bar input[type="date"]:focus { border-color: var(--primary); }
-.filter-bar input[type="date"].empty::-webkit-datetime-edit,
-.filter-bar input[type="date"].empty::-webkit-datetime-edit-fields-wrapper,
-.filter-bar input[type="date"].empty::-webkit-datetime-edit-text,
-.filter-bar input[type="date"].empty::-webkit-datetime-edit-month-field,
-.filter-bar input[type="date"].empty::-webkit-datetime-edit-day-field,
-.filter-bar input[type="date"].empty::-webkit-datetime-edit-year-field { opacity: 0 !important; }
-.filter-bar input[type="date"]::-webkit-datetime-edit,
-.filter-bar input[type="date"]::-webkit-datetime-edit-fields-wrapper,
-.filter-bar input[type="date"]::-webkit-datetime-edit-text,
-.filter-bar input[type="date"]::-webkit-datetime-edit-month-field,
-.filter-bar input[type="date"]::-webkit-datetime-edit-day-field,
-.filter-bar input[type="date"]::-webkit-datetime-edit-year-field {
-  color: var(--text) !important;
-  font-weight: 600 !important;
-}
-.filter-bar input[type="date"]::-webkit-calendar-picker-indicator {
-  cursor: pointer;
-  opacity: 1 !important;
-  filter: invert(0.9) sepia(1) saturate(5) hue-rotate(180deg);
-  width: 16px;
-  height: 16px;
-}
-[data-theme="light"] .filter-bar input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: none;
-  opacity: 0.9 !important;
-}
-
 /* 多选按钮：跟 date input / 状态下拉同高(28px)同风格的 icon 按钮，激活态用主色高亮 */
 .filter-icon-btn {
   display: inline-flex;
@@ -1360,6 +1313,168 @@ body {
 .badge-status-banned { font-size: 10px; height: 18px; line-height: 16px; padding: 0 6px; border-radius: 4px; background: var(--danger-light); color: var(--danger); border: 1px solid rgba(217,83,79,0.25); box-sizing: border-box; flex-shrink: 0; }
 .badge-status-disabled { font-size: 10px; height: 18px; line-height: 16px; padding: 0 6px; border-radius: 4px; background: var(--warning-light); color: var(--warning); border: 1px solid rgba(217,119,6,0.25); box-sizing: border-box; flex-shrink: 0; }
 .status-filter-group { display: flex; gap: 4px; margin-left: auto; }
+
+/* 自定义标签小徽章：柔和描边式，不喧宾夺主 */
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  line-height: 1;
+  transition: var(--transition);
+}
+.tag-pill:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+.tag-pill-mini { height: 16px; padding: 0 6px; font-size: 9px; border-radius: 8px; }
+
+/* 过滤组（filter-bar 内右侧分区）：搜索 + 标签 + 状态 */
+.filter-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}/* 覆盖全局 input[type="text"]（1759 行，specificity 同级且后定义）：
+   必须把 border/padding/background 一并覆盖，否则搜索 input 会带完整边框
+   套在 .account-search 容器里，看起来像两个搜索框叠在一起 */
+.filter-bar .account-search input {
+  width: 170px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  box-shadow: none;
+}
+
+/* 账号搜索框 */
+.account-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  transition: var(--transition);
+}
+.account-search:focus-within {
+  border-color: var(--border-hover);
+  background: var(--surface);
+}
+.account-search input {
+  width: 130px;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+}
+.account-search input::placeholder { color: var(--text-muted); }
+.account-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.account-search-clear:hover { background: var(--surface-hover); color: var(--text); }
+
+/* 过滤工具行里的状态下拉：flex:1 撑开已够，去掉 margin-left:auto 避免双重推挤 */
+.filter-tools .status-dropdown { margin-left: 0; }
+
+/* 自定义日历弹层（贴合主题，替代原生日历控件） */
+.cal-panel {
+  position: absolute;
+  z-index: 200;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 248px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 10px;
+}
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.cal-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.cal-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.cal-nav:hover { background: var(--surface-hover); color: var(--text); }
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.cal-dow {
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 2px 0;
+  user-select: none;
+}
+.cal-day {
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+.cal-day:hover:not(:disabled) { background: var(--surface-hover); }
+.cal-day.empty { cursor: default; }
+.cal-day.today { border: 1px solid var(--primary); color: var(--primary); font-weight: 600; }
+.cal-day.selected { background: var(--primary); color: #fff; font-weight: 600; }
+.cal-day.selected:hover { background: var(--primary-hover); }
+.cal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
 
 /* 自定义贴合主题的状态下拉框 (Custom Status Dropdown) */
 .status-dropdown {
