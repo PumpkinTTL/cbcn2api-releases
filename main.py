@@ -50,7 +50,7 @@ def _prepare_frozen_html():
     解析到解压目录，避免临时目录相对路径失效。"""
     src = pathlib.Path(_resource(os.path.join("src", "gui", "index.html")))
     html = src.read_text(encoding="utf-8")
-    base = pathlib.Path(sys._MEIPASS).as_uri() + "/"
+    base = src.parent.as_uri() + "/"
     html = html.replace("<head>", f'<head><base href="{base}">', 1)
     html = html.replace('<script src="theme.js"></script>', _build_theme_inline())
     tmp = pathlib.Path(tempfile.gettempdir()) / "cbcn2api_gui.html"
