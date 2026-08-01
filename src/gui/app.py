@@ -607,13 +607,17 @@ class GuiApi:
         total = len(accounts)
         total_quota = 0
         total_used = 0
+        total_remain = 0
         for a in accounts:
+            if a.status == "banned":
+                continue
             try:
                 t, u = quota_api.calc_totals(a.quota_raw, a.usage_raw)
             except Exception:
                 t, u = 0, 0
             total_quota += t
             total_used += u
+            total_remain += max(0.0, t - u)
         checked_in = 0
         today_start = int(time.time()) // 86400 * 86400
         for a in accounts:
@@ -624,6 +628,7 @@ class GuiApi:
             "total_accounts": total,
             "total_quota": total_quota,
             "total_used": total_used,
+            "total_remain": total_remain,
             "checked_in_today": checked_in,
         })
 

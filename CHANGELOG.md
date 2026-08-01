@@ -3,6 +3,106 @@
 本文件面向开发者，记录每个版本的技术变更（根因、涉及的文件、机制改动）。
 面向终端用户的更新日志见应用内「更新日志」弹窗（`src/gui/index.html`）。
 
+## [v1.0.6] — 2026-08-01
+
+账号管理增强 + 封禁检测闭环。从 v1.0.5 之后的 6 个功能提交（`69d4288` ~ `0a962e4`）
+汇总。覆盖：OAuth 竞态根治、封禁检测闭环、账号多选批量操作、搜索/标签/回收站、
+自定义日历日期筛选、全局用量统计、签到自动刷新额度。
+
+### 账号管理增强
+
+#### 账号搜索（`0a962e4`）
+- filter-bar 内回收站按钮旁新增搜索框（`accountSearch`），按昵称/邮箱/ID 实时过滤，
+  过滤逻辑在 `filteredAccounts` computed 里做，无后端改动。
+- **UI 修复**：全局 `input[type="text"]`（`style.css` 全局样式，specificity 0,1,1）
+  后定义覆盖了 `.account-search input`（0,1,1）的 `border:none/background:transparent`，
+  导致输入框在容器里出现「双重边框」。修复用 `.filter-bar .account-search input`
+  （0,2,1）显式覆盖 `padding/border/background/outline/box-shadow`。
+
+#### 多选批量操作（`b51fd13` 批量框架 + `0a962e4` 补全）
+- 多选模式下新增：启用 / 禁用 / 刷新 / 签到 / 导出 / 删除。
+- 后端新增 `set_account_statuses`（批量启用/禁用，含最后可用号保护）、
+  `refresh_accounts`、`checkin_accounts`、`detect_accounts`（`_detect_lock` 互斥，
+  只在自家启动时才清 `running` 标志）。
+- 全选三态复选框（未选 / 部分选横线 / 全选勾），选中数合并进「全选」标签。
+
+#### 标签系统（`0a962e4`）
+- 复用后端既有 `update_tags`（`app.py`），前端新增：卡片 `tag-pill` 显示（点击设
+  `tagFilter`）、「更多→标签」编辑弹窗（`tagEditModal`/`saveTags`/`removeTagChip`）、
+  工具栏标签筛选下拉。
+
+#### 回收站（`7f4eb51`）
+- 软删除 + 回收站：`list_deleted_accounts` 返回原状态 dict（含 `deleted_at`），
+  tombstone 永久；stats LEFT JOIN 过滤 deleted；`reset_account_credit`/
+  `reset_account_stats` 拆分。
+- 防复活：`find_duplicate`/`revive_account` 显式清理 tombstone，软删号回原状态；
+  显式 OAuth 登录同号 = 恢复意图，同时清调度器残留冷却/封禁计数。
+- 前端：回收站弹窗（状态筛选/多选/恢复/彻底删除），图标为恢复循环箭头+时钟。
+
+### 封禁检测优化（`9bf772b`，增强既有封禁检测）
+
+> v1.0.2 已有基础封禁检测（检测接口标记 banned、不再使用）。本版是**闭环增强**：
+> 批量检测、实时防线、启动阈值检测三块。
+
+- `_detect_one`：refresh 续期 + 拉额度落库 → 真实 chat 请求探测 11140；全 11140 →
+  标记 banned；任意 200 → 检测通过（原是 banned 则恢复 normal）；其他 → unknown
+  不封不禁。只写状态不 reload（调用方统一做）。
+- 批量检测（`detect_accounts`）线程池并发，`_detect_lock` 全程互斥；
+  检测出的 banned 号自动禁用并 reload 调度器。
+- **实时防线**（调度链路，非检测触发）：`_classify_upstream_error`
+  （`proxy_server.py`）单独识别 11140 / request illegal 的顶层 code 结构（区别于
+  嵌套 error 包裹的普通错误），返回 `banned` → `token_rotator` 按渐进冷却
+  30s→1m→2m→5m→10m 处理，连续 5 次 11140 自动落库封禁（BANNED_COOLDOWNS）。
+  普通 403 仍归 `auth`（临时鉴权，渐进冷却，不封号）。
+- **启动阈值检测**（新增功能）：网关栏可设「启用阈值」，`detect_and_enable_accounts`
+  一键并发（8 线程）检测全部账号：拉最新额度，剩余 >= 阈值的禁用号自动启用
+  （阈值=0 不卡门槛），normal 保持并刷新额度，banned 跳过，额度拉取失败但非封禁
+  视为可能可用仍启用。`_detect_state` 记录进度，前端 `detect_enable_status` 轮询
+  展示进度弹窗；只在自家启动时才清 `running`。
+
+### 签到自动刷新额度（`0a962e4`）
+
+- **问题**：单账号签到后卡片额度条不更新。根因：`doCheckin` 签到后只
+  `loadAccounts()` 重载列表（读本地 DB），`quota_raw` 是签到前存的旧数据——签到
+  给的是积分，不动 quota，额度条永远不变。
+- **方案**：`doCheckin` 签到成功后追加调 `refresh_token`（即 `refresh_full_payload`
+  拉最新额度落库），再 `loadAccounts()`。刷新失败静默（`try/catch` 包裹），不影响
+  签到结果提示。一键签到 `checkinAll` 未动（批量拉全部账号额度太重）。
+
+### 自定义日历日期筛选（`0a962e4`）
+
+- 原生 `input[type="date"]` 替换为主题化日历弹层：今天 / 昨天 / 近 7 天 / 近 30 天 /
+  指定日期。指定日期弹 `.cal-panel`（上一月/下一月导航、今天高亮描边、选中主色
+  填充、清除/完成按钮），全部用主题变量样式。
+- `filterDate` 支持 `'' | 'YYYY-MM-DD' | 'last7' | 'last30'`，`filteredAccounts`
+  按此分支过滤。日历状态（`calYear/calMonth/calWeeks`）与派生函数
+  （`calTitle/calPrevMonth/calNextMonth/calPickDay/calIsToday/calIsSelected`）
+  前端本地计算，无后端改动。
+- 死代码清理：`customDateInput`/`onCustomDateChange`/`showPicker`/`window.prompt`
+  全删。
+
+### OAuth 竞态根治（`69d4288`）
+
+- `poll_token` 不再 pop pending，改为只返回 token，由 `complete_oauth_and_save`
+  的 `reset_pending()` 统一清理。并发 poll 都能拿到同一 token，互不伤害。
+- 新增 `oauth_api.reset_pending()`，登录开始 + 完成时彻底清空 `_pending_oauth`。
+- 前端 `_currentOauthLoginId` + `_oauthSettled` 双重 guard 防跨轮竞态，容忍单次
+  「没有待处理」误报（连续 2 次才判定失败）。
+
+### 其他
+
+- 全局用量统计卡片（`5335660`）：统计占比 + 卡片高度恒定（常驻占位防跳动）。
+- 图标系统换新 + 标题栏重构（`9372087`）。
+- 主题持久化刷新闪深色 + 全局开屏 loading 揭幕（`c7d4bb3`）。
+- 联营店铺文案还原 + 统计卡片占比 + 卡片高度恒定（`87aca83`）。
+- 重复登录同号明确提示 is_update；手机号去重修复（去掉 @ 限制）；upsert 信息字段
+  COALESCE 保护（新值为空保留旧值）；列表排序改 created_at DESC 稳定排序
+  （`69d4288`）。
+- 变更的提交：`69d4288` `c7d4bb3` `9372087` `5335660` `87aca83` `9bf772b`
+  `7f4eb51` `0a962e4`。
+
+---
+
 ## [v1.0.5] — 2026-07-27
 
 从 v1.0.3 直接跃迁（跳过 v1.0.4）。本次聚焦三类问题：frameless 窗口健壮性、

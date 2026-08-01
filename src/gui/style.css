@@ -546,7 +546,7 @@ body {
 /* Stats Bar —— 3 卡片绝美标准列比例 (单行，零侧向挤压，零粘连) */
 .stats {
   display: grid;
-  grid-template-columns: 0.7fr 1fr 2.3fr;
+  grid-template-columns: 0.7fr 1.5fr 2fr;
   gap: 12px;
   margin-bottom: 14px;
 }

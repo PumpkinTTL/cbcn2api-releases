@@ -125,7 +125,7 @@
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> 切换主题
       </button>
       <div style="text-align:center;font-size:11px;margin-top:8px">
-        <span class="version-link" @click="openModal('changelog')">v1.0.5</span>
+        <span class="version-link" @click="openModal('changelog')">v1.0.6</span>
         <span style="margin:0 4px;color:var(--text-muted)">|</span>
         <span class="version-link" @click="checkForUpdate">检查更新
           <span v-if="hasUpdate" id="updateBadge" style="margin-left:4px;color:var(--accent,#2563eb);vertical-align:-1px">
@@ -303,7 +303,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
           </div>
           <div class="stat-text">
-            <div class="stat-label">已用 / 总量</div>
+            <div class="stat-label">已用 / 剩余</div>
             <div class="stat-value" :title="statQuota">{{ statQuota }}</div>
           </div>
         </div>
@@ -913,21 +913,132 @@
         </button>
       </div>
       <div class="modal-body">
-        <div class="changelog-version">v1.0.5</div>
-        <div class="changelog-date">2026-07-27</div>
-        <div class="changelog-section-title">UI 架构升级</div>
+        <div class="changelog-version">v1.0.6</div>
+        <div class="changelog-date">2026-08-01</div>
+
+        <div class="changelog-section-title">账号管理增强</div>
         <ul class="changelog-list">
-          <li>底层重构为 Vue 3 响应式架构，消除DOM频繁刷新</li>
-          <li>集成 Header 单行网关中控与 360° 边框全亮流光动画</li>
-          <li>完美自适应护眼暖米色与深色夜间主题</li>
-          <li>按钮加载态与 Toast 通知系统完整保留</li>
-          <li>账号卡片新增导入日期小字显示</li>
+          <li>新增账号搜索框，按昵称 / 邮箱 / ID 实时过滤</li>
+          <li>新增多选批量操作：一键启用 / 禁用 / 刷新 / 签到 / 导出 / 删除</li>
+          <li>新增自定义标签，卡片直接显示，支持按标签筛选</li>
+          <li>新增回收站：误删可恢复，支持多选恢复 / 彻底删除</li>
+          <li>签到后自动刷新该账号额度，无需手动点刷新</li>
         </ul>
-        <div class="changelog-section-title">功能更新</div>
+
+        <div class="changelog-section-title">封禁检测优化</div>
         <ul class="changelog-list">
-          <li>支持额度阈值切号功能，积分不足自动切换下一个账号</li>
-          <li>支持账号状态管理（正常/禁用/封禁）</li>
-          <li>代理 Info 实时轮询，当前调度账号实时感知</li>
+          <li>批量检测升级：多选账号一键检测封禁（真实 chat 请求探测）</li>
+          <li>调度中实时识别非法请求（11140），自动标记封禁并切换下一个账号</li>
+          <li>新增启动阈值检测：设置启用阈值后可一键并发检测全部账号，达标的禁用号自动启用</li>
+        </ul>
+
+        <div class="changelog-section-title">UI 体验</div>
+        <ul class="changelog-list">
+          <li>日期筛选换成主题化日历：今天 / 昨天 / 近 7 天 / 近 30 天 / 指定日期</li>
+          <li>新增全局用量统计卡片，占比显示更直观</li>
+          <li>图标系统换新 + 标题栏重构</li>
+          <li>修复主题持久化刷新闪深色、首次打开闪加载页问题</li>
+          <li>修复 OAuth 登录竞态（「没有待处理的登录请求」偶发报错）</li>
+        </ul>
+
+        <div class="changelog-version" style="margin-top:24px">v1.0.5</div>
+        <div class="changelog-date">2026-07-27</div>
+
+        <div class="changelog-section-title">新增功能</div>
+        <ul class="changelog-list">
+          <li>账号卡片新增运行统计：请求次数、Token 消耗、累计积分消耗、缓存命中率</li>
+          <li>应用内检查更新：发现新版本可一键下载并重启更新</li>
+          <li>新增商店入口，方便查看订阅方案</li>
+        </ul>
+
+        <div class="changelog-section-title">UI 全面升级</div>
+        <ul class="changelog-list">
+          <li>全新暖米色 / 暖浓咖啡设计系统</li>
+          <li>浅色模式升级为护眼暖米色，长时间使用更舒适</li>
+          <li>自定义标题栏，窗口更精致</li>
+          <li>主题切换新增圆形扩散过渡动画</li>
+          <li>账号卡片显示导入日期，方便追溯</li>
+        </ul>
+
+        <div class="changelog-section-title">代理链路加固</div>
+        <ul class="changelog-list">
+          <li>修复代理链路「请求永不返回」问题</li>
+          <li>修复故障转移在某些场景失效的问题</li>
+          <li>全链路审核修复（11 项）</li>
+          <li>阈值切换确保备选账号额度充足，防止切换死循环</li>
+          <li>阈值自动切号后被禁用账号立即在卡片上反映状态</li>
+          <li>账号增删立即同步调度器，删除当前调度号会自动切到下一个可用号</li>
+        </ul>
+
+        <div class="changelog-section-title">数据与界面同步</div>
+        <ul class="changelog-list">
+          <li>修复删除账号后卡片仍残留、需手动刷新才消失的问题</li>
+          <li>修复导入账号后额度不显示、必须手动点刷新的问题</li>
+          <li>修复签到成功后签到徽章不立即更新的问题</li>
+          <li>网关运行时额度统计自动刷新，不再需要手动刷新才看到消耗</li>
+          <li>无可用账号时主动提示，不再静默「假运行」</li>
+        </ul>
+
+        <div class="changelog-section-title">体验优化</div>
+        <ul class="changelog-list">
+          <li>窗口可自由拖拽边缘调整大小</li>
+          <li>修复首次打开窗口四周闪白边的问题</li>
+          <li>关闭窗口增加确认弹窗，避免误触退出</li>
+          <li>文件导入显示加载动画，读取完成后才消失</li>
+          <li>检查更新发现新版本时醒目标识</li>
+          <li>刷新额度时局部更新，不再整体重排</li>
+          <li>网关栏标签更直观：端口 / Key / 切号阈值</li>
+        </ul>
+
+        <div class="changelog-version" style="margin-top:24px">v1.0.3</div>
+        <div class="changelog-date">2026-07-26</div>
+
+        <div class="changelog-section-title">额度计算修复</div>
+        <ul class="changelog-list">
+          <li>修复个人体验版等套餐额度显示为 0 的问题</li>
+          <li>对齐官方计算逻辑，正确合并多个资源包</li>
+          <li>仪表盘统计和卡片显示同步修正</li>
+        </ul>
+
+        <div class="changelog-section-title">运行日志</div>
+        <ul class="changelog-list">
+          <li>新增运行日志面板，记录每次请求的账号和状态</li>
+          <li>支持按类型筛选（请求 / 成功 / 错误）</li>
+          <li>可一键清空，可关闭记录节省性能</li>
+        </ul>
+
+        <div class="changelog-section-title">调度优化</div>
+        <ul class="changelog-list">
+          <li>冷却状态重启不丢失，到期自动恢复</li>
+          <li>区分额度耗尽、非法请求、临时错误的不同冷却策略</li>
+          <li>手动启用账号时自动清除运行时冷却</li>
+        </ul>
+
+        <div class="changelog-version" style="margin-top:24px">v1.0.2</div>
+        <div class="changelog-date">2026-07-26</div>
+
+        <div class="changelog-section-title">账号调度</div>
+        <ul class="changelog-list">
+          <li>实时显示当前正在使用的账号，排在列表第一位</li>
+          <li>请求处理中绿色光效提示，处理完自动消失</li>
+          <li>可手动指定优先使用的账号，重启后仍然记住</li>
+          <li>可手动禁用账号，禁用后不再参与调度</li>
+          <li>自动选择最优账号，无需手动干预</li>
+        </ul>
+
+        <div class="changelog-section-title">安全防护</div>
+        <ul class="changelog-list">
+          <li>自动检测被封禁的账号，标记后不再使用</li>
+          <li>封禁状态永久保存，避免重复尝试</li>
+          <li>封禁账号红色醒目标识</li>
+        </ul>
+
+        <div class="changelog-section-title">体验优化</div>
+        <ul class="changelog-list">
+          <li>账号状态筛选（全部 / 正常 / 禁用 / 封禁）</li>
+          <li>签到状态移至卡片右上角，一目了然</li>
+          <li>日期筛选器中文化</li>
+          <li>界面细节打磨，整体更清爽</li>
         </ul>
       </div>
       <div class="modal-actions">
@@ -1503,7 +1614,7 @@ const vApp = createApp({
       try {
         const d = JSON.parse(await pywebview.api.get_stats(currentPlatform.value));
         statTotal.value = d.total_accounts;
-        const q = `${fmt(d.total_used)} / ${fmt(d.total_quota)}`;
+        const q = `${fmt(d.total_used)} / ${fmt(d.total_remain)}`;
         statQuota.value = q;
       } catch {}
     }
