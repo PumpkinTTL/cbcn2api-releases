@@ -39,6 +39,7 @@ echo [2/4] 开始 PyInstaller 打包...
     --add-data "%CD%\gateway.ico;." ^
     --add-data "%CD%\src\gui\index.html;src\gui" ^
     --add-data "%CD%\src\gui\style.css;src\gui" ^
+    --add-data "%CD%\src\gui\animations.css;src\gui" ^
     --add-data "%CD%\src\gui\vue.prod.js;src\gui" ^
     --add-data "%CD%\src\gui\icons;src\gui\icons" ^
     "%CD%\main.py"
