@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import tempfile
 import threading
 import ctypes
 import pathlib
@@ -26,8 +27,39 @@ def _resource(name):
         return os.path.join(sys._MEIPASS, name)
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
 
+
+def _build_theme_inline():
+    """生成内联主题引导脚本（打包版用）：读 theme.txt 设 data-theme。
+    dev 版走 theme.js 文件机制；frozen 版 theme.js 无法可靠打包/写入（_MEIPASS
+    临时解压目录），改内联进 HTML，彻底消除「首帧深色一闪」。
+    """
+    from src.storage import store
+    theme = store.load_theme() or "light"
+    if theme not in ("light", "dark"):
+        theme = "light"
+    return (
+        "<script>(function(){var d='" + theme + "';"
+        "try{var s=localStorage.getItem('theme');if(s==='light'||s==='dark')d=s;}catch(e){}"
+        "document.documentElement.setAttribute('data-theme',d);window.__THEME__=d;})();</script>"
+    )
+
+
+def _prepare_frozen_html():
+    """frozen：内联主题脚本 + <base> 指向 _MEIPASS，生成临时 HTML 加载。
+    页面自身的相对资源（style.css/animations.css/vue.prod.js/icons）靠 base
+    解析到解压目录，避免临时目录相对路径失效。"""
+    src = pathlib.Path(_resource(os.path.join("src", "gui", "index.html")))
+    html = src.read_text(encoding="utf-8")
+    base = pathlib.Path(sys._MEIPASS).as_uri() + "/"
+    html = html.replace("<head>", f'<head><base href="{base}">', 1)
+    html = html.replace('<script src="theme.js"></script>', _build_theme_inline())
+    tmp = pathlib.Path(tempfile.gettempdir()) / "cbcn2api_gui.html"
+    tmp.write_text(html, encoding="utf-8")
+    return tmp.as_uri()
+
+
 _GUI_HTML = _resource(os.path.join("src", "gui", "index.html"))
-_HTML_URL = pathlib.Path(_GUI_HTML).as_uri()
+_HTML_URL = _prepare_frozen_html() if getattr(sys, 'frozen', False) else pathlib.Path(_GUI_HTML).as_uri()
 
 _ICO_PATH = _resource("gateway.ico")
 
