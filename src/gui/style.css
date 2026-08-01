@@ -1421,7 +1421,14 @@ body {
   justify-content: space-between;
   margin-bottom: 8px;
 }
+.cal-nav-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
 .cal-title {
+  flex: 1;
+  text-align: center;
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
@@ -1510,6 +1517,24 @@ body {
   color: var(--text-muted);
   transition: transform 0.2s ease;
   margin-left: 2px;
+}
+.cal-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: var(--transition);
+}
+.cal-clear-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
 }
 .status-dropdown.open .status-dropdown-arrow {
   transform: rotate(180deg);
