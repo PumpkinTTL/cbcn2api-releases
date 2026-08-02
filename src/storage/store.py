@@ -46,6 +46,10 @@ def _run_migrations(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE accounts ADD COLUMN deleted_at INTEGER")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE accounts ADD COLUMN fingerprint TEXT")
+    except sqlite3.OperationalError:
+        pass
 
 
 def _ensure_schema(conn: sqlite3.Connection):
@@ -183,6 +187,20 @@ def upsert_account(platform: str, account: Account) -> Account:
         conn.close()
 
 
+def save_fingerprint(platform: str, account_id: str, fingerprint: Optional[dict]):
+    """独立 UPDATE 指纹列：快照类并发回写（upsert）不携带指纹，因此不会覆盖已保存值。"""
+    conn = _get_conn()
+    try:
+        conn.execute(
+            "UPDATE accounts SET fingerprint=? WHERE id=? AND platform=? AND status != 'deleted'",
+            (json.dumps(fingerprint, ensure_ascii=False) if fingerprint else None,
+             account_id, platform),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def load_account(platform: str, account_id: str) -> Optional[Account]:
     conn = _get_conn()
     try:
@@ -204,12 +222,14 @@ def _load_by_id(conn: sqlite3.Connection, platform: str, account_id: str) -> Opt
 def _row_to_account(row: sqlite3.Row) -> Account:
     tags = json.loads(row["tags"]) if row["tags"] else None
     quota_raw = json.loads(row["quota_raw"]) if row["quota_raw"] else None
+    fingerprint = json.loads(row["fingerprint"]) if row["fingerprint"] else None
     return Account(
         id=row["id"], email=row["email"] or "", uid=row["uid"],
         nickname=row["nickname"],
         enterprise_id=row["enterprise_id"],
         enterprise_name=row["enterprise_name"],
         tags=tags,
+        fingerprint=fingerprint,
         access_token=row["access_token"] or "",
         refresh_token=row["refresh_token"],
         token_type=row["token_type"] or "Bearer",

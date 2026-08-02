@@ -281,7 +281,7 @@ async def _stream_inner(
 
         base_url = resolve_base_url()
         api_url = f"{base_url}/v2/chat/completions"
-        headers = build_headers(acc.access_token, acc.uid, conversation_id)
+        headers = build_headers(acc.access_token, acc.uid, conversation_id, fingerprint=acc.fingerprint)
         client = _get_http_client()
 
         try:

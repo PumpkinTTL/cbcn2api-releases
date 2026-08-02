@@ -1025,13 +1025,16 @@ body {
   color: var(--primary);
 }
 
-/* 批量操作区：仅多选模式时出现，跟在多选按钮后面 */
+/* 批量操作区：仅多选模式时出现，order 置后 + flex-basis 100% 强制独占第二行，
+   第一行元素位置不变，出现/消失不重排，避免布局跳动 */
 .filter-batch-actions {
   display: flex;
   align-items: center;
   gap: 8px;
   height: 28px;
   flex-shrink: 0;
+  order: 99;
+  flex-basis: 100%;
 }
 /* 检测并启用：输入框 + 右侧主色按钮一体，常驻筛选条 */
 .detect-field {
@@ -1320,9 +1323,9 @@ body {
   align-items: center;
   gap: 3px;
   font-size: 10px;
-  height: 20px;
+  height: 18px;
   padding: 0 8px;
-  border-radius: 10px;
+  border-radius: 4px;
   background: var(--bg);
   color: var(--primary);
   border: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
@@ -1333,6 +1336,7 @@ body {
   transition: var(--transition);
 }
 .tag-pill:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+.fp-pill { display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 7px; font-size: 10px; border-radius: 4px; border: 1px solid var(--primary); color: var(--primary); background: var(--primary-light); cursor: default; box-sizing: border-box; }
 .tag-pill-mini { height: 16px; padding: 0 6px; font-size: 9px; border-radius: 8px; }
 
 /* 过滤组（filter-bar 内右侧分区）：搜索 + 标签 + 状态 */
@@ -1725,11 +1729,13 @@ body {
 .badge {
   display: inline-flex;
   align-items: center;
-  padding: 2px 7px;
+  height: 18px;
+  padding: 0 7px;
   border-radius: 4px;
   font-size: 11px;
   font-weight: 600;
   line-height: 1;
+  box-sizing: border-box;
 }
 .badge-pro { background: var(--primary-light); color: var(--primary); border: 1px solid var(--primary-border); }
 .badge-free { background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--border); }
@@ -1827,6 +1833,20 @@ textarea:focus, input:focus { border-color: var(--primary); box-shadow: 0 0 0 2p
 textarea { resize: vertical; min-height: 120px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--text-secondary); }
 .form-group { margin-bottom: 16px; }
+.fp-desc { font-size: 12px; line-height: 1.7; color: var(--text-muted); background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; margin-bottom: 16px; }
+.fp-acc-list { max-height: 44vh; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.fp-acc-row + .fp-acc-row { border-top: 1px solid var(--border); }
+.fp-acc-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer; user-select: none; }
+.fp-acc-head:hover { background: var(--bg-tertiary); }
+.fp-acc-name { flex: 1; font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fp-acc-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--success-light); color: var(--success); flex-shrink: 0; }
+.fp-acc-badge.none { background: var(--bg-tertiary); color: var(--text-muted); }
+.fp-acc-arrow { flex-shrink: 0; color: var(--text-muted); transition: var(--transition); }
+.fp-acc-arrow.open { transform: rotate(180deg); }
+.fp-acc-body { border-top: 1px solid var(--border); padding: 12px; background: var(--bg-tertiary); }
+.fp-acc-empty { padding: 16px; text-align: center; font-size: 13px; color: var(--text-muted); }
+.fp-input { box-sizing: border-box; }
+.fp-mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 
 /* Toast */
 /* Toast —— 改为与卡片一致的 surface 底 + 彩色图标点。

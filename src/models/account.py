@@ -13,6 +13,7 @@ class Account:
     enterprise_id: Optional[str] = None
     enterprise_name: Optional[str] = None
     tags: Optional[list[str]] = None
+    fingerprint: Optional[dict] = None
 
     access_token: str = ""
     refresh_token: Optional[str] = None
@@ -56,6 +57,7 @@ class Account:
             enterprise_id=data.get("enterprise_id"),
             enterprise_name=data.get("enterprise_name"),
             tags=data.get("tags"),
+            fingerprint=data.get("fingerprint"),
             access_token=data.get("access_token", ""),
             refresh_token=data.get("refresh_token"),
             token_type=data.get("token_type", "Bearer"),
@@ -90,6 +92,7 @@ class Account:
             "enterprise_id": self.enterprise_id,
             "enterprise_name": self.enterprise_name,
             "tags": self.tags,
+            "fingerprint": self.fingerprint,
             "plan_type": self.plan_type,
             "dosage_notify_code": self.dosage_notify_code,
             "status": self.status,

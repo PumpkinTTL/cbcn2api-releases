@@ -376,6 +376,39 @@ class GuiApi:
         store.upsert_account(platform, account)
         return json.dumps(account.to_dict())
 
+    def generate_fingerprint(self) -> str:
+        from src.proxy.api_client import generate_fingerprint
+        return json.dumps(generate_fingerprint())
+
+    def save_fingerprint(self, platform: str, account_id: str, fingerprint_json: str) -> str:
+        fingerprint = json.loads(fingerprint_json) if fingerprint_json else None
+        account = store.load_account(platform, account_id)
+        if not account:
+            return json.dumps({"error": "账号不存在"})
+        if fingerprint is not None:
+            from src.proxy.api_client import FINGERPRINT_FIELDS
+            fingerprint = {k: str(v) for k, v in fingerprint.items() if k in FINGERPRINT_FIELDS and v}
+        store.save_fingerprint(platform, account_id, fingerprint)
+        account.fingerprint = fingerprint
+        return json.dumps(account.to_dict())
+
+    def batch_set_fingerprints(self, platform: str, ids_json: str) -> str:
+        """批量生成独立指纹：每个选中账号随机一套（互不相同），覆盖原指纹。"""
+        ids = json.loads(ids_json) if ids_json else []
+        if not ids:
+            return json.dumps({"error": "未选择账号"})
+        from src.proxy.api_client import generate_fingerprint
+        saved = 0
+        for account_id in ids:
+            account = store.load_account(platform, account_id)
+            if not account:
+                continue
+            fp = generate_fingerprint()
+            store.save_fingerprint(platform, account_id, fp)
+            account.fingerprint = fp
+            saved += 1
+        return json.dumps({"ok": True, "saved": saved})
+
     # ========== OAuth Login ==========
 
     def oauth_start(self, platform: str) -> str:

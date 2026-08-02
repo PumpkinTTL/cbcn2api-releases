@@ -1,4 +1,5 @@
 import logging
+import random
 import secrets
 import uuid
 from typing import Optional
@@ -8,6 +9,33 @@ logger = logging.getLogger(__name__)
 CHAT_API_BASE = "https://copilot.tencent.com"
 
 DEFAULT_UPSTREAM_CLIENT = "workbuddy"
+
+# 客户端指纹随机池：只随机版本号类字段，平台/架构/语言等固定（见 build_headers），
+# 保证生成的指纹都是合法存在的组合，不会出现乱写的平台或版本。
+_WORKBUDDY_IDE_VERSIONS = ["5.2.6", "5.2.5", "5.2.4", "5.3.0", "5.3.1", "5.1.9", "5.1.8", "5.2.7"]
+_WORKBUDDY_CLI_VERSIONS = ["2.106.4", "2.106.5", "2.107.0", "2.107.1", "2.108.1", "2.108.2", "2.109.0", "2.110.0"]
+_STAINLESS_VERSIONS = ["6.25.0", "6.24.0", "6.23.1", "6.26.0", "6.25.1", "6.22.0"]
+_NODE_RUNTIME_VERSIONS = ["v22.21.1", "v22.20.0", "v22.22.0", "v22.19.0", "v20.19.0", "v20.18.1", "v23.0.0", "v22.18.0"]
+
+# build_headers 允许账号指纹覆盖的字段白名单（其余 header 一律不接受覆盖）
+FINGERPRINT_FIELDS = (
+    "X-IDE-Version",
+    "User-Agent",
+    "x-stainless-package-version",
+    "x-stainless-runtime-version",
+)
+
+
+def generate_fingerprint() -> dict:
+    ide = random.choice(_WORKBUDDY_IDE_VERSIONS)
+    cli = random.choice(_WORKBUDDY_CLI_VERSIONS)
+    return {
+        "X-IDE-Version": ide,
+        "User-Agent": f"WorkBuddy/{ide} WorkBuddy/{ide} CLI/{cli}",
+        "x-stainless-package-version": random.choice(_STAINLESS_VERSIONS),
+        "x-stainless-runtime-version": random.choice(_NODE_RUNTIME_VERSIONS),
+    }
+
 
 UPSTREAM_CLIENT_PROFILES = {
     "workbuddy": {
@@ -58,9 +86,10 @@ def build_headers(
     bearer_token: str,
     user_id: Optional[str] = None,
     conversation_id: Optional[str] = None,
+    fingerprint: Optional[dict] = None,
 ) -> dict:
     client_profile = UPSTREAM_CLIENT_PROFILES[DEFAULT_UPSTREAM_CLIENT]
-    return {
+    headers = {
         "Host": "copilot.tencent.com",
         "Accept": "text/event-stream",
         "Content-Type": "application/json",
@@ -88,6 +117,12 @@ def build_headers(
         "X-Product": "SaaS",
         "User-Agent": client_profile["User-Agent"],
     }
+    if fingerprint:
+        for key in FINGERPRINT_FIELDS:
+            value = fingerprint.get(key)
+            if value:
+                headers[key] = str(value)
+    return headers
 
 
 def build_chat_payload(openai_body: dict) -> dict:
