@@ -294,7 +294,7 @@ class GuiApi:
         # 新账号已落库，同步调度器内存池，否则要等下次 proxy_start/refresh 才进池。
         try:
             from src.proxy.token_rotator import token_rotator
-            token_rotator.reload(platform)
+            token_rotator.reload(platform, calibrate=True)
         except Exception:
             pass
         return json.dumps({"success": True, "accounts": results})
@@ -508,7 +508,7 @@ class GuiApi:
         # OAuth 新增账号，同步调度器内存池让它立即可被调度。
         try:
             from src.proxy.token_rotator import token_rotator
-            token_rotator.reload(platform)
+            token_rotator.reload(platform, calibrate=True)
         except Exception:
             pass
         # 登录完成后彻底重置 OAuth 状态机：清掉所有 pending + 复位 _current_oauth_login_id。
@@ -720,7 +720,7 @@ class GuiApi:
             saved = self._persist_refreshed(platform, account, payload, quota_error, force_normal=False)
             try:
                 from src.proxy.token_rotator import token_rotator
-                token_rotator.reload(platform)
+                token_rotator.reload(platform, calibrate=True)
             except Exception:
                 pass
             return json.dumps(saved.to_dict())
@@ -775,7 +775,7 @@ class GuiApi:
             return json.dumps({"error": "账号不存在"})
         try:
             r = self._detect_one(platform, account)
-            token_rotator.reload(platform)
+            token_rotator.reload(platform, calibrate=True)
             return json.dumps({"status": r["status"], "reason": r["reason"]})
         except Exception as e:
             return json.dumps({"error": str(e)})
@@ -815,7 +815,7 @@ class GuiApi:
                     except Exception as e:
                         results.append({"id": "?", "name": "?", "status": "failed", "reason": str(e)})
             try:
-                token_rotator.reload(platform)
+                token_rotator.reload(platform, calibrate=True)
             except Exception:
                 pass
 
@@ -930,7 +930,7 @@ class GuiApi:
                             self._detect_state[kind] = counts[kind]
                             self._detect_state["last_account"] = name
                 try:
-                    token_rotator.reload(platform)
+                    token_rotator.reload(platform, calibrate=True)
                 except Exception:
                     pass
             finally:
@@ -1185,6 +1185,7 @@ class GuiApi:
             try:
                 from src.proxy.token_rotator import token_rotator
                 token_rotator._active_count = 0
+                token_rotator.persist_estimates()
             except Exception:
                 pass
             return json.dumps({"success": True})
@@ -1204,9 +1205,11 @@ class GuiApi:
             server.should_exit = True
             self._proxy_server = None
         # 与 proxy_stop 对齐：归零 active_count，否则重启网关时边框动画状态会错乱。
+        # 持久化内存估算值，重启后恢复，防止丢扣减记录。
         try:
             from src.proxy.token_rotator import token_rotator
             token_rotator._active_count = 0
+            token_rotator.persist_estimates()
         except Exception:
             pass
 

@@ -1289,10 +1289,12 @@ body {
   pointer-events: none;
 }
 
-.card.active > * {
+/* 激活态子元素提升 z-index 盖在激光束上，但复选框保持 absolute 定位不动 */
+.card.active > *:not(.card-checkbox) {
   position: relative;
   z-index: 2;
 }
+.card.active .card-checkbox { z-index: 3; }
 
 @keyframes fx-orbit-spin {
   to { --bg-angle: 360deg; }

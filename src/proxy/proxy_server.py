@@ -628,4 +628,5 @@ async def preload():
 
 @app.on_event("shutdown")
 async def cleanup():
+    token_rotator.persist_estimates()
     await _close_http_client()

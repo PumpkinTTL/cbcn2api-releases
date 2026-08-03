@@ -19,6 +19,7 @@ BANNED_COOLDOWNS = (30, 60, 120, 300, 600)  # 11140 封号：渐进冷却 30s→
 _COOLDOWN_SETTING_KEY = "cooldowns"
 _THRESHOLD_SETTING_KEY = "quota_threshold"
 _ENABLE_THRESHOLD_SETTING_KEY = "enable_threshold"
+_ESTIMATE_SETTING_KEY = "estimated_remain"
 
 _COOLDOWNS = {
     "quota": QUOTA_COOLDOWN,
@@ -57,7 +58,7 @@ class TokenRotator:
         self._threshold_no_fallback: bool = False
         self._threshold_no_fallback_id: Optional[str] = None
 
-    def reload(self, platform: str):
+    def reload(self, platform: str, calibrate: bool = False):
         with self._lock:
             self._platform = platform
             all_accs = store.list_accounts(platform)
@@ -66,9 +67,10 @@ class TokenRotator:
                 self._index = 0
 
             self._restore_cooldowns()
+            self._restore_estimates()
             self._load_threshold()
             self._load_enable_threshold()
-            self._refresh_estimates()
+            self._refresh_estimates(calibrate)
             self._threshold_no_fallback = False
 
             # 校验当前锁定是否仍有效
@@ -339,18 +341,29 @@ class TokenRotator:
         except (ValueError, TypeError):
             self._enable_threshold = 0.0
 
-    def _refresh_estimates(self):
+    def _refresh_estimates(self, calibrate: bool = False):
         """重算每个账号的估算剩余额度。
 
         每个账号单独 try —— calc_totals 会对 quota_raw 里 {"data": null} 这类
         形状抛 AttributeError（配额接口报错时完全可能）。原先整个循环裸奔，
         一个账号解析失败就会让它后面所有账号缺失估算值，而 deduct_quota 对
         缺失的 key 直接 return，那些账号从此永不扣减、永不触发阈值。
+
+        calibrate=False（被动 reload，如别的账号封号连带触发）：
+          DB quota_raw 是陈旧快照，可能比内存已扣减值高 —— 取 min 防止估算
+          被抬高导致用超。
+        calibrate=True（手动刷新额度后的 reload）：
+          DB 是刚拉到的真实值 —— 直接覆盖，校准内存估算。
         """
         for acc in self._accounts:
             try:
                 total, used = calc_totals(acc.quota_raw, acc.usage_raw)
-                self._estimated_remain[acc.id] = max(0, total - used)
+                fresh = max(0, total - used)
+                if calibrate:
+                    self._estimated_remain[acc.id] = fresh
+                else:
+                    prev = self._estimated_remain.get(acc.id)
+                    self._estimated_remain[acc.id] = min(fresh, prev) if prev is not None else fresh
             except Exception as e:
                 logger.warning("[调度] 账号=%s 额度估算失败: %r", acc.nickname or acc.id, e)
                 self._estimated_remain.setdefault(acc.id, 0.0)
@@ -376,6 +389,38 @@ class TokenRotator:
                 until = s.get("until", 0)
                 if until > now:
                     self._disabled[aid] = s
+        except Exception:
+            pass
+
+    def persist_estimates(self):
+        """关闭网关时把内存估算值一次性落库，重启后恢复，防止丢扣减记录。
+
+        运行期间纯内存扣减（零 IO），只在停机/退出时写一次 settings 表。
+        重启后 reload → _restore_estimates 恢复 → _refresh_estimates 取
+        min(恢复值, DB快照)，保证估算不被陈旧 DB 快照抬高。
+        """
+        with self._lock:
+            if not self._estimated_remain:
+                return
+            payload = json.dumps(self._estimated_remain, ensure_ascii=False)
+        try:
+            store.save_setting(_ESTIMATE_SETTING_KEY, payload)
+        except Exception:
+            pass
+
+    def _restore_estimates(self):
+        """从 settings 恢复上次关闭时持久化的估算值（在 _refresh_estimates 之前调用）。"""
+        try:
+            raw = store.get_setting(_ESTIMATE_SETTING_KEY, "")
+            if not raw:
+                return
+            saved = json.loads(raw)
+            if isinstance(saved, dict):
+                for aid, val in saved.items():
+                    try:
+                        self._estimated_remain[aid] = float(val)
+                    except (ValueError, TypeError):
+                        pass
         except Exception:
             pass
 
