@@ -410,9 +410,9 @@
             <span v-if="batchExportLoading" class="spinner-sm"></span>
             <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/></svg> 导出</template>
           </button>
-          <button class="btn btn-sm btn-ghost" :disabled="selectedCount === 0 || batchDetectLoading" @click="batchDetect" title="真实 chat 检测选中账号是否封禁，封禁则自动标记">
+          <button class="btn btn-sm btn-ghost" :disabled="selectedCount === 0 || batchDetectLoading" @click="batchDetect" title="真实 chat 验活选中账号是否封禁，封禁则自动标记">
             <span v-if="batchDetectLoading" class="spinner-sm"></span>
-            <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg> 检测</template>
+            <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg> 验活</template>
           </button>
           <button class="btn btn-sm btn-ghost" :disabled="selectedCount === 0 || batchFingerprintLoading" @click="openBatchFingerprint" title="为选中账号设置客户端指纹：可一键随机（每账号一套）或手动填写同一套">
             <span v-if="batchFingerprintLoading" class="spinner-sm"></span>
@@ -439,11 +439,11 @@
             <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg> 删除</template>
           </button>
         </div>
-        <!-- 检测并启用：填启动阈值，回车或点右侧图标并发检测全部账号，剩余积分≥阈值则启用 -->
-        <div class="proxy-field detect-field" title="检测全部账号：拉取最新额度，剩余积分≥此值的禁用号将被启用（0=不卡门槛）">
+        <!-- 验活并启用：填启动阈值，回车或点右侧图标并发验活全部账号，剩余积分≥阈值则启用 -->
+        <div class="proxy-field detect-field" title="验活全部账号：拉取最新额度，剩余积分≥此值的禁用号将被启用（0=不卡门槛）">
           <span>启动阈值</span>
           <input type="number" v-model.number="enableThreshold" min="0" step="0.01" placeholder="0=不卡门槛" @change="saveEnableThreshold" @keyup.enter="openDetectModal">
-          <button class="detect-trigger" :disabled="detecting" @click="openDetectModal" :title="detecting ? `检测中 ${detectProgress.done}/${detectProgress.total}` : '检测全部账号并启用达标的'">
+          <button class="detect-trigger" :disabled="detecting" @click="openDetectModal" :title="detecting ? `验活中 ${detectProgress.done}/${detectProgress.total}` : '验活全部账号并启用达标的'">
             <span v-if="detecting" class="spinner-sm"></span>
             <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg></template>
             <span v-if="detecting" class="detect-count">{{ detectProgress.done }}/{{ detectProgress.total }}</span>
@@ -486,6 +486,17 @@
               <div class="status-dropdown-item" :class="{ active: statusFilter === 'banned' }" @click.stop="selectStatusFilter('banned')">
                 <span class="status-dot dot-banned"></span>已封禁
               </div>
+            </div>
+          </div>
+          <div class="status-dropdown" :class="{ open: regionFilterOpen }" @click.stop="regionFilterOpen = !regionFilterOpen">
+            <div class="status-dropdown-trigger">
+              <span>{{ regionFilter === 'hk' ? '香港号' : regionFilter === 'cn' ? '中国号' : '全部地区' }}</span>
+              <svg class="status-dropdown-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+            <div class="status-dropdown-menu" v-show="regionFilterOpen" style="min-width:110px">
+              <div class="status-dropdown-item" :class="{ active: regionFilter === 'all' }" @click.stop="regionFilter='all'; regionFilterOpen=false">全部地区</div>
+              <div class="status-dropdown-item" :class="{ active: regionFilter === 'hk' }" @click.stop="regionFilter='hk'; regionFilterOpen=false">香港号</div>
+              <div class="status-dropdown-item" :class="{ active: regionFilter === 'cn' }" @click.stop="regionFilter='cn'; regionFilterOpen=false">中国号</div>
             </div>
           </div>
         </div>
@@ -624,7 +635,7 @@
                 <span v-if="cardLoading[a.id + '_delete']" class="spinner-sm"></span>
                 <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
               </button>
-              <!-- 更多：额度详情 + 封禁检测（发真实 chat 探测 11140） -->
+              <!-- 更多：额度详情 + 封禁验活（发真实 chat 探测 11140） -->
               <div class="more-dropdown" :class="{ open: moreOpenId === a.id }" @click.stop="moreOpenId = moreOpenId === a.id ? null : a.id">
                 <div class="more-dropdown-trigger">
                   <span>更多</span>
@@ -634,9 +645,9 @@
                   <div class="more-dropdown-item" @click.stop="showQuotaDetail(a.id); moreOpenId = null" title="额度详情">
                     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M4 16l4-8 4 4 4-6 4 8"/></svg> 额度详情
                   </div>
-                  <div class="more-dropdown-item" :class="{ busy: cardLoading[a.id + '_detect'] }" @click.stop="detectOne(a.id)" title="发真实请求检测是否封号">
+                  <div class="more-dropdown-item" :class="{ busy: cardLoading[a.id + '_detect'] }" @click.stop="detectOne(a.id)" title="发真实请求验活是否封号">
                     <span v-if="cardLoading[a.id + '_detect']" class="spinner-sm"></span>
-                    <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8 2 9.2h7.6z"/></svg> 检测
+                    <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8 2 9.2h7.6z"/></svg> 验活
                   </div>
                   <div class="more-dropdown-item" @click.stop="editTags(a.id)" title="给账号打标签，便于分类管理">
                     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.83z"/><circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg> 标签
@@ -783,8 +794,8 @@
   <div class="modal-overlay" id="detectModal" :class="{ show: activeModal === 'detect' }">
     <div class="modal" style="max-width:420px">
       <div class="modal-header">
-        <h2>启动检测</h2>
-        <p>并发检测全部账号，达标自动启用</p>
+        <h2>启动验活</h2>
+        <p>并发验活全部账号，达标自动启用</p>
       </div>
       <div class="modal-body">
         <div class="form-group">
@@ -793,13 +804,13 @@
             style="width:100%;height:32px;padding:0 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:13px;outline:none;font-family:inherit;box-sizing:border-box">
         </div>
         <p style="font-size:12px;color:var(--text-muted);line-height:1.7;margin:0">
-          将并发检测 <b style="color:var(--primary)">{{ detectTargetCount }}</b> 个账号：
-          拉取最新额度并刷新，剩余积分 ≥ 阈值的自动启用（已封禁账号跳过，恢复需单独检测）。
+          将并发验活 <b style="color:var(--primary)">{{ detectTargetCount }}</b> 个账号：
+          拉取最新额度并刷新，剩余积分 ≥ 阈值的自动启用（已封禁账号跳过，恢复需单独验活）。
         </p>
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" @click="activeModal = null">取消</button>
-        <button class="btn btn-primary" @click="confirmDetect">开始检测</button>
+        <button class="btn btn-primary" @click="confirmDetect">开始验活</button>
       </div>
     </div>
   </div>
@@ -812,32 +823,70 @@
         <p>软删除账号仍保留在数据库，可随时恢复或彻底删除</p>
       </div>
       <div class="modal-body" style="max-height:420px;overflow:auto">
-        <div v-if="deletedAccounts.length > 0" style="display:flex;gap:4px;margin-bottom:10px;flex-wrap:wrap">
+        <div v-if="deletedAccounts.length > 0" style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
           <button v-for="f in deletedFilters" :key="f.value" class="btn btn-sm" :class="deletedFilter === f.value ? 'btn-primary' : 'btn-ghost'"
-            @click="deletedFilter = f.value" :style="f.value !== 'all' && deletedFilter === f.value ? '' : ''">
+            @click="deletedFilter = f.value">
             {{ f.label }}<span v-if="deletedFilterCounts[f.value] > 0" style="opacity:.75;margin-left:3px">{{ deletedFilterCounts[f.value] }}</span>
           </button>
+          <div class="status-dropdown" :class="{ open: deletedDateFilterOpen }" @click.stop="deletedDateFilterOpen = !deletedDateFilterOpen; rCalOpen = false" style="margin-left:auto;position:relative">
+            <div class="status-dropdown-trigger">
+              <span>{{ deletedDateFilter === 'custom' ? (deletedCustomDate || '选择日期') : ((deletedDateFilters.find(f => f.value === deletedDateFilter) || {}).label || '全部时间') }}</span>
+              <svg class="status-dropdown-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+            </div>
+            <div class="status-dropdown-menu" v-show="deletedDateFilterOpen" style="min-width:140px">
+              <div v-for="f in deletedDateFilters" :key="f.value" class="status-dropdown-item" :class="{ active: deletedDateFilter === f.value }"
+                @click.stop="deletedDateFilter = f.value; deletedDateFilterOpen = false; if (f.value === 'custom') rCalOpen = true">{{ f.label }}</div>
+            </div>
+            <div v-if="rCalOpen" class="cal-panel" style="position:absolute;top:100%;right:0;left:auto;z-index:50;margin-top:4px" @click.stop>
+              <div class="cal-head">
+                <div class="cal-nav-group">
+                  <button class="cal-nav" @click="calPrevYear" title="上一年"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 18l-6-6 6-6"/><path d="M19 18l-6-6 6-6"/></svg></button>
+                  <button class="cal-nav" @click="calPrevMonth" title="上一月"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+                </div>
+                <span class="cal-title">{{ calTitle }}</span>
+                <div class="cal-nav-group">
+                  <button class="cal-nav" @click="calNextMonth" title="下一月"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
+                  <button class="cal-nav" @click="calNextYear" title="下一年"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 6l6 6-6 6"/><path d="M5 6l6 6-6 6"/></svg></button>
+                </div>
+              </div>
+              <div class="cal-grid">
+                <span v-for="w in ['一','二','三','四','五','六','日']" :key="w" class="cal-dow">{{ w }}</span>
+                <template v-for="(wk, wi) in calWeeks" :key="wi">
+                  <button v-for="(d, di) in wk" :key="di" class="cal-day"
+                    :class="{ today: calIsToday(d), selected: rCalIsSelected(d), empty: d == null }"
+                    :disabled="d == null" @click="rCalPickDay(d)">{{ d == null ? '' : d }}</button>
+                </template>
+              </div>
+            </div>
+          </div>
         </div>
         <div v-if="filteredDeletedAccounts.length === 0" style="padding:24px 0;text-align:center;color:var(--text-muted);font-size:13px">
           {{ deletedAccounts.length === 0 ? '回收站是空的' : '没有符合条件的账号' }}
         </div>
-        <div v-for="d in filteredDeletedAccounts" :key="d.id"
-          style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;background:var(--bg)">
-          <input type="checkbox" :checked="!!deletedSelected[d.id]" @click.stop @change="toggleDeletedSelect(d.id)"
-            style="flex-shrink:0;accent-color:var(--primary)">
-          <span class="badge-status" :class="getStatusBadgeClass(d)" style="flex-shrink:0">{{ getStatusText(d) }}</span>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-              {{ d.nickname || d.email || d.id }}
-            </div>
-            <div style="font-size:11px;color:var(--text-muted);line-height:1.6">
-              <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block">{{ d.email || '无邮箱' }} · {{ d.id }}</span>
-              <span v-if="d.deleted_at" style="color:var(--warning)">删除于 {{ new Date(d.deleted_at * 1000).toLocaleString('zh-CN', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) }}</span>
-            </div>
+        <template v-for="g in groupedDeletedAccounts" :key="g.label">
+          <div style="display:flex;align-items:center;gap:10px;margin:16px 0 8px">
+            <span style="flex:1;height:1px;background:var(--border)"></span>
+            <span style="font-size:12px;font-weight:600;color:var(--text-muted)">{{ g.label }} · {{ g.items.length }}</span>
+            <span style="flex:1;height:1px;background:var(--border)"></span>
           </div>
-          <button class="btn btn-sm btn-primary" :disabled="recycleBusy" @click="restoreDeleted(d.id)">恢复</button>
-          <button class="btn btn-sm btn-danger" :disabled="recycleBusy" @click="destroyDeleted(d.id)">彻底删除</button>
-        </div>
+          <div v-for="d in g.items" :key="d.id"
+            style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;background:var(--bg)">
+            <input type="checkbox" :checked="!!deletedSelected[d.id]" @click.stop @change="toggleDeletedSelect(d.id)"
+              style="flex-shrink:0;accent-color:var(--primary)">
+            <span class="badge-status" :class="getStatusBadgeClass(d)" style="flex-shrink:0">{{ getStatusText(d) }}</span>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                {{ d.nickname || d.email || d.id }}
+              </div>
+              <div style="font-size:11px;color:var(--text-muted);line-height:1.6">
+                <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block">{{ d.email || '无邮箱' }} · {{ d.id }}</span>
+                <span v-if="d.deleted_at" style="color:var(--warning)">删除于 {{ new Date(d.deleted_at * 1000).toLocaleString('zh-CN', {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) }}</span>
+              </div>
+            </div>
+            <button class="btn btn-sm btn-primary" :disabled="recycleBusy" @click="restoreDeleted(d.id)">恢复</button>
+            <button class="btn btn-sm btn-danger" :disabled="recycleBusy" @click="destroyDeleted(d.id)">彻底删除</button>
+          </div>
+        </template>
       </div>
       <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
         <div style="display:flex;gap:6px;align-items:center">
@@ -1045,11 +1094,11 @@
           <li>签到后自动刷新该账号额度，无需手动点刷新</li>
         </ul>
 
-        <div class="changelog-section-title">封禁检测优化</div>
+        <div class="changelog-section-title">封禁验活优化</div>
         <ul class="changelog-list">
-          <li>批量检测升级：多选账号一键检测封禁（真实 chat 请求探测）</li>
+          <li>批量验活升级：多选账号一键验活封禁（真实 chat 请求探测）</li>
           <li>调度中实时识别非法请求，自动标记封禁并切换下一个账号</li>
-          <li>新增启动阈值检测：设置启用阈值后可一键并发检测全部账号，达标的禁用号自动启用</li>
+          <li>新增启动阈值验活：设置启用阈值后可一键并发验活全部账号，达标的禁用号自动启用</li>
         </ul>
 
         <div class="changelog-section-title">UI 体验</div>
@@ -1148,7 +1197,7 @@
 
         <div class="changelog-section-title">安全防护</div>
         <ul class="changelog-list">
-          <li>自动检测被封禁的账号，标记后不再使用</li>
+          <li>自动验活被封禁的账号，标记后不再使用</li>
           <li>封禁状态永久保存，避免重复尝试</li>
           <li>封禁账号红色醒目标识</li>
         </ul>
@@ -1405,6 +1454,8 @@ const vApp = createApp({
     const statusFilter = ref('all');
     const filterDate = ref('');
     const statusDropdownOpen = ref(false);
+    const regionFilter = ref('all');
+    const regionFilterOpen = ref(false);
     const accountSearch = ref('');
     const tagFilter = ref('');
     const tagFilterOpen = ref(false);
@@ -1434,7 +1485,8 @@ const vApp = createApp({
       if (val === 'banned') return '已封禁';
       return '全部状态';
     }
-    document.addEventListener('click', () => { statusDropdownOpen.value = false; });
+    document.addEventListener('click', () => { statusDropdownOpen.value = false; regionFilterOpen.value = false; });
+    document.addEventListener('click', () => { deletedDateFilterOpen.value = false; rCalOpen.value = false; });
 
     // ── 代理 ──
     const proxyRunning = ref(false);
@@ -1450,17 +1502,66 @@ const vApp = createApp({
     const recycleBusy = ref(false);
     const deletedSelected = ref({});
     const deletedFilter = ref('all');
+    const deletedDateFilter = ref('all');
+    const deletedDateFilterOpen = ref(false);
+    const deletedCustomDate = ref('');
+    const rCalOpen = ref(false);
     const deletedFilters = [
       { value: 'all', label: '全部' },
       { value: 'normal', label: '正常' },
       { value: 'banned', label: '封禁' },
       { value: 'disabled', label: '禁用' },
     ];
-    const filteredDeletedAccounts = computed(() =>
-      deletedFilter.value === 'all'
+    const deletedDateFilters = [
+      { value: 'all', label: '全部时间' },
+      { value: 'today', label: '今天' },
+      { value: 'yesterday', label: '昨天' },
+      { value: 'last7', label: '近 7 天' },
+      { value: 'custom', label: '指定日期' },
+    ];
+    const filteredDeletedAccounts = computed(() => {
+      let r = deletedFilter.value === 'all'
         ? deletedAccounts.value
-        : deletedAccounts.value.filter(a => a.status === deletedFilter.value)
-    );
+        : deletedAccounts.value.filter(a => a.status === deletedFilter.value);
+      if (deletedDateFilter.value !== 'all') {
+        const now = Date.now();
+        const today = new Date(); today.setHours(0,0,0,0);
+        const yest = today.getTime() - 86400000;
+        r = r.filter(a => {
+          if (!a.deleted_at) return false;
+          const t = a.deleted_at * 1000;
+          if (deletedDateFilter.value === 'today') return t >= today.getTime();
+          if (deletedDateFilter.value === 'yesterday') return t >= yest && t < today.getTime();
+          if (deletedDateFilter.value === 'last7') return t >= now - 7 * 86400000;
+          if (deletedDateFilter.value === 'custom' && deletedCustomDate.value) {
+            const d = new Date(deletedCustomDate.value + 'T00:00:00');
+            const next = d.getTime() + 86400000;
+            return t >= d.getTime() && t < next;
+          }
+          return true;
+        });
+      }
+      return r;
+    });
+    // 按删除时间分组：今天 / 昨天 / 更早，便于批量恢复同批删除的账号
+    const groupedDeletedAccounts = computed(() => {
+      const list = filteredDeletedAccounts.value;
+      const today = new Date(); today.setHours(0,0,0,0);
+      const yest = new Date(today.getTime() - 86400000);
+      const groups = [
+        { label: '今天', items: [] },
+        { label: '昨天', items: [] },
+        { label: '更早', items: [] },
+      ];
+      for (const a of list) {
+        if (!a.deleted_at) { groups[2].items.push(a); continue; }
+        const d = new Date(a.deleted_at * 1000); d.setHours(0,0,0,0);
+        if (d.getTime() === today.getTime()) groups[0].items.push(a);
+        else if (d.getTime() === yest.getTime()) groups[1].items.push(a);
+        else groups[2].items.push(a);
+      }
+      return groups.filter(g => g.items.length > 0);
+    });
     const deletedFilterCounts = computed(() => {
       const c = { all: deletedAccounts.value.length, normal: 0, banned: 0, disabled: 0 };
       deletedAccounts.value.forEach(a => { if (c[a.status] !== undefined) c[a.status]++; });
@@ -1580,6 +1681,14 @@ const vApp = createApp({
       }
       if (tagFilter.value) {
         result = result.filter(a => (a.tags || []).includes(tagFilter.value));
+      }
+      if (regionFilter.value !== 'all') {
+        result = result.filter(a => {
+          const id = String(a.id || '');
+          if (regionFilter.value === 'hk') return id.startsWith('852');
+          if (regionFilter.value === 'cn') return /^\d{11}$/.test(id) && !id.startsWith('852');
+          return true;
+        });
       }
       if (proxyCurrentAccount.value) {
         result = [...result].sort((a,b) => {
@@ -1864,6 +1973,17 @@ const vApp = createApp({
     function calIsSelected(day) {
       return day != null && filterDate.value === `${calYear.value}-${String(calMonth.value+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     }
+    // 回收站日历：复用 calYear/calMonth/calWeeks/calTitle/导航，独立选中逻辑（不污染主筛选 filterDate）
+    function rCalPickDay(day) {
+      if (day == null) return;
+      deletedCustomDate.value = `${calYear.value}-${String(calMonth.value+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      deletedDateFilter.value = 'custom';
+      rCalOpen.value = false;
+      deletedDateFilterOpen.value = false;
+    }
+    function rCalIsSelected(day) {
+      return day != null && deletedCustomDate.value === `${calYear.value}-${String(calMonth.value+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    }
 
     // ─── Save threshold ───
     async function saveQuotaThreshold() {
@@ -1880,7 +2000,7 @@ const vApp = createApp({
       } catch {}
     }
 
-    // ─── Detect & enable（并发检测全部账号，达标则启用）───
+    // ─── Detect & enable（并发验活全部账号，达标则启用）───
     const detectThresholdTemp = ref(0);
     const detectTargetCount = computed(() => accounts.value.length);
 
@@ -1906,10 +2026,10 @@ const vApp = createApp({
       try {
         const r = JSON.parse(await pywebview.api.detect_and_enable_accounts(currentPlatform.value, enableThreshold.value));
         if (r.error) { showToast(r.error, 'error'); detecting.value = false; return; }
-        if (!r.started) { showToast(r.message || '没有需要检测的账号', 'info'); detecting.value = false; return; }
+        if (!r.started) { showToast(r.message || '没有需要验活的账号', 'info'); detecting.value = false; return; }
         detectProgress.total = r.total;
         detectTimer = setInterval(pollDetectStatus, 600);
-      } catch(e) { showToast('启动检测失败: '+e, 'error'); detecting.value = false; }
+      } catch(e) { showToast('启动验活失败: '+e, 'error'); detecting.value = false; }
     }
 
     async function pollDetectStatus() {
@@ -1923,9 +2043,9 @@ const vApp = createApp({
           detecting.value = false;
           detectProgress.summary = s.summary || '';
           if (detectProgress.enabled > 0) {
-            showToast(`检测完成：${s.summary}`, 'success');
+            showToast(`验活完成：${s.summary}`, 'success');
           } else {
-            showToast(`检测完成：${s.summary || '无账号被启用'}`, 'info');
+            showToast(`验活完成：${s.summary || '无账号被启用'}`, 'info');
           }
           await loadAccounts();
           await refreshProxyStatus();
@@ -2001,11 +2121,11 @@ const vApp = createApp({
         const r = JSON.parse(await pywebview.api.detect_account(currentPlatform.value, id));
         if (r.error) { showToast(r.error, 'error'); return; }
         if (r.status === 'banned') showToast(`账号已封禁：${r.reason}`, 'error');
-        else if (r.status === 'normal') showToast(r.reason || '检测通过', 'success');
-        else showToast(r.reason || '检测未判定', 'info');
+        else if (r.status === 'normal') showToast(r.reason || '验活通过', 'success');
+        else showToast(r.reason || '验活未判定', 'info');
         await loadAccountsLight();
         await refreshProxyStatus();
-      } catch(e) { showToast('检测失败: '+e, 'error'); }
+      } catch(e) { showToast('验活失败: '+e, 'error'); }
       finally { cardLoading[id+'_detect'] = false; moreOpenId.value = null; }
     }
 
@@ -2111,7 +2231,7 @@ const vApp = createApp({
 
     // ─── 勾选（常驻复选框，随时多选）──
     // selectedIds 用对象当 Set：Vue 对 reactive 对象的 key 增删是响应式的，
-    // 而 Set/Map 的内部变更 Vue 2 风格模板检测不到。这里 selectedIds[id] = true / delete。
+    // 而 Set/Map 的内部变更 Vue 2 风格模板验活不到。这里 selectedIds[id] = true / delete。
     const allSelected = computed(() => {
       const list = filteredAccounts.value;
       return list.length > 0 && list.every(a => selectedIds[a.id]);
@@ -2163,12 +2283,12 @@ const vApp = createApp({
         const c = r.counts || {};
         const okN = c.normal||0, banN = c.banned||0, otherN = (c.unknown||0) + (c.failed||0);
         showToast(
-          `检测完成：共 ${r.total} 个，正常 ${okN}，封禁 ${banN}（已自动标记），其他 ${otherN}`,
+          `验活完成：共 ${r.total} 个，正常 ${okN}，封禁 ${banN}（已自动标记），其他 ${otherN}`,
           banN > 0 ? 'warning' : 'success'
         );
         await loadAccounts();
         await refreshProxyStatus();
-      } catch(e) { showToast('批量检测失败: '+e, 'error'); }
+      } catch(e) { showToast('批量验活失败: '+e, 'error'); }
       finally { batchDetectLoading.value = false; }
     }
 
@@ -3007,6 +3127,7 @@ const vApp = createApp({
       currentPlatform, currentView, activeModal, hasUpdate,
       accounts, accountStats, statTotal, statQuota,
       statusFilter, filterDate, statusDropdownOpen, accountSearch, onSearchInput,
+      regionFilter, regionFilterOpen,
       dateFilterOpen, dateFilterLabel, toggleDateFilter, setDatePreset, setLastDays, pickCustomDate,
       calOpen, calTitle, calWeeks, calPrevMonth, calNextMonth, calPrevYear, calNextYear, calPickDay, calIsToday, calIsSelected,
       tagFilter, tagFilterOpen, allTags, tagEditAccount, tagEditInput, tagEditAccountName,
@@ -3020,7 +3141,7 @@ const vApp = createApp({
       selectMode, selectedIds, batchDeleteLoading, batchExportLoading, batchDetectLoading,
       batchStatusLoading, batchRefreshLoading, batchCheckinLoading, batchFingerprintLoading,
       deletedAccounts, recycleBusy, deletedSelected, deletedSelectedCount, allDeletedSelected,
-      deletedFilter, deletedFilters, filteredDeletedAccounts, deletedFilterCounts,
+      deletedFilter, deletedFilters, deletedDateFilter, deletedDateFilterOpen, deletedDateFilters, deletedCustomDate, rCalOpen, rCalPickDay, rCalIsSelected, filteredDeletedAccounts, groupedDeletedAccounts, deletedFilterCounts,
       allSelected, someSelected, selectedCount,
       usageSummary, usageCacheRate,
       oauthUrlText, oauthStatusHtml,

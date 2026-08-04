@@ -1036,7 +1036,7 @@ body {
   order: 99;
   flex-basis: 100%;
 }
-/* 检测并启用：输入框 + 右侧主色按钮一体，常驻筛选条 */
+/* 验活并启用：输入框 + 右侧主色按钮一体，常驻筛选条 */
 .detect-field {
   display: inline-flex;
   align-items: center;
@@ -1600,7 +1600,7 @@ body {
 .status-dot.dot-disabled { background: var(--warning); box-shadow: 0 0 5px var(--warning-light); }
 .status-dot.dot-banned { background: var(--danger); box-shadow: 0 0 5px var(--danger-light); }
 
-/* 卡片「更多」下拉（额度详情 + 检测） */
+/* 卡片「更多」下拉（额度详情 + 验活） */
 .more-dropdown {
   position: relative;
   display: inline-flex;

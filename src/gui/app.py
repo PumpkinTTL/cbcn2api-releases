@@ -672,7 +672,7 @@ class GuiApi:
         """把 refresh_full_payload 的结果写回账号并落库，返回落库后的账号。
 
         force_normal=True 时，只要未被明确封禁就把状态置为 normal —— 用于
-        「检测并启用」：达标的禁用/封禁号需要重新启用。force_normal=False 时
+        「验活并启用」：达标的禁用/封禁号需要重新启用。force_normal=False 时
         保持与原 refresh 完全一致的状态策略（不动手动禁用/封禁的号）。
         """
         account.access_token = payload["access_token"]
@@ -728,10 +728,10 @@ class GuiApi:
             return json.dumps({"error": str(e)})
 
     def _detect_one(self, platform: str, account: Account) -> dict:
-        """单账号封禁检测核心（按 cbcn-cloud 号池封禁机制）：
+        """单账号封禁验活核心（按 cbcn-cloud 号池封禁机制）：
         refresh 续期 + 拉额度落库 → 发真实 chat 请求探测 11140：
           全 11140 → 标记 banned（封号）；
-          任意 200 → 检测通过，若原是 banned 则恢复 normal；
+          任意 200 → 验活通过，若原是 banned 则恢复 normal；
           其他错误 → unknown，不封不禁。
         只写状态不 reload（reload 由调用方统一做，批量时避免反复重载）。
         """
@@ -764,7 +764,7 @@ class GuiApi:
             store.upsert_account(platform, account)
             token_rotator.clear_disabled(account.id)
             return {"id": account.id, "name": name, "status": "normal",
-                    "reason": "检测通过，已从封禁恢复为正常" if was_banned else "检测通过"}
+                    "reason": "验活通过，已从封禁恢复为正常" if was_banned else "验活通过"}
         return {"id": account.id, "name": name, "status": "unknown",
                 "reason": "非封号错误，未判定（限流/额度/网络等）"}
 
@@ -781,16 +781,16 @@ class GuiApi:
             return json.dumps({"error": str(e)})
 
     def detect_accounts(self, platform: str, account_ids_json: str) -> str:
-        """并发批量检测（线程池 8，单账号同款真实 chat 探测），统一 reload。
+        """并发批量验活（线程池 8，单账号同款真实 chat 探测），统一 reload。
 
         返回汇总：{total, counts:{normal,banned,unknown,failed}, results}。
         """
         import concurrent.futures
-        # 与阈值检测互斥：避免同一账号被双重探测浪费额度/触发风控（B5）
+        # 与阈值验活互斥：避免同一账号被双重探测浪费额度/触发风控（B5）
         started = False
         with self._detect_lock:
             if self._detect_state.get("running"):
-                return json.dumps({"error": "阈值检测正在进行中，请稍后再试"})
+                return json.dumps({"error": "阈值验活正在进行中，请稍后再试"})
             self._detect_state["running"] = True
             started = True
         try:
@@ -837,13 +837,13 @@ class GuiApi:
         return json.dumps({"success": success, "total": len(accounts)})
 
     def detect_and_enable_accounts(self, platform: str, threshold: float = -1) -> str:
-        """并发检测全部账号：拉取最新额度，达标的禁用号自动启用。
+        """并发验活全部账号：拉取最新额度，达标的禁用号自动启用。
 
         threshold<0 时用已持久化的启动阈值。后台线程池跑（8 并发），
         前端通过 detect_enable_status 轮询进度。
 
         判定：
-          - 封禁（refresh 判 banned 或原状态 banned）→ 跳过，保持封禁（恢复需真实 chat 检测）；
+          - 封禁（refresh 判 banned 或原状态 banned）→ 跳过，保持封禁（恢复需真实 chat 验活）；
           - normal 账号 → 保持启用，刷新额度数据；
           - disabled 账号剩余(total-used) >= 阈值（阈值=0 时不卡门槛）→ 启用；
           - 额度拉取失败但非封禁（超时/网络等）→ 视为无法判定但可能可用 → 仍启用。
@@ -861,7 +861,7 @@ class GuiApi:
 
         with self._detect_lock:
             if self._detect_state.get("running"):
-                return json.dumps({"error": "检测正在进行中"})
+                return json.dumps({"error": "验活正在进行中"})
             accounts = store.list_accounts(platform)
             targets = list(accounts)
             self._detect_state = {
@@ -875,8 +875,8 @@ class GuiApi:
             with self._detect_lock:
                 self._detect_state["running"] = False
                 self._detect_state["finished"] = True
-                self._detect_state["summary"] = "没有账号可检测"
-            return json.dumps({"ok": True, "started": False, "message": "没有账号可检测"})
+                self._detect_state["summary"] = "没有账号可验活"
+            return json.dumps({"ok": True, "started": False, "message": "没有账号可验活"})
 
         def worker(acc):
             name = acc.nickname or acc.email or acc.id
@@ -884,9 +884,9 @@ class GuiApi:
             try:
                 payload, quota_error = refresh_full_payload(acc)
             except Exception as e:
-                return ("failed", name, f"检测异常: {e}")
+                return ("failed", name, f"验活异常: {e}")
             if payload.get("status") == "banned" or was == "banned":
-                return ("banned", name, "账号已封禁，跳过（恢复需真实 chat 检测）")
+                return ("banned", name, "账号已封禁，跳过（恢复需真实 chat 验活）")
             if was == "normal":
                 try:
                     self._persist_refreshed(platform, acc, payload, quota_error, force_normal=False)
