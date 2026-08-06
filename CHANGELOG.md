@@ -3,6 +3,36 @@
 本文件面向开发者，记录每个版本的技术变更（根因、涉及的文件、机制改动）。
 面向终端用户的更新日志见应用内「更新日志」弹窗（`src/gui/index.html`）。
 
+## [v1.0.7] — 2026-08-07
+
+导入模型双平台支持 + 配置兼容修复 + 额度估算稳定性。1 个提交（`ab01775`）。
+
+### 导入 CodeBuddy + 导入模型下拉合并（`ab01775`）
+
+- **新增 CodeBuddy 导入**：写入 `~/.codebuddy/models.json`，顶层用
+  `{"models": [...]}` 包裹（区别于 WorkBuddy 的裸数组）；APPDATA 备用路径
+  `%APPDATA%\CodeBuddy\.codebuddy\models.json`。
+- **后端合并**：`export_to_workbuddy` / `export_to_codebuddy` 合并为单一
+  `export_config(target, port, password)`，profiles 映射表统一控制 folder / app 名 /
+  wrap 结构（裸数组 vs models 包裹），消除重复代码。
+- **前端合并**：两个导入按钮合并为「导入模型」下拉组（`.sync-group`），
+  展开选 WorkBuddy / CodeBuddy，点外自动关闭；`exportToIDE(ide)` 统一函数 +
+  两个一行包装，共享 loading/confirm 逻辑。
+
+### 配置字段对齐（修复图标不显示，`ab01775`）
+
+- **问题**：导入 WorkBuddy 的自定义模型不显示图标。
+- **根因**：`vendor` 为 `"Custom"`，WorkBuddy 内部按 vendor 匹配图标资源，
+  `"Custom"` 不在映射表。
+- **修复**：`vendor` 改 `"Gateway"`；`reasoning` 删冗余 `canDisableThinking`，
+  加 `defaultEffort: "high"`（与官方配置对齐）。已验证图标正常显示。
+
+### 额度估算防陈旧快照覆盖（`b732956`，并入 v1.0.7 发布）
+
+> 该提交实为 v1.0.6 构建后修复，技术细节已记入 v1.0.6 段。此处仅标注发布归属。
+
+---
+
 ## [v1.0.6] — 2026-08-01
 
 账号管理增强 + 封禁验活闭环。从 v1.0.5 之后的 13 个提交（`69d4288` ~ `2881d51`）
