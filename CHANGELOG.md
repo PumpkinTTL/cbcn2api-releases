@@ -5,9 +5,14 @@
 
 ## [v1.0.6] — 2026-08-01
 
-账号管理增强 + 封禁检测闭环。从 v1.0.5 之后的 6 个功能提交（`69d4288` ~ `0a962e4`）
-汇总。覆盖：OAuth 竞态根治、封禁检测闭环、账号多选批量操作、搜索/标签/回收站、
-自定义日历日期筛选、全局用量统计、签到自动刷新额度。
+账号管理增强 + 封禁验活闭环。从 v1.0.5 之后的 13 个提交（`69d4288` ~ `2881d51`）
+汇总，分两阶段：
+
+- **构建前**（`69d4288` ~ `0a962e4`）：OAuth 竞态根治、封禁验活闭环、账号多选
+  批量操作、搜索/标签/回收站、自定义日历日期筛选、全局用量统计、签到自动刷新额度。
+- **构建后稳定化与补强**（`2061b95` ~ `2881d51`）：打包版资源加载三连修复、
+  账号客户端指纹配置、日历筛选交互打磨、账号地区筛选、回收站日期筛选/时间分组、
+  「检测」文案统一改「验活」、额度估算防陈旧快照覆盖。
 
 ### 账号管理增强
 
@@ -100,6 +105,78 @@
   （`69d4288`）。
 - 变更的提交：`69d4288` `c7d4bb3` `9372087` `5335660` `87aca83` `9bf772b`
   `7f4eb51` `0a962e4`。
+
+### 打包版资源加载三连修复（`b880c03` `033b47c` `2061b95`）
+
+PyInstaller 打包后三处致命资源加载问题，均集中在 `main.py` / `build.bat`：
+
+- **主题闪变根治**（`b880c03`）：原主题持久化靠运行时加载 `theme.js` 文件设置，
+  frozen 版该文件在 `_MEIPASS` 临时解压目录下无法可靠写入/加载，首帧用默认主题
+  渲染后切换造成「深色一闪」。方案：`main.py` 新增 `_build_theme_inline`（从
+  settings/localStorage 读主题生成内联 `<script>`）+ `_prepare_frozen_html`（把
+  `theme.js` 标签替换为内联脚本，注入 `<base>` 指向解压目录），绕开 theme.js
+  文件机制。
+- **base href 指向错误**（`033b47c`）：`_prepare_frozen_html` 的 `<base href>` 此前
+  指向 `_MEIPASS` 根目录，而 index.html 实际在 `src/gui/` 子目录，相对路径资源
+  （style.css / animations.css / vue.prod.js / icons）全 404。修复：base 改为指向
+  `src.parent`（index.html 所在目录）。
+- **animations.css 漏打包**（`2061b95`）：`build.bat` 的 PyInstaller spec 漏加
+  `animations.css`，运行时全部 modal 无过渡动画，Vue 过渡类残留导致弹窗同时显示
+  无法操作。修复：`build.bat` 补进该文件。updater 版本号同步升 v1.0.6。
+
+### 账号客户端指纹配置（`80b2260`）
+
+- **背景**：所有账号共用同一套客户端请求头（IDE 版本 / User-Agent / stainless 包
+  版本），大批同指纹请求易被风控聚类。
+- **数据层**：`Account` 新增 `fingerprint` 字段（`models/account.py`）；
+  `store.py` 迁移加 `fingerprint TEXT` 列，新增 `save_fingerprint` 独立 UPDATE
+  （不与 upsert 快照并发回写耦合，避免被覆盖）。
+- **请求层**：`build_headers`（`api_client.py`）接受 `fingerprint` 参数，仅按白名单
+  `FINGERPRINT_FIELDS`（`X-IDE-Version`/`User-Agent`/`x-stainless-package-version`/
+  `x-stainless-runtime-version`）覆盖，其余头一律不接受覆盖防乱写。
+  `generate_fingerprint` 仅从合法版本号池随机（IDE/CLI/stainless/Node-runtime 各
+  8/8/6/8 个版本），平台/架构/语言固定，保证组合合法。
+- **UI**：单账号「更多→指纹」弹窗 + 批量操作区「指纹」按钮，支持一键随机（每账号
+  一套）或手动填同一套；批量操作区 `flex-basis:100%` 独立换行防溢出。
+
+### 日历筛选交互打磨（`1801778`）
+
+- 年份切换：日历头新增上一年/下一年双箭头（`calPrevYear`/`calNextYear`），原仅月
+  切换，跨年选日期要点 12 次。
+- 年份显示：`dateFilterLabel` 指定日期从「M月D日」补全为「YYYY年M月D日」。
+- 菜单/日历互斥：`toggleDateFilter` 开下拉收日历；`pickCustomDate` 改显式开/关
+  （原 `calOpen = !calOpen` 在菜单打开时逻辑反转）。
+- 清除按钮：筛选激活时触发器内出 `cal-clear-btn`（圆形 ×，hover 变红）。
+- 点外关闭：全局 click 监听收日期下拉与日历。
+
+### 账号地区筛选 + 回收站日期筛选/时间分组（`2881d51`）
+
+- **地区筛选**：`filteredAccounts` 新增 `regionFilter` 分支，按账号 ID 前缀判定
+  （`852*`=香港号、11 位纯数字非 852=中国号），纯前端无后端改动。
+- **回收站日期筛选**：弹窗新增日期下拉（全部时间/今天/昨天/近 7 天/指定日期），
+  复用主日历组件（`calYear/calMonth/calWeeks`），独立选中态
+  `rCalPickDay`/`rCalIsSelected`，不污染主筛选 `filterDate`。
+- **时间分组**：`groupedDeletedAccounts` 按删除时间分今天/昨天/更早，带分隔线与
+  计数，便于批量恢复同批删除的账号。
+- **文案统一**：全链路（`app.py` docstring + `index.html` 按钮/弹窗/toast +
+  `style.css` 注释）「检测」统一改「验活」，语义更准确。函数名（`detect_*`）保持
+  不变避免破坏 API 契约。
+
+### 额度估算持久化与防陈旧快照覆盖（`b732956`）
+
+- **问题**：额度估算 `_estimated_remain` 纯内存，被动 reload（如别的账号封号连带
+  触发）时用 DB 的 `quota_raw`（陈旧快照）重算，可能比内存已扣减值高，估算被抬高
+  → 阈值不触发 → 用超。
+- **calibrate 开关**：`_refresh_estimates(calibrate)` 被动 reload 取
+  `min(新算值, 内存已有值)` 防抬高；手动刷新额度后的 reload（`calibrate=True`）才
+  直接覆盖校准。`app.py` 所有主动刷新路径（导入/OAuth/refresh/detect）改传
+  `calibrate=True`。
+- **持久化**：新增 `persist_estimates`（网关 shutdown 时内存估算一次性落库 settings
+  表）+ `_restore_estimates`（重启 reload 恢复）。运行期间仍纯内存零 IO，重启不丢
+  扣减记录、不被陈旧 DB 抬高。
+- **UI 修复**：工作态卡片（`.card.active`）激光束 `z-index` 提升原先对 `> *` 生效，
+  把 absolute 定位的复选框卷进相对定位导致错位；改 `> *:not(.card-checkbox)` 排除，
+  复选框单独 `z-index:3`。
 
 ---
 

@@ -1347,12 +1347,7 @@ class GuiApi:
         import json as _json
         return _json.dumps({"priority": store.get_setting("priority_account", "")})
 
-    def export_to_workbuddy(self, port: str = "", password: str = "") -> str:
-        import pathlib
-
-        port_num = int(port) if port and port.strip() else getattr(self, "_proxy_port", 8001)
-        api_key = password.strip() if password else ""
-
+    def _build_model_configs(self, port_num: int, api_key: str) -> list:
         model_specs = {
             "hy3":            {"input": 192000,  "output": 64000,  "name": "Hy3"},
             "deepseek-v4-flash": {"input": 1000000, "output": 50000,  "name": "Deepseek-V4-Flash"},
@@ -1366,7 +1361,6 @@ class GuiApi:
             "kimi-k2.6":       {"input": 256000,  "output": 32000,  "name": "Kimi-K2.6"},
             "auto":            {"input": 1000000, "output": 64000,  "name": "Auto"},
         }
-
         config = []
         for m in ["deepseek-v4-flash", "deepseek-v4-pro", "hy3",
                    "glm-5.2", "glm-5.1", "glm-5v-turbo",
@@ -1375,7 +1369,7 @@ class GuiApi:
             config.append({
                 "id": spec["name"],
                 "name": spec["name"],
-                "vendor": "Custom",
+                "vendor": "Gateway",
                 "url": f"http://localhost:{port_num}/v1",
                 "apiKey": api_key,
                 "supportsToolCall": True,
@@ -1386,24 +1380,14 @@ class GuiApi:
                 "maxOutputTokens": spec["output"],
                 "reasoning": {
                     "supportedEfforts": ["low", "medium", "high", "xhigh"],
-                    "canDisableThinking": False,
+                    "defaultEffort": "high",
                 },
             })
+        return config
 
-        candidates = [
-            pathlib.Path.home() / ".workbuddy" / "models.json",
-            pathlib.Path(os.environ.get("APPDATA", "")) / "WorkBuddy" / ".workbuddy" / "models.json",
-        ]
-
-        target = None
-        for p in candidates:
-            if p.parent.exists():
-                target = p
-                break
-        if not target:
-            target = candidates[0]
-            target.parent.mkdir(parents=True, exist_ok=True)
-
+    @staticmethod
+    def _write_config_file(target, payload) -> dict:
+        import pathlib
         backup = None
         if target.exists():
             backup = target.with_suffix(".json.bak")
@@ -1411,15 +1395,39 @@ class GuiApi:
                 backup.write_text(target.read_text(encoding="utf-8"), encoding="utf-8")
             except Exception:
                 backup = None
+        target.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        return {"success": True, "path": str(target),
+                "count": len(payload) if isinstance(payload, list) else len(payload.get("models", [])),
+                "backup": str(backup) if backup else ""}
 
+    def export_config(self, target: str, port: str = "", password: str = "") -> str:
+        """导出网关配置到本地 IDE 的 models.json。
+        target='workbuddy' → ~/.workbuddy/models.json（裸数组）
+        target='codebuddy' → ~/.codebuddy/models.json（{"models": [...]} 包裹）
+        """
+        import pathlib
+        port_num = int(port) if port and port.strip() else getattr(self, "_proxy_port", 8001)
+        api_key = password.strip() if password else ""
+        config = self._build_model_configs(port_num, api_key)
+        profiles = {
+            "workbuddy": {"folder": ".workbuddy", "app": "WorkBuddy", "wrap": config},
+            "codebuddy": {"folder": ".codebuddy", "app": "CodeBuddy", "wrap": {"models": config}},
+        }
+        prof = profiles.get(target, profiles["workbuddy"])
+        candidates = [
+            pathlib.Path.home() / prof["folder"] / "models.json",
+            pathlib.Path(os.environ.get("APPDATA", "")) / prof["app"] / prof["folder"] / "models.json",
+        ]
+        tgt = None
+        for p in candidates:
+            if p.parent.exists():
+                tgt = p
+                break
+        if not tgt:
+            tgt = candidates[0]
+            tgt.parent.mkdir(parents=True, exist_ok=True)
         try:
-            target.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
-            return json.dumps({
-                "success": True,
-                "path": str(target),
-                "count": len(config),
-                "backup": str(backup) if backup else "",
-            })
+            return json.dumps(self._write_config_file(tgt, prof["wrap"]))
         except Exception as e:
             return json.dumps({"error": str(e)})
 

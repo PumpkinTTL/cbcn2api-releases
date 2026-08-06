@@ -971,6 +971,25 @@ body {
   color: var(--text-secondary); cursor: pointer; transition: var(--transition);
 }
 .sync-btn:hover { color: var(--text); border-color: var(--border-hover); }
+
+/* 导入模型下拉组（WorkBuddy / CodeBuddy 合一） */
+.sync-group { position: relative; display: inline-flex; }
+.sync-group .sync-btn { border-radius: var(--radius-sm); }
+.sync-group.open .sync-btn { color: var(--text); border-color: var(--border-hover); }
+.sync-group .dd-arrow { transition: transform 0.2s ease; opacity: .6; }
+.sync-group.open .dd-arrow { transform: rotate(180deg); opacity: 1; }
+.sync-dd {
+  position: absolute; top: calc(100% + 4px); right: 0; min-width: 150px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); z-index: 100; padding: 4px;
+}
+.sync-dd-item {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer;
+  font-size: 12px; color: var(--text); border-radius: var(--radius-sm); transition: var(--transition);
+}
+.sync-dd-item:hover { background: var(--surface-hover); }
+.sync-dd-item svg { opacity: .7; flex-shrink: 0; }
+
 .chat-send-btn {
   padding: 7px 16px; font-size: 12px; font-weight: 600; border-radius: var(--radius-sm);
   border: none; cursor: pointer; transition: var(--transition); background: var(--primary); color: #fff;

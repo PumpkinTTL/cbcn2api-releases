@@ -238,13 +238,26 @@
             </template>
             <span class="sync-label">{{ syncLabel }}</span>
           </button>
-          <button class="sync-btn" id="exportBtn" :disabled="wbExportLoading" @click="exportToWorkBuddy">
-            <span v-if="wbExportLoading" class="spinner-sm"></span>
-            <template v-else>
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-            </template>
-            <span class="sync-label">{{ wbExportLabel }}</span>
-          </button>
+          <div class="sync-group" :class="{ open: exportDdOpen }" @click.stop="exportDdOpen = !exportDdOpen">
+            <button class="sync-btn" :disabled="wbExportLoading || cbExportLoading">
+              <span v-if="wbExportLoading || cbExportLoading" class="spinner-sm"></span>
+              <template v-else>
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              </template>
+              <span class="sync-label">导入模型</span>
+              <svg class="dd-arrow" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            <div class="sync-dd" v-show="exportDdOpen" @click.stop>
+              <div class="sync-dd-item" @click="exportDdOpen=false; exportToIDE('workbuddy')">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 7H5a2 2 0 00-2 2v8a2 2 0 002 2h9"/><path d="M16 3l5 5-5 5M21 8H9"/></svg>
+                <span>WorkBuddy</span>
+              </div>
+              <div class="sync-dd-item" @click="exportDdOpen=false; exportToIDE('codebuddy')">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>
+                <span>CodeBuddy</span>
+              </div>
+            </div>
+          </div>
           <button class="sync-btn" id="proxyChatToggleBtn" @click="chatCardCollapsed = !chatCardCollapsed">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
             <span>对话测试</span> <span>{{ chatCardCollapsed ? '▼' : '▲' }}</span>
@@ -1082,14 +1095,16 @@
       </div>
       <div class="modal-body">
         <div class="changelog-version">v1.0.6</div>
-        <div class="changelog-date">2026-08-01</div>
+        <div class="changelog-date">2026-08-05</div>
 
         <div class="changelog-section-title">账号管理增强</div>
         <ul class="changelog-list">
           <li>新增账号搜索框，按昵称 / 邮箱 / ID 实时过滤</li>
           <li>新增多选批量操作：一键启用 / 禁用 / 刷新 / 签到 / 导出 / 删除</li>
           <li>新增自定义标签，卡片直接显示，支持按标签筛选</li>
+          <li>新增地区筛选：852 开头归香港号、11 位归中国号，一键过滤</li>
           <li>新增回收站：误删可恢复，支持多选恢复 / 彻底删除</li>
+          <li>回收站增加日期筛选（全部 / 今天 / 昨天 / 近 7 天 / 指定日期），并按删除时间分组（今天 / 昨天 / 更早）</li>
           <li>新增客户端指纹：每个账号可独立配置随机指纹（含批量一键随机），多账号更不易被上游识别为同一客户端</li>
           <li>签到后自动刷新该账号额度，无需手动点刷新</li>
         </ul>
@@ -1106,6 +1121,7 @@
           <li>日期筛选换成主题化日历：今天 / 昨天 / 近 7 天 / 近 30 天 / 指定日期</li>
           <li>新增全局用量统计卡片，占比显示更直观</li>
           <li>图标系统换新 + 标题栏重构</li>
+          <li>全站「检测」文案统一为「验活」，更贴近实际动作</li>
           <li>修复主题持久化刷新闪深色、首次打开闪加载页问题</li>
           <li>修复 OAuth 登录竞态（「没有待处理的登录请求」偶发报错）</li>
         </ul>
@@ -1589,6 +1605,9 @@ const vApp = createApp({
     const syncLabel = ref('同步模型');
     const wbExportLoading = ref(false);
     const wbExportLabel = ref('导入 WorkBuddy');
+    const cbExportLoading = ref(false);
+    const cbExportLabel = ref('导入 CodeBuddy');
+    const exportDdOpen = ref(false);
     const chatMessagesRef = ref(null);
 
     // ── 工具栏加载态 ──
@@ -1684,9 +1703,9 @@ const vApp = createApp({
       }
       if (regionFilter.value !== 'all') {
         result = result.filter(a => {
-          const id = String(a.id || '');
-          if (regionFilter.value === 'hk') return id.startsWith('852');
-          if (regionFilter.value === 'cn') return /^\d{11}$/.test(id) && !id.startsWith('852');
+          const phone = normalizePhone(a);
+          if (regionFilter.value === 'hk') return phone.startsWith('852');
+          if (regionFilter.value === 'cn') return phone.length === 11 && !phone.startsWith('852');
           return true;
         });
       }
@@ -1715,6 +1734,16 @@ const vApp = createApp({
     function fmtK(n) { const v=_n(n); if(v>=100000000)return (v/100000000).toFixed(1)+'亿'; if(v>=10000)return (v/10000).toFixed(1)+'w'; if(v>=1000)return (v/1000).toFixed(1)+'k'; return String(v); }
     function fmtL(n) { const v=_n(n); if(v>=10000)return (v/10000).toFixed(1)+'w'; if(v>=1000)return (v/1000).toFixed(1)+'k'; return v.toFixed(2); }
     function dateStr(d) { return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+    function normalizePhone(a) {
+      for (const f of [a.email, a.nickname, a.id]) {
+        let s = String(f||'').trim();
+        if (!s || /[a-zA-Z@]/.test(s)) continue;
+        let digits = s.replace(/[^\d]/g, '');
+        if (digits.startsWith('86') && digits.length === 13) digits = digits.slice(2);
+        if (digits.length >= 8 && digits.length <= 13) return digits;
+      }
+      return '';
+    }
     function friendlyDate(val) { if(!val)return ''; const p=val.split('-'); if(p.length!==3)return val; return `${p[0]}年${parseInt(p[1],10)}月${parseInt(p[2],10)}日`; }
     function getHitRate(s) { if(!s)return '0.0'; const h=s.cache_hits||0,m=s.cache_misses||0; return (h+m)>0?(h/(h+m)*100).toFixed(1):'0.0'; }
 
@@ -2922,6 +2951,7 @@ const vApp = createApp({
     // Close dropdown on outside click
     document.addEventListener('click', () => { modelDropdownOpen.value = false; });
     document.addEventListener('click', () => { moreOpenId.value = null; });
+    document.addEventListener('click', () => { exportDdOpen.value = false; });
     document.addEventListener('click', () => { dateFilterOpen.value = false; calOpen.value = false; });
 
     async function syncModels() {
@@ -2950,22 +2980,27 @@ const vApp = createApp({
       } finally { syncLoading.value = false; }
     }
 
-    async function exportToWorkBuddy() {
-      if (!await showConfirm('确认将本网关配置导入至 WorkBuddy？\n\n这将覆盖 WorkBuddy 现有的 API 配置。', '导入确认')) return;
-      wbExportLoading.value = true; wbExportLabel.value = '导入中..';
+    async function exportToIDE(ide) {
+      const name = ide === 'codebuddy' ? 'CodeBuddy' : 'WorkBuddy';
+      if (!await showConfirm(`确认将本网关配置导入至 ${name}？\n\n这将覆盖 ${name} 现有的 API 配置。`, '导入确认')) return;
+      const loading = ide === 'codebuddy' ? cbExportLoading : wbExportLoading;
+      const label = ide === 'codebuddy' ? cbExportLabel : wbExportLabel;
+      loading.value = true; label.value = '导入中..';
       try {
-        const r = JSON.parse(await pywebview.api.export_to_workbuddy(String(proxyPort.value), String(proxyKey.value||'')));
+        const r = JSON.parse(await pywebview.api.export_config(ide, String(proxyPort.value), String(proxyKey.value||'')));
         if (r.success) {
-          wbExportLabel.value = `已导入${r.count}项`;
+          label.value = `已导入${r.count}项`;
           showToast(`已写入: ${r.path}${r.backup?'\n备份: '+r.backup:''}`, 'success');
         } else { throw new Error(r.error); }
       } catch(e) {
-        wbExportLabel.value = '导入失败';
+        label.value = '导入失败';
         showToast('导出失败: '+e.message, 'error');
       } finally {
-        setTimeout(() => { wbExportLabel.value='导入 WorkBuddy'; wbExportLoading.value=false; }, 2500);
+        setTimeout(() => { label.value=`导入 ${name}`; loading.value=false; }, 2500);
       }
     }
+    function exportToWorkBuddy() { return exportToIDE('workbuddy'); }
+    function exportToCodeBuddy() { return exportToIDE('codebuddy'); }
 
     let chatBusy = false;
     async function sendTestChat() {
@@ -3136,7 +3171,7 @@ const vApp = createApp({
       proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, quotaThreshold, proxyToggling,
       enableThreshold, detecting, detectProgress, detectThresholdTemp, detectTargetCount,
       chatCardCollapsed, chatMessages, chatInput, chatSending, modelList, currentModel, modelDropdownOpen,
-      syncLoading, syncLabel, wbExportLoading, wbExportLabel, chatMessagesRef,
+      syncLoading, syncLabel, wbExportLoading, wbExportLabel, cbExportLoading, cbExportLabel, exportDdOpen, chatMessagesRef,
       exportLoading, checkinAllLoading, refreshAllLoading, cardLoading, moreOpenId,
       selectMode, selectedIds, batchDeleteLoading, batchExportLoading, batchDetectLoading,
       batchStatusLoading, batchRefreshLoading, batchCheckinLoading, batchFingerprintLoading,
@@ -3174,7 +3209,7 @@ const vApp = createApp({
       showOAuthModal, cancelOAuth,
       showImportModal, doImport, handleFileImport,
       toggleProxy, copyEndpoint,
-      selectModel, syncModels, exportToWorkBuddy, sendTestChat,
+      selectModel, syncModels, exportToIDE, exportToWorkBuddy, exportToCodeBuddy, sendTestChat,
       refreshLogs, toggleLogEnabled, clearLogs,
       checkForUpdate, doUpdate,
       startApp,
