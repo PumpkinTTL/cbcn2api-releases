@@ -1097,22 +1097,15 @@
         <div class="changelog-version">v1.0.7</div>
         <div class="changelog-date">2026-08-07</div>
 
-        <div class="changelog-section-title">导入模型增强</div>
+        <div class="changelog-section-title">导入模型</div>
         <ul class="changelog-list">
-          <li>新增 CodeBuddy 导入支持，一键写入 .codebuddy/models.json</li>
-          <li>WorkBuddy / CodeBuddy 两个导入按钮合并为「导入模型」下拉，界面更简洁</li>
+          <li>新增支持 CodeBuddy，一键导入网关配置</li>
+          <li>导入时覆盖全部模型，默认启用高度思考</li>
         </ul>
 
-        <div class="changelog-section-title">配置兼容修复</div>
+        <div class="changelog-section-title">稳定性</div>
         <ul class="changelog-list">
-          <li>修复导入的自定义模型不显示图标：vendor 对齐为 Gateway</li>
-          <li>reasoning 字段补 defaultEffort，移除冗余 canDisableThinking</li>
-        </ul>
-
-        <div class="changelog-section-title">调度稳定性</div>
-        <ul class="changelog-list">
-          <li>修复额度估算被陈旧快照覆盖导致用超：被动 reload 取最小值防抬高，主动刷新才校准</li>
-          <li>估算值关闭网关时持久化，重启不丢扣减记录</li>
+          <li>修复额度估算偶发偏高导致用超的问题</li>
         </ul>
 
         <div class="changelog-version" style="margin-top:24px">v1.0.6</div>
