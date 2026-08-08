@@ -66,13 +66,24 @@ def check_latest() -> dict:
 
 def download_update(download_url: str, progress_callback=None) -> dict:
     try:
+        # 从下载 URL 解析目标版本 tag（.../releases/download/{tag}/asset.exe）
+        tag = "latest"
+        try:
+            tag = download_url.split("/releases/download/")[1].split("/")[0]
+        except Exception:
+            pass
+        # 下载到当前 exe 同级目录，独立文件名（不覆盖运行中的旧 exe）
+        if getattr(sys, "frozen", False):
+            target_dir = os.path.dirname(sys.executable)
+        else:
+            target_dir = tempfile.gettempdir()
+        final_path = os.path.join(target_dir, f"AI Gateway {tag}.exe")
+        tmp_path = final_path + ".part"
         resp = requests.get(download_url, stream=True, timeout=30, proxies=_proxy())
         if resp.status_code != 200:
             return {"error": f"下载失败: HTTP {resp.status_code}"}
         total = int(resp.headers.get("content-length", 0))
         downloaded = 0
-        fd, tmp_path = tempfile.mkstemp(suffix=".exe", prefix="ai-gateway-update-")
-        os.close(fd)
         chunk_size = 65536
         with open(tmp_path, "wb") as f:
             for chunk in resp.iter_content(chunk_size=chunk_size):
@@ -82,9 +93,14 @@ def download_update(download_url: str, progress_callback=None) -> dict:
                     if progress_callback and total > 0:
                         progress_callback(int(downloaded * 100 / total))
         if total > 0 and downloaded != total:
-            os.unlink(tmp_path)
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
             return {"error": "下载不完整"}
-        return {"ok": True, "path": tmp_path, "size": downloaded}
+        # 下载完成：替换为目标文件名（覆盖同名旧下载）
+        os.replace(tmp_path, final_path)
+        return {"ok": True, "path": final_path, "size": downloaded, "tag": tag}
     except Exception as e:
         return {"error": f"下载失败: {e}"}
 
@@ -96,51 +112,46 @@ def _get_current_exe() -> str:
 
 
 def apply_update(download_path: str) -> dict:
+    """全量更新：新 exe 是同级目录的独立文件（已下载完成）。
+
+    VBS 流程：等旧进程退出（重试删除旧 exe，锁释放即删除成功）→
+    启动新 exe（独立文件，无覆盖锁、杀软扫描早已完成）→
+    通过启动标记文件确认 GUI 真正起来（最多重试 3 次）。
+    """
     current_exe = _get_current_exe()
     if not current_exe:
         return {"error": "仅在打包后可执行更新"}
+    if not os.path.exists(download_path):
+        return {"error": f"新版本文件不存在: {download_path}"}
     vbs_path = os.path.join(tempfile.gettempdir(), "ai-gateway-update.vbs")
     log_path = os.path.join(tempfile.gettempdir(), "ai-gateway-update.err")
     check_path = os.path.join(tempfile.gettempdir(), "ai-gateway-check.txt")
     # VBS 字符串没有反斜杠转义，路径直接原样写入（不要 replace 成 \\）。
-    src = download_path
-    dst = current_exe
+    new_exe = download_path
+    old_exe = current_exe
     log = log_path
     chk = check_path
     vbs_content = (
         "Set WshShell = CreateObject(\"WScript.Shell\")\n"
         "Set fso = CreateObject(\"Scripting.FileSystemObject\")\n"
         "On Error Resume Next\n"
-        "' 不用 WMI 等进程退出（WMI 查询本身可能失败 → 误判退出 → 覆盖运行中的 exe）。\n"
-        "' 直接重试 CopyFile：进程退出前 exe 被锁定 → 失败重试；退出后锁释放 → 成功。\n"
-        "copy_ok = False\n"
+        "' 等旧进程退出：重试删除旧 exe（进程退出前被锁定 → 失败重试；退出后删除成功）。\n"
         "For i = 1 To 60\n"
-        "  fso.CopyFile \"" + src + "\", \"" + dst + "\", True\n"
-        "  If Err.Number = 0 Then\n"
-        "    copy_ok = True\n"
-        "    Exit For\n"
-        "  End If\n"
+        "  If Not fso.FileExists(\"" + old_exe + "\") Then Exit For\n"
+        "  fso.DeleteFile \"" + old_exe + "\", True\n"
+        "  If Err.Number = 0 Then Exit For\n"
         "  Err.Clear\n"
         "  WScript.Sleep 1000\n"
         "Next\n"
-        "If Not copy_ok Then\n"
-        "  Set f = fso.CreateTextFile(\"" + log + "\", True)\n"
-        "  f.WriteLine \"copy failed: \" & Err.Description\n"
-        "  f.Close\n"
-        "  WScript.Quit 1\n"
-        "End If\n"
-        "fso.DeleteFile \"" + src + "\", True\n"
-        "' 等 15 秒再启动：让杀毒软件完成对刚写入 exe 的扫描，避免启动时解压加载失败。\n"
-        "WScript.Sleep 15000\n"
-        "exe_name = fso.GetFileName(\"" + dst + "\")\n"
-        "chk = \"" + chk + "\"\n"
+        "Err.Clear\n"
+        "' 启动新版本（独立文件，下载完成已过杀软扫描，无需再等待）。\n"
         "started = False\n"
         "For i = 1 To 3\n"
-        "  fso.DeleteFile chk, True\n"
+        "  fso.DeleteFile \"" + chk + "\", True\n"
         "  Err.Clear\n"
-        "  WshShell.Run \"\"\"\" & \"" + dst + "\" & \"\"\"\", 0, False\n"
+        "  WshShell.Run \"\"\"\" & \"" + new_exe + "\" & \"\"\"\", 0, False\n"
         "  WScript.Sleep 12000\n"
-        "  If fso.FileExists(chk) Then\n"
+        "  If fso.FileExists(\"" + chk + "\") Then\n"
         "    started = True\n"
         "    Exit For\n"
         "  End If\n"
@@ -159,3 +170,23 @@ def apply_update(download_path: str) -> dict:
         return {"ok": True}
     except Exception as e:
         return {"error": f"启动更新程序失败: {e}"}
+
+
+def cleanup_old_versions():
+    """启动后清理同目录的其他版本 exe（只删 AI Gateway 开头的，不动自己）。
+
+    更新流程中旧 exe 可能因删除失败残留，由新实例启动后兜底清理。
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    exe_dir = os.path.dirname(sys.executable)
+    me = os.path.basename(sys.executable)
+    try:
+        for f in os.listdir(exe_dir):
+            if f.startswith("AI Gateway ") and f.endswith(".exe") and f != me:
+                try:
+                    os.remove(os.path.join(exe_dir, f))
+                except OSError:
+                    pass
+    except OSError:
+        pass

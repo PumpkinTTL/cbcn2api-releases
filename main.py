@@ -123,6 +123,12 @@ def _mark_started():
             f.write("started")
     except Exception:
         pass
+    # 新实例已正常运行，兜底清理同目录残留的其他版本 exe
+    try:
+        from src.updater import cleanup_old_versions
+        cleanup_old_versions()
+    except Exception:
+        pass
 
 
 def main():
