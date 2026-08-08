@@ -1553,8 +1553,13 @@ class GuiApi:
 
     def download_update(self, url: str) -> str:
         from src.updater import download_update
-        result = download_update(url)
+        self._dl_progress = 0
+        result = download_update(url, progress_callback=lambda pct: setattr(self, "_dl_progress", pct))
         return json.dumps(result)
+
+    def get_download_progress(self) -> str:
+        """前端轮询下载进度（0-100）。"""
+        return json.dumps({"pct": getattr(self, "_dl_progress", 0)})
 
     def apply_update(self, path: str) -> str:
         from src.updater import apply_update

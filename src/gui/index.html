@@ -3271,14 +3271,22 @@ const vApp = createApp({
       }
       updateBtnDisabled.value=true; updateBtnText.value='下载中..';
       updateProgressVisible.value=true; updateNotesVisible.value=false;
+      updateProgressPct.value=0;
+      const pollTimer = setInterval(async () => {
+        try {
+          const p = JSON.parse(await pywebview.api.get_download_progress());
+          updateProgressPct.value = p.pct || 0;
+        } catch {}
+      }, 300);
       try {
         const r=JSON.parse(await pywebview.api.download_update(_updateData.download_url));
+        clearInterval(pollTimer);
         if(r.error){updateStatusHtml.value=`<div>${r.error}</div>`;updateBtnDisabled.value=false;updateBtnText.value='下载更新';return;}
         updateStatusHtml.value='<div>下载完成，准备更新..</div>';
         updateProgressPct.value=100;
         updateBtnText.value='重启更新'; updateBtnDisabled.value=false;
         _updateApplyPath=r.path;
-      } catch(e) { updateStatusHtml.value=`<div>下载失败: ${e.message}</div>`; updateBtnDisabled.value=false; updateBtnText.value='下载更新'; }
+      } catch(e) { clearInterval(pollTimer); updateStatusHtml.value=`<div>下载失败: ${e.message}</div>`; updateBtnDisabled.value=false; updateBtnText.value='下载更新'; }
     }
 
     // ─── startApp ───
