@@ -166,6 +166,14 @@ def apply_update(download_path: str) -> dict:
     try:
         with open(vbs_path, "w", encoding="utf-8") as f:
             f.write(vbs_content)
+        # 写更新标记：新版本首次启动时凭它清理同目录旧版本，
+        # 平时手动启动不清理，避免误删构建产物目录里的其他版本。
+        updated_mark = os.path.join(tempfile.gettempdir(), "ai-gateway-updated.txt")
+        try:
+            with open(updated_mark, "w", encoding="utf-8") as f:
+                f.write("updated")
+        except Exception:
+            pass
         os.startfile(vbs_path)
         return {"ok": True}
     except Exception as e:

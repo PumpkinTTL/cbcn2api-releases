@@ -130,10 +130,14 @@ def _mark_started():
             f.write("started")
     except Exception:
         pass
-    # 新实例已正常运行，兜底清理同目录残留的其他版本 exe
+    # 仅更新后首次启动才清理同目录旧版本（有更新标记才清理，平时不扫，
+    # 避免在构建产物目录里运行误删其他版本）
     try:
-        from src.updater import cleanup_old_versions
-        cleanup_old_versions()
+        updated_mark = os.path.join(tempfile.gettempdir(), "ai-gateway-updated.txt")
+        if os.path.exists(updated_mark):
+            from src.updater import cleanup_old_versions
+            cleanup_old_versions()
+            os.remove(updated_mark)
     except Exception:
         pass
 
