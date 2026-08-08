@@ -3263,7 +3263,9 @@ const vApp = createApp({
         try {
           const r=JSON.parse(await pywebview.api.apply_update(_updateApplyPath));
           if(r.error){updateStatusHtml.value=`<div>${r.error}</div>`;return;}
-          window.close();
+          // 必须走后端 win_close（cleanup + destroy）真正退出进程，
+          // 否则 JS window.close() 在 WebView2 里被忽略 → 主进程不退 → VBS 更新脚本等不到进程退出。
+          await pywebview.api.win_close();
         } catch {}
         return;
       }
