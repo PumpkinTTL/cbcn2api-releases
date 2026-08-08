@@ -125,7 +125,7 @@ def apply_update(download_path: str) -> dict:
         "  f.Close\n"
         "End If\n"
         "fso.DeleteFile \"" + src + "\", True\n"
-        "WshShell.Run \"\"\"\" & \"" + dst + "\" & \"\"\"\"\", 0, False\n"
+        "WshShell.Run \"\"\"\" & \"" + dst + "\" & \"\"\"\", 0, False\n"
     )
     try:
         with open(vbs_path, "w", encoding="utf-8") as f:
