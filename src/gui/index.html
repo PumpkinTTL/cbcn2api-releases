@@ -40,11 +40,15 @@
       <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
     </div>
     <h2>激活授权</h2>
-    <div class="license-sub" id="licenseSub">请输入激活码以继续使用</div>
-    <input id="licenseInput" placeholder="粘贴激活码" onkeydown="if(event.key==='Enter')doActivate()">
-    <button class="btn btn-primary" onclick="doActivate()">激活</button>
+    <div class="license-sub" id="licenseSub">请输入激活码以完成授权</div>
+    <input id="licenseInput" placeholder="请输入激活码" onkeydown="if(event.key==='Enter')doActivate()">
+    <button class="btn btn-primary" id="licenseBtn" onclick="doActivate()">
+      <span class="btn-spinner" id="licenseSpinner" style="display:none"></span>
+      <span id="licenseBtnText">激活</span>
+    </button>
     <div class="license-error" id="licenseError"></div>
-    <div class="license-info">激活码由算法签发，无需联网验证</div>
+    <div class="license-info">激活码免费领取，为了防止转发滥用，仅供测试使用</div>
+    <div class="license-mid-tag" title="当前机器标识"><span class="mid-tag-label">当前机器码</span><span id="licenseMachineId">—</span></div>
   </div>
 </div>
 
@@ -119,6 +123,10 @@
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>
         联营店铺
       </button>
+      <button class="nav-item" :class="{ active: currentView === 'about' }" @click="showAbout">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+        关于
+      </button>
     </nav>
     <div class="sidebar-footer">
       <button class="btn btn-ghost btn-sm" id="themeBtn" @click="toggleTheme" style="width:100%;justify-content:center">
@@ -142,31 +150,31 @@
     <!-- ── Console Header ── -->
     <div class="header-top" id="consoleHeader" v-show="currentView === 'console'">
       <div class="header-toolbar-container">
-        <button class="btn-toolbar-item" @click="showImportModal" title="粘贴 Token 录入">
+        <button class="btn-toolbar-item" :disabled="!licenseAuthorized" @click="showImportModal" title="粘贴 Token 录入">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/><path d="M9 12h6M9 16h4"/></svg>
           <span class="toolbar-text">粘贴Token</span>
         </button>
-        <button class="btn-toolbar-item" @click="showOAuthModal" title="OAuth 授权登录">
+        <button class="btn-toolbar-item" :disabled="!licenseAuthorized" @click="showOAuthModal" title="OAuth 授权登录">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg>
           <span class="toolbar-text">OA登录</span>
         </button>
-        <button class="btn-toolbar-item" @click="$refs.fileInput.click()" title="JSON 文件批量导入">
+        <button class="btn-toolbar-item" :disabled="!licenseAuthorized" @click="$refs.fileInput.click()" title="JSON 文件批量导入">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/></svg>
           <span class="toolbar-text">导入</span>
         </button>
         <input type="file" ref="fileInput" accept=".json" style="display:none" @change="handleFileImport">
-        <button class="btn-toolbar-item" :disabled="exportLoading" @click="exportAccounts" title="导出账号 JSON 配置">
+        <button class="btn-toolbar-item" :disabled="!licenseAuthorized || exportLoading" @click="exportAccounts" title="导出账号 JSON 配置">
           <span v-if="exportLoading" class="spinner-sm"></span>
           <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/></svg>
           <span class="toolbar-text">导出</span>
         </button>
         <span class="toolbar-v-divider"></span>
-        <button class="btn-toolbar-item accent" :disabled="checkinAllLoading" @click="checkinAll" title="一键签到全量账号">
+        <button class="btn-toolbar-item accent" :disabled="!licenseAuthorized || checkinAllLoading" @click="checkinAll" title="一键签到全量账号">
           <span v-if="checkinAllLoading" class="spinner-sm"></span>
           <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 16l2 2 4-4"/></svg>
           <span class="toolbar-text">签到</span>
         </button>
-        <button class="btn-toolbar-item primary" :disabled="refreshAllLoading" @click="refreshAll" title="一键刷新数据与额度">
+        <button class="btn-toolbar-item primary" :disabled="!licenseAuthorized || refreshAllLoading" @click="refreshAll" title="一键刷新数据与额度">
           <span v-if="refreshAllLoading" class="spinner-sm"></span>
           <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>
           <span class="toolbar-text">刷新</span>
@@ -202,7 +210,7 @@
             </div>
             <button class="btn btn-sm" id="proxyToggleBtn"
               :class="proxyRunning ? 'btn-ghost btn-proxy-on' : 'btn-primary'"
-              :disabled="proxyToggling"
+              :disabled="!licenseAuthorized || proxyToggling"
               @click="toggleProxy">
               <span v-if="proxyToggling" class="spinner-sm"></span>
               <template v-else>
@@ -362,6 +370,10 @@
         </button>
         <button class="filter-icon-btn" @click="openRecycle" title="回收站：查看/恢复软删除的账号">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.8-6.6L3 8"/><path d="M3 3v5h5"/><path d="M12 8v4l3 2"/></svg>
+        </button>
+        <button class="filter-icon-btn" :disabled="accountsRefreshLoading" @click="refreshAccounts" title="刷新">
+          <span v-if="accountsRefreshLoading" class="spinner-sm"></span>
+          <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg>
         </button>
         <div class="account-search">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
@@ -543,9 +555,10 @@
           class="card"
           :class="{
             active: a.id === proxyCurrentAccount && proxyActive,
-            current: a.id === proxyCurrentAccount,
+            current: proxyRunning && a.id === proxyCurrentAccount,
             selected: !!selectedIds[a.id],
-            'select-mode': selectMode
+            'select-mode': selectMode,
+            'more-open': moreOpenId === a.id
           }"
           :data-account-id="a.id">
 
@@ -564,7 +577,7 @@
                 <div class="card-name">{{ a.nickname || a.email || '未命名' }}</div>
                 <div class="card-email" v-if="a.email && a.email !== (a.nickname || a.email)">{{ a.email }}</div>
                 <div class="card-meta">
-                  <span v-if="a.id === proxyCurrentAccount" class="current-badge">
+                  <span v-if="proxyRunning && a.id === proxyCurrentAccount" class="current-badge">
                     <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg>当前
                   </span>
                   <span :class="getStatusBadgeClass(a)">{{ getStatusText(a) }}</span>
@@ -629,16 +642,12 @@
           <!-- Actions -->
           <div class="card-footer">
             <div class="card-actions">
-              <button class="btn btn-ghost btn-sm" :disabled="cardLoading[a.id + '_checkin']" @click="doCheckin(a.id)" title="签到">
-                <span v-if="cardLoading[a.id + '_checkin']" class="spinner-sm"></span>
-                <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> 签到</template>
+              <button v-if="(a.status || 'normal') === 'normal'" class="btn btn-ghost btn-sm btn-icon" @click="setPriorityAccount(a.id)" title="设为优先调度">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
               </button>
               <button class="btn btn-ghost btn-sm" :disabled="cardLoading[a.id + '_refresh']" @click="refreshOne(a.id)" title="刷新">
                 <span v-if="cardLoading[a.id + '_refresh']" class="spinner-sm"></span>
                 <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg> 刷新</template>
-              </button>
-              <button v-if="(a.status || 'normal') === 'normal'" class="btn btn-ghost btn-sm btn-icon" @click="setPriorityAccount(a.id)" title="设为优先调度">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
               </button>
               <button v-if="(a.status || 'normal') !== 'banned'" class="btn btn-ghost btn-sm"
                 :style="{ color: (a.status || 'normal') === 'disabled' ? '#22c55e' : '#f59e0b' }"
@@ -661,6 +670,10 @@
                   <svg class="more-dropdown-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
                 </div>
                 <div class="more-dropdown-menu" v-show="moreOpenId === a.id">
+                  <div class="more-dropdown-item" :class="{ busy: cardLoading[a.id + '_checkin'] }" @click.stop="doCheckin(a.id); moreOpenId = null" title="签到">
+                    <span v-if="cardLoading[a.id + '_checkin']" class="spinner-sm"></span>
+                    <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> 签到
+                  </div>
                   <div class="more-dropdown-item" @click.stop="showQuotaDetail(a.id); moreOpenId = null" title="额度详情">
                     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 20h20M4 16l4-8 4 4 4-6 4 8"/></svg> 额度详情
                   </div>
@@ -697,6 +710,7 @@
             <option value="success">成功</option>
             <option value="warning">警告</option>
             <option value="error">错误</option>
+            <option value="switch">切号</option>
           </select>
           <button class="btn btn-ghost btn-sm" @click="clearLogs" title="清空日志">清空</button>
           <button class="btn btn-ghost btn-sm" @click="refreshLogs" title="刷新">
@@ -707,10 +721,10 @@
       <div class="logs-list" id="logsList">
         <template v-if="logs.length">
           <div v-for="(l, i) in logs" :key="i" class="log-row"
-            :class="l.event === 'success' ? 'log-success' : l.event === 'error' ? 'log-error' : 'log-request'">
+            :class="l.event === 'success' ? 'log-success' : l.event === 'error' ? 'log-error' : l.event === 'switch' ? 'log-switch' : 'log-request'">
             <span class="log-time">{{ l._time }}</span>
-            <span class="log-badge" :class="l.event === 'success' ? 'log-success' : l.event === 'error' ? 'log-error' : 'log-request'">
-              {{ l.event === 'success' ? '成功' : l.event === 'error' ? '错误' : '请求' }}
+            <span class="log-badge" :class="l.event === 'success' ? 'log-success' : l.event === 'error' ? 'log-error' : l.event === 'switch' ? 'log-switch' : 'log-request'">
+              {{ l.event === 'success' ? '成功' : l.event === 'error' ? '错误' : l.event === 'switch' ? '切号' : '请求' }}
             </span>
             <span class="log-acct">{{ l.account_name || l.account_id || '-' }}</span>
             <span class="log-model">{{ l.model || '' }}</span>
@@ -746,6 +760,45 @@
           <span class="shop-card-name">北极工坊</span>
           <span class="shop-card-desc">多运营商套餐严选，11 位手机号，月租透明无套路</span>
           <span class="shop-card-btn">进入店铺</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── About ── -->
+    <div class="about-view" id="aboutView" v-show="currentView === 'about'">
+      <div class="about-header">
+        <img src="icons/workbuddy-logo.svg" class="about-logo" alt="">
+        <div class="about-header-text">
+          <h2 class="about-title">AI Gateway</h2>
+          <p class="about-version">v1.0.7</p>
+        </div>
+      </div>
+
+      <div class="about-body">
+        <div class="about-block">
+          <div class="about-block-title">联系方式</div>
+          <div class="about-block-content">
+            <svg class="about-wechat-icon" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M8.691 2.188C3.891 2.188 0 5.476 0 9.53c0 2.212 1.17 4.203 3.002 5.55a.59.59 0 0 1 .213.665l-.39 1.48c-.019.07-.048.141-.048.213 0 .163.13.295.29.295a.326.326 0 0 0 .167-.054l1.903-1.114a.864.864 0 0 1 .717-.098 10.16 10.16 0 0 0 2.837.403c.276 0 .543-.027.811-.05-.857-2.578.157-4.972 1.932-6.446 1.703-1.415 3.882-1.98 5.853-1.838-.576-3.583-4.196-6.348-8.596-6.348zM5.785 5.991c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178A1.17 1.17 0 0 1 4.623 7.17c0-.651.52-1.18 1.162-1.18zm5.813 0c.642 0 1.162.529 1.162 1.18a1.17 1.17 0 0 1-1.162 1.178 1.17 1.17 0 0 1-1.162-1.178c0-.651.52-1.18 1.162-1.18zm5.34 2.867c-1.797-.052-3.746.512-5.28 1.786-1.72 1.428-2.687 3.72-1.78 6.22.942 2.453 3.666 4.229 6.884 4.229.826 0 1.622-.12 2.361-.336a.722.722 0 0 1 .598.082l1.584.926a.272.272 0 0 0 .14.047c.134 0 .24-.111.24-.247 0-.06-.023-.12-.038-.177l-.327-1.233a.582.582 0 0 1-.023-.156.49.49 0 0 1 .201-.398C23.024 18.48 24 16.82 24 14.98c0-3.21-2.931-5.837-6.656-6.088V8.89c-.135-.01-.27-.027-.407-.03zm-2.53 3.274c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.97-.982zm4.844 0c.535 0 .969.44.969.982a.976.976 0 0 1-.969.983.976.976 0 0 1-.969-.983c0-.542.434-.982.969-.982z"/></svg>
+            <span class="about-wechat-label">微信</span>
+            <span class="about-wechat-value">bitlesu</span>
+          </div>
+        </div>
+
+        <div class="about-block">
+          <div class="about-block-title">免责声明</div>
+          <div class="about-block-content about-disclaimer-text">
+            <p>本软件仅供开发测试交流学习使用，请勿用于任何违法用途。</p>
+            <p>若继续使用，由此产生的法律问题由使用者自行承担。</p>
+          </div>
+        </div>
+
+        <div class="about-block">
+          <div class="about-block-title">授权状态</div>
+          <div class="about-license-row" :class="{ authorized: licenseAuthorized, expired: !licenseAuthorized }">
+            <span class="about-license-dot"></span>
+            <span class="about-license-status">{{ licenseAuthorized ? '已授权' : '已过期' }}</span>
+            <span class="about-license-expiry">测试授权到期时间：{{ licenseExpiry }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -1064,6 +1117,24 @@
     </div>
   </div>
 
+  <!-- Result Modal（批量验活等结果确认，替代 toast） -->
+  <div class="modal-overlay" :class="{ show: activeModal === 'result' }">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-header">
+        <h2>{{ resultModalTitle }}</h2>
+        <button class="modal-close" @click="activeModal = null">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p style="text-align:center;padding:16px 8px;font-size:14px;line-height:1.6;white-space:pre-line">{{ resultModalText }}</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" @click="activeModal = null">知道了</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Update Modal -->
   <div class="modal-overlay" id="updateModal" :class="{ show: activeModal === 'update' }">
     <div class="modal" style="max-width:440px">
@@ -1101,25 +1172,40 @@
       </div>
       <div class="modal-body">
         <div class="changelog-version">v1.0.7</div>
-        <div class="changelog-date">2026-08-07</div>
+        <div class="changelog-date">2026-08-08</div>
 
-        <div class="changelog-section-title">导入模型</div>
+        <div class="changelog-section-title">新增</div>
         <ul class="changelog-list">
-          <li>新增支持 CodeBuddy，一键导入网关配置</li>
-          <li>导入时覆盖全部模型，默认启用高度思考</li>
-          <li>修复导入网关配置后模型不显示图标的问题</li>
+          <li>新增多种 AI 开发工具支持，网关配置可一键导入</li>
+          <li>新增深色主题，夜间使用更舒适</li>
+          <li>批量验活结果以弹窗汇总展示</li>
         </ul>
 
-        <div class="changelog-section-title">界面优化</div>
+        <div class="changelog-section-title">优化</div>
         <ul class="changelog-list">
-          <li>工具栏按钮增加文字标签，操作更直观</li>
-          <li>筛选栏排版优化，日期筛选与状态筛选归组到右侧</li>
-          <li>默认窗口尺寸加大，内容区域更宽敞</li>
+          <li>工具栏按钮增加文字标识，操作辨识度更高</li>
+          <li>优化筛选栏布局，账号查找更高效</li>
+          <li>增大默认窗口尺寸，信息展示更充分</li>
+          <li>额度详情支持查看全部套餐包，已用尽套餐自动标注</li>
+          <li>优化总额度统计口径，数据更准确</li>
+          <li>优化验活逻辑，手动停用的账号不受影响</li>
+          <li>优化额度获取失败时的处理逻辑</li>
+          <li>优化账号调度策略，减少非必要切换</li>
+          <li>完善切换日志，完整记录切换原因</li>
+          <li>优化额度实时同步机制，消耗即时可见</li>
+          <li>账号刷新失败时展示具体原因</li>
         </ul>
 
-        <div class="changelog-section-title">稳定性</div>
+        <div class="changelog-section-title">修复</div>
         <ul class="changelog-list">
-          <li>修复额度估算偶发偏高导致用超的问题</li>
+          <li>修复导入后部分模型图标缺失的问题</li>
+          <li>修复网关重启后请求异常的问题</li>
+          <li>修复套餐包较多时额度统计不完整的问题</li>
+          <li>修复额度估算偏高导致超额使用的问题</li>
+          <li>修复账号仍有剩余额度时提前切换的问题</li>
+          <li>修复验活后异常账号仍被调度的问题</li>
+          <li>修复高负载场景下界面卡顿的问题</li>
+          <li>修复重复登录/重复导入导致标签与签到记录丢失的问题</li>
         </ul>
 
         <div class="changelog-version" style="margin-top:24px">v1.0.6</div>
@@ -1133,15 +1219,15 @@
           <li>新增地区筛选：852 开头归香港号、11 位归中国号，一键过滤</li>
           <li>新增回收站：误删可恢复，支持多选恢复 / 彻底删除</li>
           <li>回收站增加日期筛选（全部 / 今天 / 昨天 / 近 7 天 / 指定日期），并按删除时间分组（今天 / 昨天 / 更早）</li>
-          <li>新增客户端指纹：每个账号可独立配置随机指纹（含批量一键随机），多账号更不易被上游识别为同一客户端</li>
+          <li>新增客户端指纹：每个账号可独立配置随机指纹（含批量一键随机），多账号互不影响更安全</li>
           <li>签到后自动刷新该账号额度，无需手动点刷新</li>
         </ul>
 
-        <div class="changelog-section-title">封禁验活优化</div>
+        <div class="changelog-section-title">验活优化</div>
         <ul class="changelog-list">
-          <li>批量验活升级：多选账号一键验活封禁（真实 chat 请求探测）</li>
-          <li>调度中实时识别非法请求，自动标记封禁并切换下一个账号</li>
-          <li>新增启动阈值验活：设置启用阈值后可一键并发验活全部账号，达标的禁用号自动启用</li>
+          <li>支持多选账号批量验活</li>
+          <li>优化调度中的异常识别，自动切换账号</li>
+          <li>新增启动阈值验活，可一键并发验活全部账号</li>
         </ul>
 
         <div class="changelog-section-title">UI 体验</div>
@@ -1149,9 +1235,9 @@
           <li>日期筛选换成主题化日历：今天 / 昨天 / 近 7 天 / 近 30 天 / 指定日期</li>
           <li>新增全局用量统计卡片，占比显示更直观</li>
           <li>图标系统换新 + 标题栏重构</li>
-          <li>全站「检测」文案统一为「验活」，更贴近实际动作</li>
+          <li>全站「检测」文案统一为「验活」</li>
           <li>修复主题持久化刷新闪深色、首次打开闪加载页问题</li>
-          <li>修复 OAuth 登录竞态（「没有待处理的登录请求」偶发报错）</li>
+          <li>修复登录偶发报错（「没有待处理的登录请求」）</li>
         </ul>
 
         <div class="changelog-version" style="margin-top:24px">v1.0.5</div>
@@ -1175,9 +1261,9 @@
 
         <div class="changelog-section-title">代理链路加固</div>
         <ul class="changelog-list">
-          <li>修复代理链路「请求永不返回」问题</li>
-          <li>修复故障转移在某些场景失效的问题</li>
-          <li>全链路审核修复（11 项）</li>
+          <li>修复代理链路请求无响应的问题</li>
+          <li>修复特定场景下自动切换失效的问题</li>
+          <li>全链路稳定性修复（11 项）</li>
           <li>阈值切换确保备选账号额度充足，防止切换死循环</li>
           <li>阈值自动切号后被禁用账号立即在卡片上反映状态</li>
           <li>账号增删立即同步调度器，删除当前调度号会自动切到下一个可用号</li>
@@ -1223,7 +1309,7 @@
         <div class="changelog-section-title">调度优化</div>
         <ul class="changelog-list">
           <li>冷却状态重启不丢失，到期自动恢复</li>
-          <li>区分额度耗尽、非法请求、临时错误的不同冷却策略</li>
+          <li>区分额度耗尽、异常请求、临时错误的不同冷却策略</li>
           <li>手动启用账号时自动清除运行时冷却</li>
         </ul>
 
@@ -1239,16 +1325,16 @@
           <li>自动选择最优账号，无需手动干预</li>
         </ul>
 
-        <div class="changelog-section-title">安全防护</div>
+        <div class="changelog-section-title">账号状态管理</div>
         <ul class="changelog-list">
-          <li>自动验活被封禁的账号，标记后不再使用</li>
-          <li>封禁状态永久保存，避免重复尝试</li>
-          <li>封禁账号红色醒目标识</li>
+          <li>自动识别状态异常的账号，标记后不再使用</li>
+          <li>异常状态永久保存，避免重复尝试</li>
+          <li>异常账号红色醒目标识</li>
         </ul>
 
         <div class="changelog-section-title">体验优化</div>
         <ul class="changelog-list">
-          <li>账号状态筛选（全部 / 正常 / 禁用 / 封禁）</li>
+          <li>账号状态筛选（全部 / 正常 / 停用 / 异常）</li>
           <li>签到状态移至卡片右上角，一目了然</li>
           <li>日期筛选器中文化</li>
           <li>界面细节打磨，整体更清爽</li>
@@ -1413,29 +1499,64 @@ function hideAppLoading() {
 
 // License (outside Vue – needs to show before Vue mounts)
 let appStarted = false;
-const _LICENSE_ENABLED = true;
+function hlOffline(msg) {
+  return String(msg || '').replace('离线密钥', '<strong>离线密钥</strong>');
+}
 function showLicenseOverlay(msg) {
-  document.getElementById('licenseSub').textContent = msg || '请输入激活码以继续使用';
+  const subEl = document.getElementById('licenseSub');
+  subEl.innerHTML = hlOffline(msg) || '请输入激活码以完成授权';
+  subEl.classList.toggle('error', /无法连接/.test(msg || ''));
   document.getElementById('licenseError').textContent = '';
   document.getElementById('licenseOverlay').classList.add('show');
   const inp = document.getElementById('licenseInput'); inp.value = '';
   setTimeout(() => inp.focus(), 100);
+  // 异步获取当前机器 ID 展示
+  const midEl = document.getElementById('licenseMachineId');
+  if (midEl) {
+    try {
+      pywebview.api.get_machine_code().then(raw => { midEl.textContent = raw || '—'; }).catch(() => { midEl.textContent = '—'; });
+    } catch(e) { midEl.textContent = '—'; }
+  }
 }
 function hideLicenseOverlay() { document.getElementById('licenseOverlay').classList.remove('show'); }
 async function doActivate() {
+  const btn = document.getElementById('licenseBtn');
+  if (btn.disabled) return;
   const code = document.getElementById('licenseInput').value.trim();
   if (!code) { document.getElementById('licenseError').textContent = '请输入激活码'; return; }
+  btn.disabled = true;
+  btn.classList.add('btn-loading');
+  document.getElementById('licenseSpinner').style.display = 'inline-block';
+  document.getElementById('licenseBtnText').textContent = '激活中…';
+  document.getElementById('licenseError').textContent = '';
   try {
     const raw = await pywebview.api.activate(code);
     const r = JSON.parse(raw);
     if (r.success) {
       hideLicenseOverlay();
       showToast('激活成功，有效期至 ' + (r.expiry_str || ''), 'success');
-      if (!appStarted && window._vueApp) window._vueApp.startApp();
+      // 在线码：已持久化 license.dat，reload 走标准 onMounted 链路。
+      // 离线码：后端进程内存态（_session_offline_code），不能 reload（会丢）；
+      // 直接调 setup 暴露的全局入口无缝进入主界面，不刷新页面。
+      const isOffline = /^[A-Z0-9]{4}(?:-[A-Z0-9]{4}){3}$/.test(code.trim().toUpperCase());
+      if (isOffline && window.__onLicenseActivated) {
+        window.__onLicenseActivated(r.expiry_str);
+      } else {
+        location.reload();
+      }
     } else {
-      document.getElementById('licenseError').textContent = r.message || '激活失败';
+      document.getElementById('licenseError').innerHTML = hlOffline(r.message) || '激活失败';
+      btn.disabled = false;
+      btn.classList.remove('btn-loading');
+      document.getElementById('licenseSpinner').style.display = 'none';
+      document.getElementById('licenseBtnText').textContent = '激活';
     }
-  } catch(e) { document.getElementById('licenseError').textContent = '激活失败: ' + e; }
+  } catch(e) {
+    document.getElementById('licenseError').textContent = '激活失败: ' + e;
+    btn.classList.remove('btn-loading');
+    document.getElementById('licenseSpinner').style.display = 'none';
+    document.getElementById('licenseBtnText').textContent = '激活';
+  }
 }
 
 // ─────────────────────────────────────────────
@@ -1472,6 +1593,8 @@ const vApp = createApp({
     const currentView = ref('console');
     const activeModal = ref(null);
     const hasUpdate = ref(false);
+    const licenseExpiry = ref('—');
+    const licenseAuthorized = ref(false);
 
     // ── 账号数据 ──
     const accounts = ref([]);
@@ -1642,6 +1765,7 @@ const vApp = createApp({
     const exportLoading = ref(false);
     const checkinAllLoading = ref(false);
     const refreshAllLoading = ref(false);
+    const accountsRefreshLoading = ref(false);
 
     // ── 多选模式（点筛选栏多选按钮才进入，复选框非常驻，避免影响 UI 布局）──
     // selectedIds 用对象当集合（Set 在 Vue 模板里不响应式，对象 key 增删会触发更新）。
@@ -1656,6 +1780,10 @@ const vApp = createApp({
     const batchFingerprintLoading = ref(false);
     const batchFpAccounts = ref([]);
     const batchFpCount = ref(0);
+    // 通用结果确认弹窗（批量验活等用，替代 toast）
+    const resultModalTitle = ref('');
+    const resultModalText = ref('');
+    const resultModalVariant = ref('info');   // info | success | warning
 
     // ── 卡片按钮加载态（key = accountId + '_op'）──
     const cardLoading = reactive({});
@@ -1805,6 +1933,9 @@ const vApp = createApp({
         const accts=ur.data?.Response?.Data?.Accounts||[]; if(!accts.length)return null;
         let total=0,used=0;
         for(const r of accts){
+          // 展示口径：统计 Status=0（有效）+ Status=3（已耗尽）全量。
+          // 已耗尽的包也是账号获得过的额度，要算进总额度/已用，给用户看全貌。
+          // 调度切号另走后端 calc_totals(active_only=True) 只算有效包。
           const st=_n(r.Status); if(st!==0&&st!==3)continue;
           const t=_pickN(r,['CycleCapacitySizePrecise','CycleCapacitySize','CapacitySizePrecise','CapacitySize']);
           const remain=_pickN(r,['CycleCapacityRemainPrecise','CycleCapacityRemain','CapacityRemainPrecise','CapacityRemain']);
@@ -1835,6 +1966,7 @@ const vApp = createApp({
       refreshLogs();
     }
     function showShopCards() { currentView.value = 'shop-cards'; }
+    function showAbout() { currentView.value = 'about'; }
     function openShop(url, name) {
       shopUrl.value = url; shopName.value = name;
       currentShopUrl = url; currentView.value = 'shop';
@@ -1884,7 +2016,7 @@ const vApp = createApp({
       } catch(e) {}
     }
 
-    async function loadAccounts() {
+    async function loadAccounts(withToast) {
       try {
         const [raw, statsRaw] = await Promise.all([
           pywebview.api.list_accounts(currentPlatform.value),
@@ -1910,7 +2042,8 @@ const vApp = createApp({
           pywebview.api.batch_checkin_status(currentPlatform.value)
             .then(()=>loadAccountsLight()).catch(()=>{});
         }
-      } catch(e) { accounts.value = []; }
+        if (withToast) showToast('账号列表已刷新', 'success');
+      } catch(e) { accounts.value = []; if (withToast) showToast('刷新失败: '+e, 'error'); }
     }
 
     async function loadStats() {
@@ -2144,6 +2277,12 @@ const vApp = createApp({
       finally { refreshAllLoading.value = false; }
     }
 
+    async function refreshAccounts() {
+      if (accountsRefreshLoading.value) return;
+      accountsRefreshLoading.value = true;
+      try { await loadAccounts(true); } finally { accountsRefreshLoading.value = false; }
+    }
+
     // ─── Per-card actions ───
     async function doCheckin(id) {
       cardLoading[id+'_checkin'] = true;
@@ -2339,10 +2478,11 @@ const vApp = createApp({
         if (r.error) { showToast(r.error, 'error'); return; }
         const c = r.counts || {};
         const okN = c.normal||0, banN = c.banned||0, otherN = (c.unknown||0) + (c.failed||0);
-        showToast(
-          `验活完成：共 ${r.total} 个，正常 ${okN}，封禁 ${banN}（已自动标记），其他 ${otherN}`,
-          banN > 0 ? 'warning' : 'success'
-        );
+        // 结果用确认弹窗，不用 toast —— 用户要看清封了几个、正常几个
+        resultModalTitle.value = '批量验活完成';
+        resultModalVariant.value = banN > 0 ? 'warning' : 'success';
+        resultModalText.value = `共验活 ${r.total} 个账号\n正常：${okN}\n封禁：${banN}${banN > 0 ? '（已自动标记）' : ''}\n其他：${otherN}`;
+        activeModal.value = 'result';
         await loadAccounts();
         await refreshProxyStatus();
       } catch(e) { showToast('批量验活失败: '+e, 'error'); }
@@ -2669,10 +2809,11 @@ const vApp = createApp({
           const pct = total > 0 ? Math.round((used / total) * 100) : 0;
           const cls = pct >= 80 ? 'danger' : pct >= 50 ? 'warning' : '';
           const isBase = r.packageCode !== 'TCACA_code_009_0XmEQc2xOf';
+          const exhausted = (r.status === 3) || (remain <= 0);
           html += `
-            <div style="padding:8px 0;border-bottom:1px solid var(--border);">
+            <div style="padding:8px 0;border-bottom:1px solid var(--border);${exhausted?'opacity:0.55;':''}">
               <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:2px;">
-                <span style="color:var(--text-secondary)">${r.packageName || r.packageCode || '资源包'}${isBase ? ' (基础包)' : ''}</span>
+                <span style="color:var(--text-secondary)">${r.packageName || r.packageCode || '资源包'}${isBase ? ' (基础包)' : ''}${exhausted ? ' <span style="font-size:11px;color:var(--text-muted)">已耗尽</span>' : ''}</span>
                 <span style="font-weight:600">${fmt(remain)}</span>
               </div>
               <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);margin-bottom:2px;">
@@ -2923,7 +3064,7 @@ const vApp = createApp({
           const wasActive = proxyActive.value, prev = proxyCurrentAccount.value;
           proxyCurrentAccount.value = newCurrent;
           proxyActive.value = newActive;
-          if (wasActive && !newActive) refreshAccountStats();
+          if (wasActive && !newActive) { refreshAccountStats(); loadStats(); }
           if (newCurrent !== prev) loadAccountsLight();
         }
         if (info.threshold_switch) {
@@ -3144,15 +3285,16 @@ const vApp = createApp({
         } catch(e){ if(attempt<10) setTimeout(()=>tryLoad(attempt+1),500); }
       };
       tryLoad();
-      if (_LICENSE_ENABLED) {
-        setInterval(()=>{
-          pywebview.api.check_license().then(raw=>{
-            const r=JSON.parse(raw);
-            if(!r.licensed){appStarted=false;showLicenseOverlay(r.message);}
-          }).catch(()=>{});
-        }, 10000);
-      }
     }
+
+    // 全局入口：激活成功（离线码）后由 Vue 外的 doActivate 调用。
+    // setup 闭包内可访问 licenseAuthorized/licenseExpiry/startApp，无缝进入主界面（不刷新页面）。
+    window.__onLicenseActivated = (expiryStr) => {
+      licenseAuthorized.value = true;
+      licenseExpiry.value = expiryStr || '已激活';
+      hideLicenseOverlay();
+      startApp();
+    };
 
     onMounted(() => {
       // Init theme：theme.js 已在 <head> 阶段设好 data-theme 并写到 window.__THEME__，
@@ -3168,21 +3310,27 @@ const vApp = createApp({
         tryTheme();
       }
 
-      // License check → startApp
-      if (_LICENSE_ENABLED) {
-        const tryLicense=(attempt=0)=>{
-          try{
-            pywebview.api.check_license().then(raw=>{
-              const r=JSON.parse(raw);
-              if(r.licensed){hideLicenseOverlay();startApp();}
-              else{showLicenseOverlay(r.message);}
-            }).catch(()=>{if(attempt<10)setTimeout(()=>tryLicense(attempt+1),300);});
-          }catch(e){if(attempt<10)setTimeout(()=>tryLicense(attempt+1),300);}
-        };
-        tryLicense();
-      } else {
+      // License check → startApp（后端根据远端开关决定是否需授权）
+      // 刚激活成功（hash=activated）时跳过远端 verify，直接信任本地码
+      if (location.hash === '#activated') {
+        location.hash = '';
+        licenseAuthorized.value = true;
+        licenseExpiry.value = '已激活';
         hideLicenseOverlay(); startApp();
+        return;
       }
+      const tryLicense=(attempt=0)=>{
+        try{
+          pywebview.api.check_license().then(raw=>{
+            const r=JSON.parse(raw);
+            licenseAuthorized.value = !!r.licensed;
+            licenseExpiry.value = r.expiry_str || '无限制';
+            if(r.licensed){hideLicenseOverlay();startApp();}
+            else{showLicenseOverlay(r.message);}
+          }).catch(()=>{if(attempt<10)setTimeout(()=>tryLicense(attempt+1),300);});
+        }catch(e){if(attempt<10)setTimeout(()=>tryLicense(attempt+1),300);}
+      };
+      tryLicense();
     });
 
     return {
@@ -3200,7 +3348,7 @@ const vApp = createApp({
       enableThreshold, detecting, detectProgress, detectThresholdTemp, detectTargetCount,
       chatCardCollapsed, chatMessages, chatInput, chatSending, modelList, currentModel, modelDropdownOpen,
       syncLoading, syncLabel, wbExportLoading, wbExportLabel, cbExportLoading, cbExportLabel, exportDdOpen, chatMessagesRef,
-      exportLoading, checkinAllLoading, refreshAllLoading, cardLoading, moreOpenId,
+      exportLoading, checkinAllLoading, refreshAllLoading, accountsRefreshLoading, cardLoading, moreOpenId,
       selectMode, selectedIds, batchDeleteLoading, batchExportLoading, batchDetectLoading,
       batchStatusLoading, batchRefreshLoading, batchCheckinLoading, batchFingerprintLoading,
       deletedAccounts, recycleBusy, deletedSelected, deletedSelectedCount, allDeletedSelected,
@@ -3212,6 +3360,7 @@ const vApp = createApp({
       quotaAccountId, detailAccountName, detailLoading, detailError, detailData, detailStats, quotaContentHtml,
       shopUrl, shopName,
       updateTitle, updateStatusHtml, updateProgressVisible, updateProgressPct, updateActionsVisible, updateNotesVisible, updateNotes, updateBtnText, updateBtnDisabled,
+      resultModalTitle, resultModalText, resultModalVariant,
       logs, logEnabled, logEventFilter,
       // Computed
       filteredAccounts, detailResourcesTotal,
@@ -3220,10 +3369,10 @@ const vApp = createApp({
       getStatusBadgeClass, getStatusText, getPlanBadgeClass, getPlanText,
       parseCheckin, getCardQuota,
       selectStatusFilter, getStatusDotClass, getStatusFilterLabel,
-      showConsole, showLogs, showShopCards, openShop, openShopExternal, openModal,
+      showConsole, showLogs, showShopCards, showAbout, licenseExpiry, licenseAuthorized, openShop, openShopExternal, openModal,
       toggleTheme,
       setFilterDate, saveQuotaThreshold, saveEnableThreshold, detectAndEnable, openDetectModal, confirmDetect,
-      exportAccounts, checkinAll, refreshAll,
+      exportAccounts, checkinAll, refreshAll, refreshAccounts, loadAccounts,
       loadUsageSummary,
       doCheckin, refreshOne, detectOne, deleteOne, setPriorityAccount, toggleAccountStatus,
       toggleSelectMode, toggleSelect, toggleSelectAll, clearSelection, batchExport, batchDetect, batchDelete,
@@ -3246,6 +3395,7 @@ const vApp = createApp({
 });
 
 window._vueApp = vApp.mount('#app');
+
 </script>
 </body>
 </html>

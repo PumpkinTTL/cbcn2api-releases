@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -48,6 +49,18 @@ def _run_migrations(conn: sqlite3.Connection):
         pass
     try:
         conn.execute("ALTER TABLE accounts ADD COLUMN fingerprint TEXT")
+    except sqlite3.OperationalError:
+        pass
+    # 新表无条件建（老库 user_version 已 1，_ensure_schema 不再跑）
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS offline_license_records (
+                code TEXT PRIMARY KEY,
+                used_at INTEGER NOT NULL,
+                expires_at INTEGER,
+                machine_code TEXT DEFAULT ''
+            )
+        """)
     except sqlite3.OperationalError:
         pass
 
@@ -164,11 +177,11 @@ def upsert_account(platform: str, account: Account) -> Account:
                 expires_at=excluded.expires_at,
                 domain=COALESCE(NULLIF(excluded.domain, ''), accounts.domain),
                 status=excluded.status,
-                tags=excluded.tags,
-                last_checkin_time=excluded.last_checkin_time,
-                checkin_streak=excluded.checkin_streak,
-                quota_raw=excluded.quota_raw,
-                created_at=excluded.created_at,
+                tags=COALESCE(excluded.tags, accounts.tags),
+                last_checkin_time=COALESCE(excluded.last_checkin_time, accounts.last_checkin_time),
+                checkin_streak=CASE WHEN excluded.checkin_streak > 0 THEN excluded.checkin_streak ELSE accounts.checkin_streak END,
+                quota_raw=COALESCE(excluded.quota_raw, accounts.quota_raw),
+                created_at=accounts.created_at,
                 last_used=excluded.last_used
         """, (
             account.id, platform, account.email or "", account.uid,
@@ -555,6 +568,43 @@ def get_setting(key: str, default: str = "") -> str:
         conn.close()
 
 
+def mark_offline_used(code: str, expires_at=None, machine_code: str = ""):
+    """登记已使用的离线授权码（防重用，落库不依赖激活码缓存文件）。"""
+    conn = _get_conn()
+    try:
+        conn.execute(
+            "INSERT OR IGNORE INTO offline_license_records (code, used_at, expires_at, machine_code) VALUES (?,?,?,?)",
+            (code, int(time.time()), expires_at, machine_code),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def is_offline_used(code: str) -> bool:
+    """查询离线授权码是否已使用。"""
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM offline_license_records WHERE code=?", (code,)
+        ).fetchone()
+        return row is not None
+    finally:
+        conn.close()
+
+
+def get_offline_record(code: str):
+    """查询离线授权码记录（含 expires_at），无则返回 None。"""
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT code, used_at, expires_at, machine_code FROM offline_license_records WHERE code=?", (code,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
 MAX_LOG_ROWS = 5000
 
 
@@ -572,6 +622,28 @@ def add_log(event: str, platform: str = "workbuddy", account_id: str = "",
         )
         conn.commit()
         _prune_logs(conn)
+    finally:
+        conn.close()
+
+
+def add_switch_log(platform: str, from_id: str, from_name: str,
+                   to_id: str, to_name: str, reason: str = ""):
+    """记录一次切号（from → to）。不受 log_enabled 开关影响 —— 切号是调度关键事件，
+    必须留痕以便排查"额度未耗尽却提前切号"类问题。回收站账号不在调度池内，天然不会出现。"""
+    conn = _get_conn()
+    try:
+        msg = f"切号 {from_name} → {to_name}"
+        if reason:
+            msg += f" ({reason})"
+        conn.execute(
+            "INSERT INTO proxy_logs (timestamp, event, platform, account_id, account_name, model, message, details) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (int(time.time()), "switch", platform, from_id, from_name, "", msg, reason),
+        )
+        conn.commit()
+        _prune_logs(conn)
+    except Exception:
+        pass
     finally:
         conn.close()
 

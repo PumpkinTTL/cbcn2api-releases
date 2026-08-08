@@ -125,6 +125,7 @@ def refresh_full_payload(account: Account) -> tuple:
     new_rt = account.refresh_token
     new_expires = account.expires_at
     new_domain = account.domain
+    refresh_error = None
 
     if account.refresh_token:
         try:
@@ -134,7 +135,9 @@ def refresh_full_payload(account: Account) -> tuple:
             new_expires = result.get("expires_at") or account.expires_at
             new_domain = result.get("domain") or account.domain
         except Exception as e:
-            pass
+            # 不静默吞掉：记录刷新失败原因，调用方可落库到 quota_query_last_error 提示用户。
+            # token 失效的账号继续用旧 token，若旧 token 也失效会走 401/forbidden 兜底。
+            refresh_error = f"token刷新失败: {str(e)[:120]}"
 
     dosage = _fetch_dosage_notify(new_at, account.uid, account.enterprise_id, new_domain)
     payment = _fetch_payment_type(new_at, account.uid, account.enterprise_id, new_domain)
@@ -147,6 +150,9 @@ def refresh_full_payload(account: Account) -> tuple:
     quota_error = None
     if user_resource is None:
         quota_error = "账号已被封禁 (401/403)" if is_forbidden else "获取配额资源失败"
+    if refresh_error:
+        # token 刷新失败优先展示（额度失败可能是 token 失效的连锁反应）
+        quota_error = (refresh_error + ("；" + quota_error if quota_error else ""))
 
     dosage_data = dosage.get("data") if dosage else None
     payment_data = payment.get("data") if payment else None

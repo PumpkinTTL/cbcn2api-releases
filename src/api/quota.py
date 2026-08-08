@@ -34,8 +34,12 @@ def _pick(item, keys):
 
 
 def _is_active(item) -> bool:
+    """Status=0 才是有剩余的有效资源。
+    实测：Status=0 的资源 remain>0（有额度）；Status=3 的资源全部 remain=0（已耗尽）。
+    原先误把 3 也算 active，导致已用完的裂变包 used 全被累加，
+    估算剩余额度被算成 0 —— 没到阈值就提前切号。"""
     s = _num(item.get("Status"))
-    return s is not None and int(s) in (0, 3)
+    return s is not None and int(s) == 0
 
 
 def _entry(item) -> dict:
@@ -45,9 +49,11 @@ def _entry(item) -> dict:
                           "CapacityRemainPrecise", "CapacityRemain"]) or 0.0
     used = max(0.0, total - remain)
     code = (item.get("PackageCode") or "").strip() or None
+    s = _num(item.get("Status"))
     return {
         "packageCode": code,
         "packageName": (item.get("PackageName") or "").strip() or None,
+        "status": int(s) if s is not None else None,
         "cycleStartTime": item.get("CycleStartTime"),
         "cycleEndTime": item.get("CycleEndTime"),
         "total": total,
@@ -71,8 +77,19 @@ def _merge(items: list) -> Optional[dict]:
     return merged
 
 
-def parse_resources(accounts_raw: list) -> list:
-    active = [a for a in accounts_raw if _is_active(a)]
+def parse_resources(accounts_raw: list, active_only: bool = True) -> list:
+    """汇总套餐包。
+
+    active_only=True（调度用）：只保留 Status=0 的有效包，已耗尽的 Status=3
+    不计入 —— 否则耗尽包的 used 全被累加，估算剩余被压成 0，提前误切号。
+    active_only=False（展示用）：保留 Status=0 和 Status=3 全量，给用户看
+    「账号总共获得过多少额度、用了多少、还剩多少」—— 已耗尽的包也是账号
+    获得过的额度，必须展示在总额度和详情里。
+    """
+    if active_only:
+        active = [a for a in accounts_raw if _is_active(a)]
+    else:
+        active = [a for a in accounts_raw if _num(a.get("Status")) in (0, 3)]
     if not active:
         return []
 
@@ -101,14 +118,20 @@ def parse_resources(accounts_raw: list) -> list:
     return [e for e in ordered if e["total"] > 0 or e["remain"] > 0]
 
 
-def calc_totals(quota_raw: Optional[dict], usage_raw: Optional[dict] = None) -> tuple:
+def calc_totals(quota_raw: Optional[dict], usage_raw: Optional[dict] = None,
+               active_only: bool = True) -> tuple:
+    """汇算 total/used。
+
+    active_only=True（默认，调度用）：只算 Status=0 有效包。
+    active_only=False（展示用）：算 Status=0+3 全量，含已耗尽包的总额度。
+    """
     ur = (quota_raw or {}).get("userResource") if quota_raw else None
     if not ur:
         ur = usage_raw
     if not ur:
         return 0, 0
     accounts = (ur.get("data") or {}).get("Response", {}).get("Data", {}).get("Accounts", [])
-    resources = parse_resources(accounts)
+    resources = parse_resources(accounts, active_only=active_only)
     total = sum(r["total"] for r in resources)
     used = sum(r["used"] for r in resources)
     return total, used
@@ -139,7 +162,7 @@ def fetch_quota(access_token: str, uid: Optional[str] = None,
     accounts = (
         (user_resource or {}).get("data", {}).get("Response", {}).get("Data", {}).get("Accounts", [])
     )
-    resources = parse_resources(accounts)
+    resources = parse_resources(accounts, active_only=False)
 
     return {
         "dosage_notify_code": dosage_notify_code,
@@ -184,28 +207,72 @@ def _fetch_payment_type(access_token: str, uid: Optional[str],
 def _fetch_user_resource(access_token: str, uid: Optional[str],
                          enterprise_id: Optional[str],
                          domain: Optional[str]) -> Optional[dict]:
-    try:
-        session = get_session()
-        url = f"{BASE_URL}/v2/billing/meter/get-user-resource"
-        headers = build_headers(access_token, uid, enterprise_id, domain)
-        headers["Accept-Language"] = "zh-CN,zh;q=0.9"
+    """拉取账号全部套餐包（含分页）。
 
+    实测上游单页最多 100 条，且账号裂变包会持续累积（每天 +1，旧的转 Status=3）。
+    原先只取 PageNumber=1，超过 100 个包时后面的会被截断 —— 有效包被一堆耗尽包
+    挤出第一页，额度算少 → 提前误切号。这里按 TotalCount 循环拉全。
+    """
+    session = get_session()
+    url = f"{BASE_URL}/v2/billing/meter/get-user-resource"
+    headers = build_headers(access_token, uid, enterprise_id, domain)
+    headers["Accept-Language"] = "zh-CN,zh;q=0.9"
+
+    begin = _time_range_begin()
+    end = _time_range_end()
+    page_size = 100
+    all_accounts = []
+    template = None  # 保留首次响应的完整结构作为返回骨架
+    total_count = None
+
+    for page in range(1, 200):  # 上限 200 页 = 20000 包，足够安全兜底
         body = {
-            "PageNumber": 1,
-            "PageSize": 100,
+            "PageNumber": page,
+            "PageSize": page_size,
             "ProductCode": "p_tcaca",
             "Status": [0, 3],
-            "PackageEndTimeRangeBegin": _time_range_begin(),
-            "PackageEndTimeRangeEnd": _time_range_end(),
+            "PackageEndTimeRangeBegin": begin,
+            "PackageEndTimeRangeEnd": end,
         }
-
-        resp = session.post(url, headers=headers, json=body, timeout=30)
+        try:
+            resp = session.post(url, headers=headers, json=body, timeout=30)
+        except Exception:
+            return template if template else None
         if resp.status_code in (401, 403):
             return {"_forbidden": True}
-        resp.raise_for_status()
-        return resp.json()
-    except Exception:
-        return None
+        try:
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception:
+            return template if template else None
+
+        if template is None:
+            template = data
+        inner = (((data or {}).get("data") or {}).get("Response") or {}).get("Data") or {}
+        accts = inner.get("Accounts") or []
+        all_accounts.extend(accts)
+
+        # 首页拿到 TotalCount 决定还要拉几页
+        if total_count is None:
+            try:
+                total_count = int(inner.get("TotalCount") or 0)
+            except (ValueError, TypeError):
+                total_count = 0
+
+        # 本页不足 page_size 或已累计 >= total_count → 拉完
+        if len(accts) < page_size or (total_count and len(all_accounts) >= total_count):
+            break
+
+    # 把累计的全量 Accounts 回填到模板结构里，保持调用方解析路径不变
+    if template is not None and all_accounts:
+        try:
+            d = template.setdefault("data", {}).setdefault("Response", {}).setdefault("Data", {})
+            d["Accounts"] = all_accounts
+            if total_count is not None:
+                d["TotalCount"] = total_count
+        except Exception:
+            pass
+    return template
 
 
 def _time_range_begin() -> str:

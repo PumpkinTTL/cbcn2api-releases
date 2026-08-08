@@ -99,10 +99,12 @@ sys.modules["fastapi.middleware"] = types.ModuleType("fastapi.middleware")
 
 # ------------------------------------------------------- stub store / quota
 LOGS = []
+SWITCH_LOGS = []
 UPSERTS = []
 SETTINGS = {}
 store_stub = types.ModuleType("src.storage.store")
 store_stub.add_log = lambda *a, **k: LOGS.append(a)
+store_stub.add_switch_log = lambda *a, **k: SWITCH_LOGS.append(a)
 store_stub.update_account_stats = lambda *a, **k: None
 store_stub.list_accounts = lambda p: []
 store_stub.get_setting = lambda k, d="": SETTINGS.get(k, d)
@@ -124,8 +126,8 @@ from src.models.account import Account
 
 # 让 build_headers 带上账号标识，方便假 client 按账号回放
 _orig_build_headers = ps.build_headers
-def tagged_headers(token, uid, conv):
-    h = dict(_orig_build_headers(token, uid, conv))
+def tagged_headers(token, uid, conv, fingerprint=None):
+    h = dict(_orig_build_headers(token, uid, conv, fingerprint=fingerprint))
     h["__acct__"] = token          # token 里塞的是 account id
     return h
 ps.build_headers = tagged_headers
@@ -300,7 +302,150 @@ def t7():
     check("g1 被持久化禁用", "g1" in UPSERTS, f"upserts={UPSERTS}")
 
 
-for fn in (t1, t2, t3, t4, t5, t6, t7):
+def t8():
+    print("\n测试8  无异常 + 未到阈值 → 绝不切号、不写切号日志（粘性）")
+    global SWITCH_LOGS
+    SWITCH_LOGS = []
+    rot = make_rotator(["h1", "h2"])
+    rot._threshold = 0.0
+    script = {"h1": FakeResponse(200, chunks=ok_chunks("hi"))}
+    frames, client = asyncio.run(drain({"model": "auto"}, rot, script))
+    check("只用了 h1（粘性，未尝试 h2）", client.calls == ["h1"], f"calls={client.calls}")
+    check("h1 没有被禁用", rot._current_id == "h1", f"current={rot._current_id}")
+    check("没有写切号日志", not SWITCH_LOGS, f"switch={SWITCH_LOGS}")
+    check("正文来自 h1", sse_texts(frames) == "hi", repr(sse_texts(frames)))
+
+
+def t9():
+    print("\n测试9  封号 403+11140（真实形状）→ 立即切号并写 banned 日志")
+    global SWITCH_LOGS
+    SWITCH_LOGS = []
+    rot = make_rotator(["j1", "j2"])
+    script = {
+        "j1": FakeResponse(403, body='{"code":11140,"msg":"request illegal"}'),
+        "j2": FakeResponse(200, chunks=ok_chunks("来自j2")),
+    }
+    frames, client = asyncio.run(drain({"model": "auto"}, rot, script))
+    check("封号后切到 j2", client.calls == ["j1", "j2"], f"calls={client.calls}")
+    check("j1 进冷却(banned)", "j1" in rot._disabled and rot._disabled["j1"]["reason"] == "banned",
+          f"disabled={rot._disabled}")
+    check("写了切号日志", bool(SWITCH_LOGS), f"switch={SWITCH_LOGS}")
+    check("日志含 from=j1 to=j2", bool(SWITCH_LOGS) and SWITCH_LOGS[0][1] == "j1" and SWITCH_LOGS[0][3] == "j2",
+          str(SWITCH_LOGS))
+
+
+def t9b():
+    print("\n测试9b  200 内联 request illegal → 同样判 banned（防御：某些场景可能内联）")
+    global SWITCH_LOGS, LOGS
+    SWITCH_LOGS = []
+    rot = make_rotator(["j3", "j4"])
+    script = {
+        "j3": FakeResponse(200, body="", chunks=['data: {"code":11140,"msg":"request illegal"}\n\n']),
+        "j4": FakeResponse(200, chunks=ok_chunks("来自j4")),
+    }
+    frames, client = asyncio.run(drain({"model": "auto"}, rot, script))
+    errs = errors_of(frames)
+    check("内联封号也不透传错误给客户端", not errs, str(errs))
+    check("内联封号被识别为 banned 并切号", "j3" in rot._disabled and rot._disabled["j3"]["reason"] == "banned",
+          f"kind={rot._disabled.get('j3')}")
+    check("写了封号切号日志", bool(SWITCH_LOGS) and SWITCH_LOGS[0][5] == "封号", str(SWITCH_LOGS))
+
+
+def t10():
+    print("\n测试10  400 不可重类型错误 → 不无限重试")
+    global SWITCH_LOGS
+    SWITCH_LOGS = []
+    rot = make_rotator(["k1", "k2"])
+    script = {"k1": FakeResponse(500, body='{"error":{"message":"boom"}}'),
+              "k2": FakeResponse(200, chunks=ok_chunks("来自k2"))}
+    frames, client = asyncio.run(drain({"model": "auto"}, rot, script))
+    check("500 视为不可重试，一次就停不切号", client.calls == ["k1"], f"calls={client.calls}")
+    errs = errors_of(frames)
+    check("返回上游错误", errs and errs[0].get("type") == "upstream_error", str(errs))
+
+
+def t11():
+    print("\n测试11  无意外不切号直到阈值：连续 5 次成功全程粘性、日志全空")
+    global SWITCH_LOGS, LOGS
+    SWITCH_LOGS = []
+    rot = make_rotator(["m1", "m2"])
+    rot._threshold = 10.0                      # 远低于单次扣减后的剩余
+    rot._estimated_remain = {"m1": 1000.0, "m2": 1000.0}
+    script = {"m1": FakeResponse(200, chunks=ok_chunks("ok")),
+              "m2": FakeResponse(200, chunks=ok_chunks("ok"))}
+    all_calls = []
+    for _ in range(5):
+        frames, client = asyncio.run(drain({"model": "auto"}, rot, script))
+        all_calls.extend(client.calls)
+    # 5 次 × credit=2 = 扣 10，1000-10=990 远大于阈值 10 → 全程粘性 m1
+    check("5 次全用 m1，从未碰 m2", all_calls == ["m1"]*5, f"calls={all_calls}")
+    check("m1 估算正确扣减 5×2=10", rot._estimated_remain["m1"] == 990.0,
+          f"remain={rot._estimated_remain['m1']}")
+    check("全程零切号日志", not SWITCH_LOGS, f"switch={SWITCH_LOGS}")
+
+
+def t12():
+    print("\n测试12  阈值切号全链路：连续成功扣减→跌破阈值→切号+日志")
+    global SWITCH_LOGS, UPSERTS
+    SWITCH_LOGS = []
+    UPSERTS = []
+    rot = make_rotator(["n1", "n2"])
+    rot._threshold = 995.0                     # 扣 2 次后(996)还够，第3次(994)跌破→切
+    rot._estimated_remain = {"n1": 1000.0, "n2": 1000.0}
+    script = {"n1": FakeResponse(200, chunks=ok_chunks("ok")),
+              "n2": FakeResponse(200, chunks=ok_chunks("ok"))}
+    # 前 2 次不切
+    for _ in range(2):
+        asyncio.run(drain({"model": "auto"}, rot, script))
+    check("前2次粘性 n1 未切", rot._current_id == "n1", f"current={rot._current_id}")
+    check("n1 扣到 996 仍未切", rot._estimated_remain["n1"] == 996.0,
+          f"remain={rot._estimated_remain['n1']}")
+    check("前2次无切号日志", not SWITCH_LOGS, f"switch={SWITCH_LOGS}")
+    # 第 3 次跌破阈值
+    asyncio.run(drain({"model": "auto"}, rot, script))
+    check("第3次跌破阈值后切到 n2", rot._current_id == "n2", f"current={rot._current_id}")
+    check("n1 被持久化禁用", "n1" in UPSERTS, f"upserts={UPSERTS}")
+    check("写了阈值切号日志", bool(SWITCH_LOGS), f"switch={SWITCH_LOGS}")
+    if SWITCH_LOGS:
+        sw = SWITCH_LOGS[0]
+        check("日志 from=n1 to=n2", sw[1] == "n1" and sw[3] == "n2", str(sw))
+        check("日志原因含阈值", "阈值" in (sw[5] or ""), str(sw[5]))
+
+
+def t13():
+    print("\n测试13  三类异常切号日志原因各自正确（额度耗尽/连接失败/封号）")
+    global SWITCH_LOGS
+    # 额度耗尽 429
+    SWITCH_LOGS = []
+    rot = make_rotator(["p1", "p2"])
+    script = {"p1": FakeResponse(429, body='{"error":{"data":{"code":14018}}}'),
+              "p2": FakeResponse(200, chunks=ok_chunks("ok"))}
+    asyncio.run(drain({"model": "auto"}, rot, script))
+    check("429 切号日志原因=额度耗尽", bool(SWITCH_LOGS) and SWITCH_LOGS[0][5] == "额度耗尽",
+          str(SWITCH_LOGS[-1] if SWITCH_LOGS else None))
+
+    # 连接失败
+    SWITCH_LOGS = []
+    rot = make_rotator(["q1", "q2"])
+    rot._current_id = "q1"
+    script = {"q1": _ConnectError("refused"),
+              "q2": FakeResponse(200, chunks=ok_chunks("ok"))}
+    asyncio.run(drain({"model": "auto"}, rot, script))
+    check("连接失败切号日志原因=临时错误", bool(SWITCH_LOGS) and SWITCH_LOGS[0][5] == "临时错误",
+          str(SWITCH_LOGS[-1] if SWITCH_LOGS else None))
+
+    # 封号 11140
+    SWITCH_LOGS = []
+    rot = make_rotator(["r1", "r2"])
+    rot._current_id = "r1"
+    script = {"r1": FakeResponse(403, body='{"code":11140,"msg":"request illegal"}'),
+              "r2": FakeResponse(200, chunks=ok_chunks("ok"))}
+    asyncio.run(drain({"model": "auto"}, rot, script))
+    check("封号切号日志原因=封号", bool(SWITCH_LOGS) and SWITCH_LOGS[0][5] == "封号",
+          str(SWITCH_LOGS[-1] if SWITCH_LOGS else None))
+
+
+for fn in (t1, t2, t3, t4, t5, t6, t7, t8, t9, t9b, t10, t11, t12, t13):
     fn()
 
 print("\n" + "=" * 60)

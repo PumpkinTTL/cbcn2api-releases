@@ -5,7 +5,53 @@
 
 ## [v1.0.7] — 2026-08-07
 
-导入模型双平台支持 + 配置兼容修复 + 额度估算稳定性。1 个提交（`ab01775`）。
+授权系统上线 + 导入模型双平台支持 + 额度双口径汇算 + 调度稳定性加固 + UI 优化。
+（`ab01775` 已提交；授权系统、双口径汇算、切号留痕、UI 优化为构建前未提交改动，详见下。）
+
+### 授权系统上线（未提交，对应 `docs/LICENSE_SYSTEM.md`）
+
+- **lic-admin 授权后台**：独立部署（FastAPI + SQLite），管理产品/在线激活码/离线授权码/授权开关。
+- **授权开关按产品**：客户端启动查 `GET /api/v1/config?id=<APP_ID>` 的 `enable_license_check`：
+  `false` 直接放行，`true` 走激活/验证；断网兜底保守走授权。
+- **两类激活码**（`src/license.py`）：
+  - 在线激活码（`PREFIX-12位hex`）：联网激活/验证，机器码绑定（MAC 哈希 `MID-`），
+    服务端管理状态（unused/active/disabled/expired），禁用/删除即时生效。
+  - 离线授权码（`XXXX-XXXX-XXXX-XXXX` Crockford base32）：纯本地 `license_core` 验签，
+    无需联网；防重用落库到新表 `offline_license_records`（`src/storage/store.py`），
+    软件重装/清缓存记录仍在。
+- **远程验证**：在线码 `_verify_online` 每次启动调 `/api/v1/verify`，403 = 未授权/已禁用/已过期；
+  断网返回「无法连接授权服务器」。远端开启授权后，未激活用户启动即见激活界面（pywebview IPC：
+  `check_license` / `activate` / `get_machine_code`，`src/gui/app.py`）。
+- **开发/生产分流**：非打包连 `http://127.0.0.1:8022`，打包版（frozen）连
+  `https://license.bitlesu.com`；环境变量 `LIC_SERVER` 始终可覆盖。
+
+### 额度双口径汇算 + 分页拉全（未提交，对应 `docs/QUOTA_ESTIMATE.md`）
+
+- **双口径分离**（`src/api/quota.py`）：`parse_resources(accounts, active_only)`。
+  - 调度口径 `active_only=True`：只统计 `Status=0` 有效包 → 估算剩余、阈值切号。
+  - 展示口径 `active_only=False`：`Status=0` + `Status=3` 全量 → UI 总额度/已用/详情。
+  - 根因：`Status=3`（已耗尽）裂变包计入 used 会把估算剩余压成 ≈0，「有额度却提前切号」。
+- **分页拉取全量套餐包**：`get-user-resource` 按 `TotalCount` 分页拉全（上限 200 页兜底），
+  修复套餐包超过 100 个时额度计算截断。
+
+### 调度稳定性加固（未提交，`src/proxy/token_rotator.py` + `store.py`）
+
+- **估算无效账号不触发阈值切号**：最近一次容量快照解析失败的账号，`deduct_quota` 不用它触发
+  阈值切号——宁可多用一个号，也不把「剩余额度=0」的解析失败误判成耗尽。真实耗尽由上游
+  429/14008 → `mark_disabled("quota")` 兜底。
+- **切号日志锁外写**：`add_switch_log`（store 同步 sqlite）参数在锁内收集、锁外落库，
+  不卡网关事件循环；原因优先取 `_pending_switch_reason`（on_disable 等不走
+  `mark_disabled` 的路径），否则从冷却记录推断。不受 `log_enabled` 开关影响——切号必须留痕。
+- **token 刷新失败提示**（`src/api/account_api.py`）：刷新 token 不再静默吞异常，
+  失败原因落 `quota_query_last_error` 提示用户（额度失败可能是 token 失效连锁反应）。
+
+### UI 优化（`21a028c` / `36d5fb5` + 未提交）
+
+- **工具栏文字标签**：按钮加文字，操作更直观；筛选栏排版优化，日期/状态筛选归组右侧
+  （`36d5fb5`）。
+- **默认深色主题**：`theme.js` 默认 `light` → `dark`（未提交，用户仍可手动切换）。
+- **窗口尺寸加大**：1340 → 1407 宽（未提交）。
+- **侧边栏品牌图标**：控制台换成 WorkBuddy 官方图标（`21a028c`）。
 
 ### 导入 CodeBuddy + 导入模型下拉合并（`ab01775`）
 

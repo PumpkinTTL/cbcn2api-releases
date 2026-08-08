@@ -19,6 +19,7 @@ from src.storage.store import add_log, update_account_stats
 logger = logging.getLogger(__name__)
 
 _http_client: Optional[httpx.AsyncClient] = None
+_http_client_loop = None  # client 绑定的事件循环；重启网关后新 loop 与旧 client 不匹配需重建
 _proxy_password: str = os.environ.get("CBCN_PROXY_PASSWORD", "")
 _platform: str = os.environ.get("CBCN_PROXY_PLATFORM", "workbuddy")
 _port: int = int(os.environ.get("CBCN_PROXY_PORT", "8001"))
@@ -49,7 +50,27 @@ STREAM_DEADLINE = 600.0    # 单次请求从建连到收尾的总时长上限
 
 
 def _get_http_client() -> httpx.AsyncClient:
-    global _http_client
+    """获取与当前运行事件循环绑定的 httpx 异步客户端。
+
+    httpx.AsyncClient 的连接池绑定在创建时的事件循环上。网关「停止→重启」
+    会换一个新的事件循环（uvicorn 跑在独立线程），若继续复用旧 client，
+    旧连接池指向已关闭的旧 loop → RuntimeError: Event loop is closed，
+    重启后所有请求挂死，直到整个程序重启。
+
+    这里记录 client 创建时所在的 loop，每次取用前比对当前 running loop：
+    不一致（说明网关已重启到新 loop）就关闭旧的、按新 loop 重建。
+    """
+    global _http_client, _http_client_loop
+    try:
+        cur_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        cur_loop = None
+    if _http_client is not None and _http_client_loop is not cur_loop:
+        # 绑定的 loop 已变（网关重启）：旧 client 不能用，丢弃重建。
+        # 不 await aclose()——旧 loop 可能已关闭，await 会再次抛 Event loop is closed。
+        # httpx client 不显式 close 只会延迟回收连接，不构成资源泄漏（进程级生命周期）。
+        _http_client = None
+        _http_client_loop = None
     if _http_client is None:
         _http_client = httpx.AsyncClient(
             verify=False,
@@ -57,6 +78,7 @@ def _get_http_client() -> httpx.AsyncClient:
             timeout=httpx.Timeout(60.0, connect=10.0, read=60.0),
             limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
         )
+        _http_client_loop = cur_loop
     return _http_client
 
 
@@ -134,7 +156,12 @@ def _safe_log(*args, **kwargs):
 
 def _first_event_kind(text: str):
     """扫描文本中的首个 SSE data 事件。
-    返回 ('error', payload_str) | ('data', None) | ('none', None)。"""
+    返回 ('error', payload_str) | ('data', None) | ('none', None)。
+
+    识别为 error 的形状：
+      - {"error": {...}}（嵌套错误）
+      - {"code":11140,"msg":"request illegal"}（顶层封号错误，无 error 包裹）
+    其余按 data / none 处理。"""
     has_data = False
     for line in text.split("\n"):
         s = line.strip()
@@ -147,10 +174,13 @@ def _first_event_kind(text: str):
             obj = json.loads(payload_str)
         except (ValueError, TypeError):
             continue
-        if isinstance(obj, dict) and isinstance(obj.get("error"), dict):
-            return "error", payload_str
-        if isinstance(obj, dict) and (obj.get("choices") or obj.get("id") or obj.get("usage")):
-            has_data = True
+        if isinstance(obj, dict):
+            if isinstance(obj.get("error"), dict):
+                return "error", payload_str
+            if obj.get("code") == 11140 or "request illegal" in payload_str.lower():
+                return "error", payload_str
+            if obj.get("choices") or obj.get("id") or obj.get("usage"):
+                has_data = True
     return ("data" if has_data else "none"), None
 
 

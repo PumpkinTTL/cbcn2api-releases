@@ -44,11 +44,19 @@ class TokenRotator:
         self._accounts: list[Account] = []
         self._index = 0
         self._current_id: Optional[str] = None  # 当前粘性锁定的账号
+        self._pending_switch_from: Optional[str] = None  # 被标记不可用的旧号（写切号日志用）
+        self._pending_switch_from_nick: str = ""
+        self._pending_switch_reason: str = ""  # 暂存的切号原因（on_disable 等不走 mark_disabled 的路径）
         self._active_count: int = 0  # 并发请求计数
         # id -> {"reason": str, "until": float}
         self._disabled: dict[str, dict] = {}
         # id -> 估算剩余额度（从 quota_raw 初始化，每次请求扣减）
         self._estimated_remain: dict[str, float] = {}
+        # 估算有效集合：仅当最近一次容量快照成功解析（quota_raw 可用）才纳入。
+        # 估算无效/未知的账号，deduct_quota 不会用它触发阈值切号 —— 宁可多用一个号，
+        # 也不要因为快照解析失败把「剩余额度=0」误判成耗尽而提前切号。
+        # 真实额度彻底耗尽由上游 429/14008 → mark_disabled("quota") 兜底处理。
+        self._estimate_valid: set[str] = set()
         self._threshold: float = 0.0
         self._enable_threshold: float = 0.0
         self._platform: str = "workbuddy"
@@ -127,6 +135,7 @@ class TokenRotator:
 
     def get_next(self, platform: str) -> Optional[Account]:
         """粘性优先：优先返回当前锁定账号；不可用时才找下一个可用账号。"""
+        switch_row = None  # 锁外写 switch_log（store 是同步 sqlite，锁内写卡事件循环）
         with self._lock:
             if not self._accounts:
                 self.reload(platform)
@@ -140,6 +149,13 @@ class TokenRotator:
                     return cur
 
             # 2. 找下一个可用账号
+            prev_id = self._current_id or self._pending_switch_from or ""
+            prev_nick = ""
+            if prev_id == self._pending_switch_from:
+                prev_nick = self._pending_switch_from_nick
+            elif prev_id:
+                pa = next((a for a in self._accounts if a.id == prev_id), None)
+                prev_nick = pa.nickname or "" if pa else ""
             n = len(self._accounts)
             for _ in range(n):
                 if self._index >= n:
@@ -148,8 +164,37 @@ class TokenRotator:
                 self._index = (self._index + 1) % n
                 if self._is_usable(acc):
                     self._current_id = acc.id
-                    return acc
-            return None
+                    if prev_id and prev_id != acc.id and platform == self._platform:
+                        # 收集参数，锁外再写库。原因优先取暂存的（on_disable 等不走
+                        # mark_disabled 的路径），否则从 _disabled 冷却记录推断
+                        reason = self._pending_switch_reason or self._switch_reason(prev_id)
+                        switch_row = (platform, prev_id, prev_nick,
+                                      acc.id, acc.nickname or "", reason)
+                    self._pending_switch_from = None
+                    self._pending_switch_from_nick = ""
+                    self._pending_switch_reason = ""
+                    result = acc
+                    break
+            else:
+                self._pending_switch_from = None
+                self._pending_switch_from_nick = ""
+                self._pending_switch_reason = ""
+                result = None
+        if switch_row:
+            try:
+                store.add_switch_log(*switch_row)
+            except Exception:
+                pass
+        return result
+
+    def _switch_reason(self, account_id: str) -> str:
+        """取切号原因：优先冷却记录中的 reason，否则默认。"""
+        st = self._disabled.get(account_id)
+        if st:
+            r = st.get("reason")
+            if r:
+                return {"quota": "额度耗尽", "auth": "非法请求", "transient": "临时错误", "banned": "封号", "manual": "手动禁用"}.get(r, r)
+        return ""
 
     def mark_disabled(self, account_id: str, reason: str):
         """标记账号不可用，自动持久化冷却记录到 settings 表。
@@ -180,6 +225,12 @@ class TokenRotator:
                     "until": time.time() + cd,
                 }
             if account_id == self._current_id:
+                # 当前号被标记不可用：暂存原号与原因，供 get_next 换号时写切号日志
+                self._pending_switch_from = account_id
+                self._pending_switch_from_nick = ""
+                pa = next((a for a in self._accounts if a.id == account_id), None)
+                if pa:
+                    self._pending_switch_from_nick = pa.nickname or ""
                 self._current_id = None
         self._persist_cooldowns()
         if to_persist is not None:
@@ -213,18 +264,27 @@ class TokenRotator:
         self._persist_cooldowns()
 
     def on_disable(self, account_id: str) -> bool:
-        """手动禁用账号后，若它是当前号则自动切换到下一个可用号。
-        若禁用后无可用账号则拒绝操作，返回 False。"""
+        """手动禁用账号后，若它是当前号则切换到下一个可用号。
+        若禁用后无可用账号则拒绝操作，返回 False。
+        不直接选号 —— 清 current + 暂存旧号，下次 get_next 用轮转逻辑选号并写切号日志。"""
         with self._lock:
             usable_without = [a for a in self._accounts if a.id != account_id and self._is_usable(a)]
             if not usable_without:
                 return False
+            disabled_acc = None
             for a in self._accounts:
                 if a.id == account_id:
                     a.status = "disabled"
+                    disabled_acc = a
                     break
             if account_id == self._current_id:
-                self._current_id = usable_without[0].id
+                # 暂存旧号 + 原因，下次 get_next 换号时写日志。
+                # 不往 _disabled 塞临时记录（会被 _is_usable 到期 pop 掉导致 reason 丢失），
+                # 用独立的 _pending_switch_reason 存。
+                self._pending_switch_from = account_id
+                self._pending_switch_from_nick = disabled_acc.nickname or "" if disabled_acc else ""
+                self._pending_switch_reason = "手动禁用"
+                self._current_id = None
             return True
 
     def count_usable(self) -> int:
@@ -253,6 +313,7 @@ class TokenRotator:
         # 默认 timeout=5s，GUI 线程并发写库时会连带把这把锁和事件循环一起卡住。
         to_persist = None    # 需要落库的 Account
         log_row = None       # (level, account_id, nickname, message)
+        switch_row = None    # (from_id, from_nick, to_id, to_nick, reason) 锁外写
 
         with self._lock:
             # 缺失估算值时按 0 兜底而不是 return，否则这个账号永不扣减、永不触发阈值
@@ -285,14 +346,24 @@ class TokenRotator:
                 # 成功换号说明又有可用备选了，复位标志，
                 # 否则第一次 nofallback 之后所有后续提示都会被静默吃掉
                 self._threshold_no_fallback = False
+                reason = f"额度低于阈值({self._threshold})"
                 log_row = ("warning", account_id, acc.nickname or "",
-                           f"额度低于阈值({self._threshold})，已自动禁用并切换")
+                           f"{reason}，已自动禁用并切换")
+                # 切号日志参数收集到锁外再写（store.add_switch_log 是同步 sqlite，
+                # 锁内写会卡住网关事件循环）
+                switch_row = (account_id, acc.nickname or "",
+                              good[0].id, good[0].nickname or "", reason)
 
         if to_persist is not None:
             try:
                 store.upsert_account(self._platform, to_persist)
             except Exception as e:
                 logger.warning("[调度] 阈值换号持久化失败: %r", e)
+        if switch_row:
+            try:
+                store.add_switch_log(self._platform, *switch_row)
+            except Exception:
+                pass
         if log_row:
             level, aid, nick, msg = log_row
             try:
@@ -349,21 +420,23 @@ class TokenRotator:
         一个账号解析失败就会让它后面所有账号缺失估算值，而 deduct_quota 对
         缺失的 key 直接 return，那些账号从此永不扣减、永不触发阈值。
 
-        calibrate=False（被动 reload，如别的账号封号连带触发）：
-          DB quota_raw 是陈旧快照，可能比内存已扣减值高 —— 取 min 防止估算
-          被抬高导致用超。
-        calibrate=True（手动刷新额度后的 reload）：
-          DB 是刚拉到的真实值 —— 直接覆盖，校准内存估算。
+        统一策略（calibrate 仅作语义标记，防抬高逻辑一致）：
+          - prev 缺失或为 0：信任 fresh（prev==0 可能是旧版 Status=3 误计压低的
+            坏值，手动刷新就是要把它校准回真实值）。
+          - prev>0：取 min(fresh, prev)。运行期内存值是已扣减的真实消耗，上游
+            快照可能因结算延迟偏高 —— 取小防估算被抬高导致超用。
+            这点对 calibrate=True（手动刷新）同样成立：用户点刷新时网关可能在
+            跑，刚扣的几次请求上游未必已结算，直接覆盖会把估算抬回去。
         """
         for acc in self._accounts:
             try:
                 total, used = calc_totals(acc.quota_raw, acc.usage_raw)
                 fresh = max(0, total - used)
-                if calibrate:
+                prev = self._estimated_remain.get(acc.id)
+                if prev is None or prev == 0:
                     self._estimated_remain[acc.id] = fresh
                 else:
-                    prev = self._estimated_remain.get(acc.id)
-                    self._estimated_remain[acc.id] = min(fresh, prev) if prev is not None else fresh
+                    self._estimated_remain[acc.id] = min(fresh, prev)
             except Exception as e:
                 logger.warning("[调度] 账号=%s 额度估算失败: %r", acc.nickname or acc.id, e)
                 self._estimated_remain.setdefault(acc.id, 0.0)
@@ -409,7 +482,13 @@ class TokenRotator:
             pass
 
     def _restore_estimates(self):
-        """从 settings 恢复上次关闭时持久化的估算值（在 _refresh_estimates 之前调用）。"""
+        """从 settings 恢复上次关闭时持久化的估算值（在 _refresh_estimates 之前调用）。
+
+        仅在刚刚启动（内存估算为空）时恢复 —— 运行期 reload 时内存里已有
+        运行期扣减过的真实值，若再用持久化快照覆盖，会把运行期的扣减吞掉
+        （表现为 reload 后估算被抬高、提前切号）。"""
+        if self._estimated_remain:
+            return
         try:
             raw = store.get_setting(_ESTIMATE_SETTING_KEY, "")
             if not raw:

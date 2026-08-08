@@ -13,7 +13,22 @@ from src.api import checkin as checkin_api
 from src.api import quota as quota_api
 from src.api.account_api import refresh_full_payload
 
-_LICENSE_ENABLED = False
+# 授权开关：启动时从远端 lic-admin 按产品 ID 查询（LIC_SERVER）。
+# 远端关闭授权 → 免授权直接用；远端开启 → 走激活码流程。
+# 远端不可达时保守视为需要授权，靠本地 license_core 离线验签兜底（缓存了有效激活码即可用）。
+_LICENSE_ENABLED = None  # 运行时确定（True=需授权，False=免授权）
+
+
+def _resolve_license_enabled():
+    """查询远端授权开关。返回 True（需授权）/ False（免授权）。结果缓存。"""
+    global _LICENSE_ENABLED
+    try:
+        from src import license as lic
+        _LICENSE_ENABLED = lic.remote_license_enabled()
+    except Exception:
+        # 远端不可达：无法确认开关，保守走授权，靠离线 license_core 验签兜底
+        _LICENSE_ENABLED = True
+    return _LICENSE_ENABLED
 
 
 
@@ -641,16 +656,27 @@ class GuiApi:
         total_quota = 0
         total_used = 0
         total_remain = 0
+        # 叠加本次周期实际消耗（account_stats.total_credit），让顶部额度条反映
+        # 网关运行期的实时扣减，而不是 quota_raw 的陈旧快照。与卡片 getCardQuota 同口径。
+        stats_map = {}
+        try:
+            for s in store.list_account_stats(platform):
+                stats_map[s.get("account_id")] = s
+        except Exception:
+            pass
         for a in accounts:
             if a.status == "banned":
                 continue
             try:
-                t, u = quota_api.calc_totals(a.quota_raw, a.usage_raw)
+                t, u = quota_api.calc_totals(a.quota_raw, a.usage_raw, active_only=False)
             except Exception:
                 t, u = 0, 0
+            # 本次周期消耗积分（刷新额度时会被 reset_account_credit 清零）
+            credit = float((stats_map.get(a.id) or {}).get("total_credit") or 0)
+            used = u + credit
             total_quota += t
-            total_used += u
-            total_remain += max(0.0, t - u)
+            total_used += used
+            total_remain += max(0.0, t - used)
         checked_in = 0
         today_start = int(time.time()) // 86400 * 86400
         for a in accounts:
@@ -710,7 +736,7 @@ class GuiApi:
             pass
         return saved
 
-    def refresh_token(self, platform: str, account_id: str) -> str:
+    def refresh_token(self, platform: str, account_id: str, _reload: bool = True) -> str:
         account = store.load_account(platform, account_id)
         if not account:
             return json.dumps({"error": "账号不存在"})
@@ -718,11 +744,12 @@ class GuiApi:
         try:
             payload, quota_error = refresh_full_payload(account)
             saved = self._persist_refreshed(platform, account, payload, quota_error, force_normal=False)
-            try:
-                from src.proxy.token_rotator import token_rotator
-                token_rotator.reload(platform, calibrate=True)
-            except Exception:
-                pass
+            if _reload:
+                try:
+                    from src.proxy.token_rotator import token_rotator
+                    token_rotator.reload(platform, calibrate=True)
+                except Exception:
+                    pass
             return json.dumps(saved.to_dict())
         except Exception as e:
             return json.dumps({"error": str(e)})
@@ -756,15 +783,39 @@ class GuiApi:
         if result == "banned":
             account.status = "banned"
             store.upsert_account(platform, account)
+            # 即时同步调度器内存：否则批量验活要等全部 future 完成（可达数十秒）
+            # 才统一 reload，期间网关仍会调度这个已确认封号的号 → 触发更多 11140 风控。
+            # 这里直接改内存池里的 Account 对象 + 若是当前号则切走。
+            try:
+                with token_rotator._lock:
+                    for a in token_rotator._accounts:
+                        if a.id == account.id:
+                            a.status = "banned"
+                            break
+                    if token_rotator._current_id == account.id:
+                        # 设暂存原因，get_next 换号时写日志"验活封号"
+                        token_rotator._pending_switch_from = account.id
+                        token_rotator._pending_switch_from_nick = name
+                        token_rotator._pending_switch_reason = "验活封号"
+                        token_rotator._current_id = None
+                    token_rotator._disabled.pop(account.id, None)
+            except Exception:
+                pass
             return {"id": account.id, "name": name, "status": "banned",
                     "reason": "真实请求 3 次均被拒(11140 封号)"}
         if result == "ok":
-            was_banned = account.status == "banned"
-            account.status = "normal"
-            store.upsert_account(platform, account)
-            token_rotator.clear_disabled(account.id)
-            return {"id": account.id, "name": name, "status": "normal",
-                    "reason": "验活通过，已从封禁恢复为正常" if was_banned else "验活通过"}
+            # 验活通过。只有原状态是 banned（封禁）才恢复 normal；
+            # 手动 disabled 的号保持 disabled —— 验活是检测封号，不能覆盖用户手动禁用。
+            if account.status == "banned":
+                account.status = "normal"
+                store.upsert_account(platform, account)
+                token_rotator.clear_disabled(account.id)
+                return {"id": account.id, "name": name, "status": "normal",
+                        "reason": "验活通过，已从封禁恢复为正常"}
+            if account.status == "disabled":
+                return {"id": account.id, "name": name, "status": "disabled",
+                        "reason": "验活通过，保持手动禁用"}
+            return {"id": account.id, "name": name, "status": "normal", "reason": "验活通过"}
         return {"id": account.id, "name": name, "status": "unknown",
                 "reason": "非封号错误，未判定（限流/额度/网络等）"}
 
@@ -830,10 +881,17 @@ class GuiApi:
     def refresh_all(self, platform: str) -> str:
         accounts = store.list_accounts(platform)
         success = 0
+        # 批量刷新：循环内不 reload（避免 N 个账号触发 N 次持锁重建池阻塞网关），
+        # 全部刷完统一 reload 一次。
         for acc in accounts:
-            result = json.loads(self.refresh_token(platform, acc.id))
+            result = json.loads(self.refresh_token(platform, acc.id, _reload=False))
             if "error" not in result:
                 success += 1
+        try:
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.reload(platform, calibrate=True)
+        except Exception:
+            pass
         return json.dumps({"success": success, "total": len(accounts)})
 
     def detect_and_enable_accounts(self, platform: str, threshold: float = -1) -> str:
@@ -1087,8 +1145,17 @@ class GuiApi:
 
     # ========== License ==========
 
+    def get_machine_code(self) -> str:
+        """返回当前机器 ID（激活界面展示用）。"""
+        try:
+            from src import license as lic
+            return lic.machine_code()
+        except Exception:
+            return ""
+
     def check_license(self) -> str:
-        if not _LICENSE_ENABLED:
+        enabled = _LICENSE_ENABLED if _LICENSE_ENABLED is not None else _resolve_license_enabled()
+        if not enabled:
             return json.dumps({"licensed": True, "expiry": None, "message": "OK"}, ensure_ascii=False)
         from src import license as lic
         st = lic.status()
@@ -1098,9 +1165,8 @@ class GuiApi:
 
     def activate(self, code: str) -> str:
         from src import license as lic
-        ok, exp, msg = lic.verify(code)
+        ok, exp, msg = lic.activate(code)
         if ok:
-            lic.save_code(code)
             expiry_str = time.strftime("%Y-%m-%d %H:%M", time.localtime(exp)) if exp else ""
             return json.dumps({"success": True, "expiry": exp, "expiry_str": expiry_str, "message": msg}, ensure_ascii=False)
         return json.dumps({"success": False, "message": msg}, ensure_ascii=False)
@@ -1121,7 +1187,7 @@ class GuiApi:
         import time
         import socket
 
-        if _LICENSE_ENABLED:
+        if _LICENSE_ENABLED if _LICENSE_ENABLED is not None else _resolve_license_enabled():
             from src import license as lic
             st = lic.status()
             if not st.get("licensed"):
@@ -1182,6 +1248,15 @@ class GuiApi:
         if server:
             server.should_exit = True
             self._proxy_server = None
+            # 丢弃旧 httpx client 引用：它绑定在即将关闭的旧事件循环上，
+            # 重启网关后 _get_http_client 会按新 loop 重建。这里只置 None，
+            # 不 await aclose()——GUI 线程拿不到旧 loop，await 会抛 Event loop is closed。
+            try:
+                from src.proxy import proxy_server as _ps
+                _ps._http_client = None
+                _ps._http_client_loop = None
+            except Exception:
+                pass
             try:
                 from src.proxy.token_rotator import token_rotator
                 token_rotator._active_count = 0
@@ -1267,6 +1342,10 @@ class GuiApi:
                     continue  # 已是禁用/封禁，跳过
                 if status == "normal" and acc.status == "normal":
                     continue  # 已正常，跳过
+                if status == "disabled":
+                    # 走 on_disable：若禁用的是当前调度号，会立即切换并写切号日志（有原因），
+                    # 否则 reload 时 current 失效才被动切号，日志缺原因。
+                    token_rotator.on_disable(aid)
                 acc.status = status
                 store.upsert_account(platform, acc)
                 if status == "normal":
@@ -1291,15 +1370,21 @@ class GuiApi:
             return _json.dumps({"error": "没有选中账号"})
         success = 0
         failed = 0
+        # 批量刷新不逐个 reload（避免 N 次持锁重建池阻塞网关），末尾统一 reload。
         for aid in ids:
             try:
-                r = _json.loads(self.refresh_token(platform, aid))
+                r = _json.loads(self.refresh_token(platform, aid, _reload=False))
                 if "error" not in r:
                     success += 1
                 else:
                     failed += 1
             except Exception:
                 failed += 1
+        try:
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.reload(platform, calibrate=True)
+        except Exception:
+            pass
         return _json.dumps({"ok": True, "success": success, "failed": failed, "total": len(ids)})
 
     def checkin_accounts(self, platform: str, account_ids_json: str) -> str:

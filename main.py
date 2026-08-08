@@ -117,7 +117,7 @@ def main():
         APP_TITLE,
         url=_HTML_URL,
         js_api=api,
-        width=1340,
+        width=1407,
         height=880,
         min_size=(1000, 640),
         resizable=True,

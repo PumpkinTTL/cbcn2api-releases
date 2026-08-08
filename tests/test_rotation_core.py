@@ -31,6 +31,7 @@ store.DB_PATH = store.DB_DIR / "accounts.db"
 
 from src.models.account import Account
 from src.proxy.token_rotator import TokenRotator, QUOTA_COOLDOWN, AUTH_COOLDOWN, TRANSIENT_COOLDOWN
+from src.api.quota import calc_totals, PKG_ACTIVITY
 
 PKG_PRO_MON = "TCACA_code_002_AkiJS3ZHF5"
 PLATFORM = "workbuddy"
@@ -364,10 +365,132 @@ def t_concurrent_safety():
     check("耗时正常（无 5s sqlite 阻塞叠加）", el < 20, f"{el:.2f}s")
 
 
+# ============================================================ 核心概念 14
+def t_stale_zero_estimate():
+    """修复：DB 持久化的旧估算 0（旧版 Status=3 误计入 used 算成 0），
+    reload 时若 DB 快照能算出正额度必须信任 fresh —— 否则 min(0, fresh)=0，
+    账号「明明还有额度」，一旦开阈值第一笔请求就触发切号。"""
+    print("\n[核心14] 陈旧 0 估算不被 min 卡死（提前切号根因回归）")
+    seed([("v1", "旧0", 1000, 800, "normal"),
+          ("v2", "正常", 1000, 800, "normal")])
+    # 模拟旧版错误压低：estimated_remain 持久化 v1=0
+    store.save_setting("estimated_remain", json.dumps({"v1": 0.0, "v2": 800.0}))
+    r = TokenRotator(); r.reload(PLATFORM)
+    check("旧 0 值被真实额度覆盖（不是 min 卡死）", r._estimated_remain["v1"] == 800.0,
+          f"v1={r._estimated_remain.get('v1')}")
+    check("正常值保持", r._estimated_remain["v2"] == 800.0, f"v2={r._estimated_remain.get('v2')}")
+
+    # 运行期真实扣减不能被 reload 的陈旧快照抬高（min 防线仍然有效）
+    r._estimated_remain["v2"] = 700.0          # 内存已扣到 700
+    r.reload(PLATFORM)                          # DB 快照还是 800
+    check("运行期扣减后 reload 不被快照抬高", r._estimated_remain["v2"] == 700.0,
+          f"v2={r._estimated_remain.get('v2')}")
+
+
+# ============================================================ 核心概念 15
+def t_switch_log_written():
+    """修复：mark_disabled 会把 _current_id 置 None，get_next 拿不到旧号；
+    现在用 _pending_switch_from 暂存，确保异常/封号切号一定写日志。"""
+    print("\n[核心15] 异常/封号切号日志完整（from→to+原因）")
+    r = fresh([("l1", "号1", 1000, 1000, "normal"),
+               ("l2", "号2", 1000, 1000, "normal")])
+    r._current_id = "l1"
+    r.get_next(PLATFORM)                 # 锁住 l1
+    r.mark_disabled("l1", "quota")       # 429 额度耗尽 → 置空 current
+    nxt = r.get_next(PLATFORM)           # 换号到这里才会写日志
+    check("换到 l2", nxt and nxt.id == "l2", f"nxt={nxt and nxt.id}")
+    conn = store._get_conn()
+    try:
+        sw = [dict(x) for x in conn.execute(
+            "SELECT * FROM proxy_logs WHERE event='switch' ORDER BY id").fetchall()]
+    finally:
+        conn.close()
+    check("写了一条 switch 日志", len(sw) == 1, f"count={len(sw)}")
+    # message 展示昵称（"号1 → 号2"）；to 账号的目标 id 在 message 里出现即证明切向 l2
+    check("日志 from=l1 → 显示切向 l2", sw and sw[0]["account_id"] == "l1"
+          and "号1" in sw[0]["message"] and "号2" in sw[0]["message"],
+          str(sw[0] if sw else None))
+    check("日志带原因（额度耗尽）", sw and "额度" in (sw[0]["details"] or ""),
+          f"details={sw[0].get('details') if sw else None}")
+
+    # 正常请求未切号 → 不写日志
+    conn = store._get_conn()
+    try:
+        before = conn.execute("SELECT COUNT(*) c FROM proxy_logs WHERE event='switch'").fetchone()["c"]
+    finally:
+        conn.close()
+    r.deduct_quota("l2", 1)              # 未到阈值（threshold=0）
+    conn = store._get_conn()
+    try:
+        after = conn.execute("SELECT COUNT(*) c FROM proxy_logs WHERE event='switch'").fetchone()["c"]
+    finally:
+        conn.close()
+    check("未切号不写日志", before == after, f"{before} → {after}")
+
+
+# ============================================================ 核心概念 16
+def t_multipackage_totals():
+    """修复：账号裂变包会持续累积，超过单页 100 条时上游分页。
+    这里直接构造 150 个包（110 个 Status=3 耗尽 + 40 个 Status=0 有效）。
+    验证两种口径：
+      - 调度口径 calc_totals()（active_only=True，默认）：只算 Status=0 —— 决定切号
+      - 展示口径 calc_totals(active_only=False)：算全量 0+3 —— 给用户看总额度"""
+    print("\n[核心16] 多套餐包汇算：调度只算有效 / 展示算全量，不被数量压垮")
+    pkgs = []
+    # 110 个已耗尽裂变包（Status=3，remain=0）
+    for i in range(110):
+        pkgs.append({"PackageCode": PKG_ACTIVITY, "Status": 3,
+                     "CycleCapacitySizePrecise": 100.0, "CycleCapacityRemainPrecise": 0.0})
+    # 40 个有效裂变包（Status=0，各剩 50）
+    for i in range(40):
+        pkgs.append({"PackageCode": PKG_ACTIVITY, "Status": 0,
+                     "CycleCapacitySizePrecise": 100.0, "CycleCapacityRemainPrecise": 50.0})
+    qr = {"userResource": {"data": {"Response": {"Data": {"Accounts": pkgs}}}}}
+
+    # 调度口径：只算 Status=0
+    total, used = calc_totals(qr)
+    check("调度 total 只算 Status=0", abs(total - 40 * 100.0) < 0.01, f"total={total}")
+    check("调度 remain 只算 Status=0", abs((total - used) - 40 * 50.0) < 0.01,
+          f"remain={total-used}")
+
+    # 展示口径：全量 0+3（已耗尽的也算进总额度）
+    total_all, used_all = calc_totals(qr, active_only=False)
+    expect_total_all = (110 + 40) * 100.0
+    expect_remain_all = 40 * 50.0   # Status=3 的 remain=0 不贡献剩余
+    check("展示 total 含已耗尽包", abs(total_all - expect_total_all) < 0.01,
+          f"total_all={total_all} 期望={expect_total_all}")
+    check("展示 remain 全量正确", abs((total_all - used_all) - expect_remain_all) < 0.01,
+          f"remain_all={total_all-used_all} 期望={expect_remain_all}")
+
+
+# ============================================================ 核心概念 17
+def t_calibrate_no_inflate():
+    """修复：网关运行中用户点「刷新额度」会 reload(calibrate=True)。
+    若上游结算延迟，快照 fresh > 内存已扣减值 prev，直接覆盖会把估算抬高 → 超用。
+    现在 calibrate 也取 min(fresh, prev)（prev>0 时），防抬高。
+    prev==0（坏值）仍信任 fresh 校准。"""
+    print("\n[核心17] calibrate 不被结算延迟的快照抬高（防超用回归）")
+    seed([("c1", "运行中", 1000, 800, "normal")])
+    r = TokenRotator(); r.reload(PLATFORM)
+    # 运行期已扣 100：内存 700
+    r._estimated_remain["c1"] = 700.0
+    # 用户点刷新：DB 快照还是 800（上游未结算），calibrate 不能抬高回 800
+    r.reload(PLATFORM, calibrate=True)
+    check("calibrate 不抬高运行期扣减", r._estimated_remain["c1"] == 700.0,
+          f"c1={r._estimated_remain.get('c1')}")
+    # 但 prev==0（坏值）时 calibrate 要信任 fresh 校准
+    r._estimated_remain["c1"] = 0.0
+    r.reload(PLATFORM, calibrate=True)
+    check("calibrate 校准 prev==0 坏值", r._estimated_remain["c1"] == 800.0,
+          f"c1={r._estimated_remain.get('c1')}")
+
+
 for fn in (t_sticky, t_cooldown_tiers, t_cooldown_expiry, t_cooldown_persist,
            t_permanent_exclusion, t_threshold_switch, t_no_thrash,
            t_no_fallback, t_priority, t_exhaustion,
-           t_quota_raw_roundtrip, t_dirty_quota_isolation, t_concurrent_safety):
+           t_quota_raw_roundtrip, t_dirty_quota_isolation, t_concurrent_safety,
+           t_stale_zero_estimate, t_switch_log_written,
+           t_multipackage_totals, t_calibrate_no_inflate):
     fn()
 
 ok = sum(1 for _, c in _results if c)
