@@ -101,10 +101,12 @@ def apply_update(download_path: str) -> dict:
         return {"error": "仅在打包后可执行更新"}
     vbs_path = os.path.join(tempfile.gettempdir(), "ai-gateway-update.vbs")
     log_path = os.path.join(tempfile.gettempdir(), "ai-gateway-update.err")
+    check_path = os.path.join(tempfile.gettempdir(), "ai-gateway-check.txt")
     # VBS 字符串没有反斜杠转义，路径直接原样写入（不要 replace 成 \\）。
     src = download_path
     dst = current_exe
     log = log_path
+    chk = check_path
     vbs_content = (
         "Set WshShell = CreateObject(\"WScript.Shell\")\n"
         "Set fso = CreateObject(\"Scripting.FileSystemObject\")\n"
@@ -128,7 +130,34 @@ def apply_update(download_path: str) -> dict:
         "  WScript.Quit 1\n"
         "End If\n"
         "fso.DeleteFile \"" + src + "\", True\n"
-        "WshShell.Run \"\"\"\" & \"" + dst + "\" & \"\"\"\", 0, False\n"
+        "' 等 5 秒再启动：让杀毒软件完成对刚写入 exe 的扫描，避免启动时解压加载失败。\n"
+        "WScript.Sleep 5000\n"
+        "exe_name = fso.GetFileName(\"" + dst + "\")\n"
+        "chk = \"" + chk + "\"\n"
+        "started = False\n"
+        "For i = 1 To 3\n"
+        "  WshShell.Run \"\"\"\" & \"" + dst + "\" & \"\"\"\", 0, False\n"
+        "  WScript.Sleep 8000\n"
+        "  WshShell.Run \"cmd /c tasklist > \" & chk, 0, True\n"
+        "  Set f = Nothing\n"
+        "  Set f = fso.OpenTextFile(chk, 1, False, 0)\n"
+        "  txt = \"\"\n"
+        "  If Not f Is Nothing Then\n"
+        "    txt = f.ReadAll\n"
+        "    f.Close\n"
+        "  End If\n"
+        "  Err.Clear\n"
+        "  If InStr(txt, exe_name) > 0 Then\n"
+        "    started = True\n"
+        "    Exit For\n"
+        "  End If\n"
+        "Next\n"
+        "If Not started Then\n"
+        "  Set f = fso.CreateTextFile(\"" + log + "\", True)\n"
+        "  f.WriteLine \"launch failed after 3 tries\"\n"
+        "  f.Close\n"
+        "  WScript.Quit 1\n"
+        "End If\n"
     )
     try:
         with open(vbs_path, "w", encoding="utf-8") as f:
