@@ -6,7 +6,7 @@ from typing import Optional
 
 import requests
 
-APP_VERSION = "v1.0.8"
+APP_VERSION = "v1.0.7"
 REPO = "PumpkinTTL/cbcn2api-releases"
 GITHUB_API = f"https://api.github.com/repos/{REPO}/releases/latest"
 
@@ -101,28 +101,31 @@ def apply_update(download_path: str) -> dict:
         return {"error": "仅在打包后可执行更新"}
     vbs_path = os.path.join(tempfile.gettempdir(), "ai-gateway-update.vbs")
     log_path = os.path.join(tempfile.gettempdir(), "ai-gateway-update.err")
-    pid = os.getpid()
-    src = download_path.replace("\\", "\\\\")
-    dst = current_exe.replace("\\", "\\\\")
-    log = log_path.replace("\\", "\\\\")
+    # VBS 字符串没有反斜杠转义，路径直接原样写入（不要 replace 成 \\）。
+    src = download_path
+    dst = current_exe
+    log = log_path
     vbs_content = (
         "Set WshShell = CreateObject(\"WScript.Shell\")\n"
         "Set fso = CreateObject(\"Scripting.FileSystemObject\")\n"
-        "pid = \"" + str(pid) + "\"\n"
-        "Do\n"
-        "  WScript.Sleep 1000\n"
-        "  On Error Resume Next\n"
-        "  Set proc = GetObject(\"winmgmts:root\\cimv2:Win32_Process.Handle='\" & pid & \"'\")\n"
-        "  If Err.Number <> 0 Then Exit Do\n"
-        "  Set proc = Nothing\n"
-        "  On Error Goto 0\n"
-        "Loop\n"
         "On Error Resume Next\n"
-        "fso.CopyFile \"" + src + "\", \"" + dst + "\", True\n"
-        "If Err.Number <> 0 Then\n"
+        "' 不用 WMI 等进程退出（WMI 查询本身可能失败 → 误判退出 → 覆盖运行中的 exe）。\n"
+        "' 直接重试 CopyFile：进程退出前 exe 被锁定 → 失败重试；退出后锁释放 → 成功。\n"
+        "copy_ok = False\n"
+        "For i = 1 To 60\n"
+        "  fso.CopyFile \"" + src + "\", \"" + dst + "\", True\n"
+        "  If Err.Number = 0 Then\n"
+        "    copy_ok = True\n"
+        "    Exit For\n"
+        "  End If\n"
+        "  Err.Clear\n"
+        "  WScript.Sleep 1000\n"
+        "Next\n"
+        "If Not copy_ok Then\n"
         "  Set f = fso.CreateTextFile(\"" + log + "\", True)\n"
         "  f.WriteLine \"copy failed: \" & Err.Description\n"
         "  f.Close\n"
+        "  WScript.Quit 1\n"
         "End If\n"
         "fso.DeleteFile \"" + src + "\", True\n"
         "WshShell.Run \"\"\"\" & \"" + dst + "\" & \"\"\"\", 0, False\n"
