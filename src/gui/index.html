@@ -133,7 +133,7 @@
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> 切换主题
       </button>
       <div style="text-align:center;font-size:11px;margin-top:8px">
-        <span class="version-link" @click="openModal('changelog')">v1.0.8</span>
+        <span class="version-link" @click="openModal('changelog')">v1.0.7</span>
         <span style="margin:0 4px;color:var(--text-muted)">|</span>
         <span class="version-link" @click="checkForUpdate">检查更新
           <span v-if="hasUpdate" id="updateBadge" style="margin-left:4px;color:var(--accent,#2563eb);vertical-align:-1px">
@@ -770,7 +770,7 @@
         <img src="icons/workbuddy-logo.svg" class="about-logo" alt="">
         <div class="about-header-text">
           <h2 class="about-title">AI Gateway</h2>
-          <p class="about-version">v1.0.8</p>
+          <p class="about-version">v1.0.7</p>
         </div>
       </div>
 
@@ -1172,24 +1172,25 @@
       </div>
       <div class="modal-body">
         <div class="changelog-version">v1.0.8</div>
-        <div class="changelog-date">2026-08-08</div>
+        <div class="changelog-date">2026-08-09</div>
 
-        <div class="changelog-section-title">优化</div>
+        <div class="changelog-section-title">修复</div>
         <ul class="changelog-list">
-          <li>优化在线更新流程，更新更稳定</li>
+          <li>测试1.0.8更新成功</li>
+          <li>测试1.0.8更新成功</li>
         </ul>
 
         <div class="changelog-version" style="margin-top:24px">v1.0.7</div>
         <div class="changelog-date">2026-08-08</div>
 
-        <div class="changelog-section-title">新增</div>
+        <div class="changelog-section-title">功能新增</div>
         <ul class="changelog-list">
           <li>新增多种 AI 开发工具支持，网关配置可一键导入</li>
           <li>新增深色主题，夜间使用更舒适</li>
           <li>批量验活结果以弹窗汇总展示</li>
         </ul>
 
-        <div class="changelog-section-title">优化</div>
+        <div class="changelog-section-title">体验优化</div>
         <ul class="changelog-list">
           <li>工具栏按钮增加文字标识，操作辨识度更高</li>
           <li>优化筛选栏布局，账号查找更高效</li>
@@ -1204,7 +1205,7 @@
           <li>账号刷新失败时展示具体原因</li>
         </ul>
 
-        <div class="changelog-section-title">修复</div>
+        <div class="changelog-section-title">问题修复</div>
         <ul class="changelog-list">
           <li>修复导入后部分模型图标缺失的问题</li>
           <li>修复网关重启后请求异常的问题</li>
@@ -1215,6 +1216,8 @@
           <li>修复高负载场景下界面卡顿的问题</li>
           <li>修复重复登录/重复导入导致标签与签到记录丢失的问题</li>
           <li>修复在线更新失败的问题</li>
+          <li>修复在线更新后自动重启失败的问题</li>
+          <li>修复更新后界面版本号不更新的问题</li>
         </ul>
         <div class="changelog-note">（安装包发布在 GitHub，若在线更新一直卡住，请手动下载更新）</div>
 
@@ -3415,6 +3418,20 @@ const vApp = createApp({
 });
 
 window._vueApp = vApp.mount('#app');
+
+(function(){
+  try {
+    var v = window.__APP_VERSION__;
+    if (v) {
+      var el = document.querySelector('.version-link');
+      if (el) el.textContent = v;
+      var ab = document.querySelector('.about-version');
+      if (ab) ab.textContent = v;
+      var cv = document.querySelector('.changelog-version');
+      if (cv) cv.textContent = v;
+    }
+  } catch(e) {}
+})();
 
 </script>
 </body>

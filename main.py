@@ -48,13 +48,13 @@ def _prepare_frozen_html():
     """frozen：内联主题脚本 + <base> 指向 _MEIPASS，生成临时 HTML 加载。
     页面自身的相对资源（style.css/animations.css/vue.prod.js/icons）靠 base
     解析到解压目录，避免临时目录相对路径失效。
-    同时把界面写死的版本号（顶栏/关于/更新日志）替换成真实 APP_VERSION，
-    否则更新到新版本后界面仍显示旧版本号。"""
+    版本号通过注入的 window.__APP_VERSION__ 由前端 JS 更新显示位置，
+    绝不整体替换文本——否则会把更新日志里历史版本条目误改名。"""
     src = pathlib.Path(_resource(os.path.join("src", "gui", "index.html")))
     html = src.read_text(encoding="utf-8")
     try:
         from src.updater import APP_VERSION
-        html = html.replace("v1.0.7", APP_VERSION)
+        html = html.replace("<head>", f'<head><script>window.__APP_VERSION__="{APP_VERSION}";</script>', 1)
     except Exception:
         pass
     base = src.parent.as_uri() + "/"
