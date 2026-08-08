@@ -110,6 +110,21 @@ def _apply_window_chrome():
         print(f"[chrome] 圆角设置失败: {e!r}")
 
 
+def _mark_started():
+    """GUI 主循环真正起来后写启动标记文件。
+
+    更新脚本（VBS）靠这个文件判断新版本是否真正启动成功：
+    bootloader 解压失败弹窗时 Python 尚未运行，不会写标记，
+    不会像按进程名检测那样误判成功。
+    """
+    try:
+        mark = os.path.join(tempfile.gettempdir(), "ai-gateway-check.txt")
+        with open(mark, "w", encoding="utf-8") as f:
+            f.write("started")
+    except Exception:
+        pass
+
+
 def main():
     api = GuiApi()
 
@@ -138,6 +153,7 @@ def main():
     threading.Thread(target=_apply_window_chrome, daemon=True).start()
 
     webview.start(
+        _mark_started,
         private_mode=False,
         debug=not getattr(sys, 'frozen', False),
     )
