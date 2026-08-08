@@ -1787,6 +1787,7 @@ body {
 .changelog-list { list-style: none; padding: 0; margin: 0; }
 .changelog-list li { font-size: 13px; color: var(--text-secondary); line-height: 1.7; padding-left: 16px; position: relative; }
 .changelog-list li::before { content: '•'; position: absolute; left: 4px; color: var(--primary); }
+.changelog-note { font-size: 11px; color: var(--text-muted); margin-top: 10px; line-height: 1.6; }
 .card-header {
   display: flex;
   align-items: flex-start;
