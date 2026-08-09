@@ -48,6 +48,10 @@ def _run_migrations(conn: sqlite3.Connection):
     except sqlite3.OperationalError:
         pass
     try:
+        conn.execute("ALTER TABLE accounts ADD COLUMN delete_batch INTEGER")
+    except sqlite3.OperationalError:
+        pass
+    try:
         conn.execute("ALTER TABLE accounts ADD COLUMN fingerprint TEXT")
     except sqlite3.OperationalError:
         pass
@@ -271,12 +275,12 @@ def list_accounts(platform: str) -> list[Account]:
 
 
 def list_deleted_accounts(platform: str) -> list[dict]:
-    """回收站列表：返回原状态（软删前 normal/banned/disabled）+ 删除时间的精简 dict。
+    """回收站列表：返回原状态（软删前 normal/banned/disabled）+ 删除时间 + 删除批次的精简 dict。
     展示和筛选用原状态——用户关心的是恢复后它回到什么状态。"""
     conn = _get_conn()
     try:
         rows = conn.execute(
-            "SELECT id, email, nickname, deleted_at FROM accounts "
+            "SELECT id, email, nickname, deleted_at, delete_batch FROM accounts "
             "WHERE platform=? AND status='deleted' ORDER BY deleted_at DESC, id ASC",
             (platform,)
         ).fetchall()
@@ -288,6 +292,7 @@ def list_deleted_accounts(platform: str) -> list[dict]:
                 "nickname": r["nickname"],
                 "status": states.get(r["id"], "normal"),
                 "deleted_at": r["deleted_at"] or 0,
+                "batch": r["delete_batch"],
             }
             for r in rows
         ]
@@ -295,9 +300,10 @@ def list_deleted_accounts(platform: str) -> list[dict]:
         conn.close()
 
 
-def soft_delete_account(platform: str, account_id: str):
-    """软删除：status='deleted' + 记录删除时间，数据保留在库，各读路径自动过滤，可随时恢复。
+def soft_delete_account(platform: str, account_id: str, batch: Optional[int] = None):
+    """软删除：status='deleted' + 记录删除时间（及删除批次），数据保留在库，各读路径自动过滤，可随时恢复。
     恢复时还原软删前的原状态（banned 还是 banned、disabled 还是 disabled）。
+    batch：同一次批量删除共用同一批次号，回收站按批次整组恢复/彻底删除。
     整个 SELECT+UPDATE+_soft_states 写入在同一锁内，与 restore 互斥，无竞态窗口。"""
     with _soft_states_lock:
         conn = _get_conn()
@@ -309,8 +315,9 @@ def soft_delete_account(platform: str, account_id: str):
             if not row:
                 return
             conn.execute(
-                "UPDATE accounts SET status='deleted', deleted_at=? WHERE id=? AND platform=? AND status != 'deleted'",
-                (int(time.time()), account_id, platform)
+                "UPDATE accounts SET status='deleted', deleted_at=?, delete_batch=? "
+                "WHERE id=? AND platform=? AND status != 'deleted'",
+                (int(time.time()), batch, account_id, platform)
             )
             conn.commit()
             prev = row["status"] or "normal"
@@ -322,7 +329,7 @@ def soft_delete_account(platform: str, account_id: str):
 
 
 def restore_account(platform: str, account_id: str) -> bool:
-    """软删除恢复：去掉 deleted 标记、清删除时间，还原软删前的原状态（仅作用于软删除的账号）。
+    """软删除恢复：去掉 deleted 标记、清删除时间/批次，还原软删前的原状态（仅作用于软删除的账号）。
     整个读 prev+UPDATE+清记录在同一锁内，与 soft_delete 互斥，无竞态窗口。"""
     with _soft_states_lock:
         st = _soft_states()
@@ -330,7 +337,8 @@ def restore_account(platform: str, account_id: str) -> bool:
         conn = _get_conn()
         try:
             cur = conn.execute(
-                "UPDATE accounts SET status=?, deleted_at=NULL WHERE id=? AND platform=? AND status='deleted'",
+                "UPDATE accounts SET status=?, deleted_at=NULL, delete_batch=NULL "
+                "WHERE id=? AND platform=? AND status='deleted'",
                 (prev, account_id, platform)
             )
             conn.commit()
@@ -347,6 +355,32 @@ def revive_account(platform: str, account_id: str) -> bool:
     """显式恢复（重新导入 / OAuth 登录同号）：清 tombstone + 软删号回原状态。"""
     clear_tombstone(account_id)
     return restore_account(platform, account_id)
+
+
+def list_batch_accounts(platform: str, batch: int) -> list[str]:
+    """按删除批次列出回收站账号 id（用于整组恢复/彻底删除）。"""
+    conn = _get_conn()
+    try:
+        rows = conn.execute(
+            "SELECT id FROM accounts WHERE platform=? AND status='deleted' AND delete_batch=?",
+            (platform, batch)
+        ).fetchall()
+        return [r["id"] for r in rows]
+    finally:
+        conn.close()
+
+
+def destroy_batch(platform: str, batch: int) -> int:
+    """按批次彻底删除：物理删除该批次所有账号（走硬删除路径，tombstone + 清统计）。"""
+    ids = list_batch_accounts(platform, batch)
+    destroyed = 0
+    for aid in ids:
+        try:
+            remove_account(platform, aid)
+            destroyed += 1
+        except Exception:
+            pass
+    return destroyed
 
 
 # ── 软删除原状态记录：恢复时还原（banned 还是 banned，不强制回 normal）──

@@ -153,7 +153,8 @@ class GuiApi:
             pass
         if is_soft:
             # 软删除：status='deleted'，数据保留在库（回收站可见），可随时恢复
-            store.soft_delete_account(platform, account_id)
+            # 每次删除动作生成一个批次号（同一次批量删除共用），回收站按批次整组操作
+            store.soft_delete_account(platform, account_id, int(time.time() * 1000))
         else:
             # 硬删除：物理删除 + tombstone 防快照并发回写复活
             store.remove_account(platform, account_id)
@@ -181,9 +182,11 @@ class GuiApi:
             except Exception:
                 pass
         is_soft = str(soft).lower() not in ("0", "false", "no")
+        # 同一次批量删除 = 同一批次号，回收站按批次整组恢复/彻底删除
+        batch = int(time.time() * 1000) if is_soft else None
         for aid in ids:
             if is_soft:
-                store.soft_delete_account(platform, aid)
+                store.soft_delete_account(platform, aid, batch)
             else:
                 store.remove_account(platform, aid)
         # 循环外只 reload 一次：每删一个都 reload 会反复重建内存池并竞争锁，
@@ -244,6 +247,51 @@ class GuiApi:
                 destroyed += 1
             except Exception:
                 pass
+        if destroyed == 0:
+            return json.dumps({"error": "没有可删除的账号"})
+        try:
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.reload(platform)
+        except Exception:
+            pass
+        return json.dumps({"success": True, "destroyed": destroyed})
+
+    def restore_batch(self, platform: str, batch: str) -> str:
+        """回收站按批次恢复：一次删除的一整组账号一起恢复，还原各自原状态。"""
+        try:
+            batch = int(batch)
+        except (ValueError, TypeError):
+            return json.dumps({"error": "无效的批次号"})
+        ids = store.list_batch_accounts(platform, batch)
+        if not ids:
+            return json.dumps({"error": "没有可恢复的账号"})
+        from src.proxy.token_rotator import token_rotator
+        restored = 0
+        failed = 0
+        for aid in ids:
+            try:
+                if store.restore_account(platform, aid):
+                    restored += 1
+                    token_rotator.clear_disabled(aid)
+                else:
+                    failed += 1
+            except Exception:
+                failed += 1
+        if restored == 0:
+            return json.dumps({"error": "没有可恢复的账号"})
+        try:
+            token_rotator.reload(platform)
+        except Exception:
+            pass
+        return json.dumps({"success": True, "restored": restored, "failed": failed})
+
+    def destroy_batch(self, platform: str, batch: str) -> str:
+        """回收站按批次彻底删除：一次删除的一整组账号物理删除。"""
+        try:
+            batch = int(batch)
+        except (ValueError, TypeError):
+            return json.dumps({"error": "无效的批次号"})
+        destroyed = store.destroy_batch(platform, batch)
         if destroyed == 0:
             return json.dumps({"error": "没有可删除的账号"})
         try:

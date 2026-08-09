@@ -935,10 +935,14 @@
         <div v-if="filteredDeletedAccounts.length === 0" style="padding:24px 0;text-align:center;color:var(--text-muted);font-size:13px">
           {{ deletedAccounts.length === 0 ? '回收站是空的' : '没有符合条件的账号' }}
         </div>
-        <template v-for="g in groupedDeletedAccounts" :key="g.label">
+        <template v-for="g in groupedDeletedAccounts" :key="g.batch || 'nb'">
           <div style="display:flex;align-items:center;gap:10px;margin:16px 0 8px">
             <span style="flex:1;height:1px;background:var(--border)"></span>
-            <span style="font-size:12px;font-weight:600;color:var(--text-muted)">{{ g.label }} · {{ g.items.length }}</span>
+            <span style="font-size:12px;font-weight:600;color:var(--text-muted)">{{ g.label }} · {{ g.items.length }} 个</span>
+            <template v-if="g.batch">
+              <button class="btn btn-sm btn-primary" :disabled="recycleBusy" @click="restoreBatch(g.batch)">整组恢复</button>
+              <button class="btn btn-sm btn-danger" :disabled="recycleBusy" @click="destroyBatch(g.batch)">整组删除</button>
+            </template>
             <span style="flex:1;height:1px;background:var(--border)"></span>
           </div>
           <div v-for="d in g.items" :key="d.id"
@@ -1724,24 +1728,25 @@ const vApp = createApp({
       }
       return r;
     });
-    // 按删除时间分组：今天 / 昨天 / 更早，便于批量恢复同批删除的账号
+    // 按删除批次分组：同一次批量删除的账号归为一组，可整组恢复/彻底删除
     const groupedDeletedAccounts = computed(() => {
       const list = filteredDeletedAccounts.value;
-      const today = new Date(); today.setHours(0,0,0,0);
-      const yest = new Date(today.getTime() - 86400000);
-      const groups = [
-        { label: '今天', items: [] },
-        { label: '昨天', items: [] },
-        { label: '更早', items: [] },
-      ];
+      const byBatch = new Map();
       for (const a of list) {
-        if (!a.deleted_at) { groups[2].items.push(a); continue; }
-        const d = new Date(a.deleted_at * 1000); d.setHours(0,0,0,0);
-        if (d.getTime() === today.getTime()) groups[0].items.push(a);
-        else if (d.getTime() === yest.getTime()) groups[1].items.push(a);
-        else groups[2].items.push(a);
+        const key = a.batch ? String(a.batch) : '__nobatch__';
+        if (!byBatch.has(key)) byBatch.set(key, { batch: a.batch, deleted_at: a.deleted_at || 0, items: [] });
+        const g = byBatch.get(key);
+        g.items.push(a);
+        if (!g.deleted_at || (a.deleted_at || 0) < g.deleted_at) g.deleted_at = a.deleted_at || 0;
       }
-      return groups.filter(g => g.items.length > 0);
+      const groups = [...byBatch.values()].sort((x, y) => (y.deleted_at || 0) - (x.deleted_at || 0));
+      return groups.map(g => {
+        const t = g.deleted_at ? new Date(g.deleted_at * 1000) : null;
+        const label = t
+          ? `${t.getMonth()+1}月${t.getDate()}日 ${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')} 删除的一批`
+          : '未分组';
+        return { batch: g.batch, label, items: g.items };
+      });
     });
     const deletedFilterCounts = computed(() => {
       const c = { all: deletedAccounts.value.length, normal: 0, banned: 0, disabled: 0 };
@@ -2718,6 +2723,37 @@ const vApp = createApp({
       finally { recycleBusy.value = false; }
     }
 
+    async function restoreBatch(batch) {
+      if (recycleBusy.value) return;
+      if (!await showConfirm('确定恢复这一整组账号吗？', '整组恢复确认', { okText: '恢复' })) return;
+      recycleBusy.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.restore_batch(currentPlatform.value, String(batch)));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        const failedN = r.failed || 0, restoredN = r.restored || 0;
+        deletedAccounts.value = JSON.parse(await pywebview.api.list_deleted_accounts(currentPlatform.value));
+        deletedSelected.value = {};
+        showToast(`已恢复 ${restoredN} 个${failedN ? '，失败 '+failedN+' 个' : ''}`, restoredN>0?'success':'warning');
+        await loadAccounts();
+        await refreshProxyStatus();
+      } catch(e) { showToast('恢复失败: '+e, 'error'); }
+      finally { recycleBusy.value = false; }
+    }
+
+    async function destroyBatch(batch) {
+      if (recycleBusy.value) return;
+      if (!await showConfirm('确定彻底删除这一整组账号吗？所有数据将永久清除，不可恢复', '整组删除确认', { okText: '删除', danger: true })) return;
+      recycleBusy.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.destroy_batch(currentPlatform.value, String(batch)));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        deletedAccounts.value = JSON.parse(await pywebview.api.list_deleted_accounts(currentPlatform.value));
+        deletedSelected.value = {};
+        showToast(`已彻底删除 ${r.destroyed || 0} 个`, 'success');
+      } catch(e) { showToast('彻底删除失败: '+e, 'error'); }
+      finally { recycleBusy.value = false; }
+    }
+
     async function batchDelete() {
       const ids = Object.keys(selectedIds);
       if (!ids.length) return;
@@ -3405,6 +3441,7 @@ const vApp = createApp({
       editTags, saveTags, removeTagChip,
       openFingerprint, randomFingerprint, saveFingerprint, resetFingerprint,
       openRecycle, restoreDeleted, restoreAllDeleted, restoreSelected, destroyDeleted, destroySelected,
+      restoreBatch, destroyBatch,
       toggleDeletedSelect, selectAllDeleted,
       showQuotaDetail, refreshQuota,
       showOAuthModal, cancelOAuth,
