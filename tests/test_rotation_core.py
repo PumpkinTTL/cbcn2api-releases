@@ -319,10 +319,10 @@ def t_dirty_quota_isolation():
     r = TokenRotator()
     r.reload(PLATFORM)          # 不应抛异常
     check("reload 没有因脏数据崩掉", True)
-    check("三个账号都拿到了估算值",
-          set(r._estimated_remain) == {"d1", "d2", "d3"},
+    check("正常账号拿到估算值", set(r._estimated_remain) == {"d1", "d3"},
           f"{r._estimated_remain}")
-    check("脏账号兜底为 0", r._estimated_remain["d2"] == 0.0)
+    check("脏账号估算缺失（快照守卫不移入估算）", "d2" not in r._estimated_remain)
+    check("脏账号不在估算有效集合", "d2" not in r._estimate_valid)
     check("脏账号之后的 d3 估算值正常（旧代码这里会缺失）",
           r._estimated_remain["d3"] == 800.0, f"d3={r._estimated_remain.get('d3')}")
 

@@ -138,6 +138,9 @@ def make_rotator(ids):
     r._accounts = [Account(id=i, access_token=i, uid=i, nickname=i, status="normal")
                    for i in ids]
     r._estimated_remain = {i: 1000.0 for i in ids}
+    # 模拟"快照有效"：make_rotator 跳过 reload/_refresh_estimates，
+    # 手动填估算时同步填估算有效集合，否则阈值切号被快照守卫拦掉
+    r._estimate_valid = set(ids)
     r._platform = "wb"
     r._current_id = ids[0]
     return r

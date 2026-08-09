@@ -28,6 +28,41 @@ _COOLDOWNS = {
 }
 
 
+def _snapshot_usable(quota_raw: Optional[dict], usage_raw: Optional[dict]) -> bool:
+    """快照形状可用：能解析出至少一个套餐包的额度字段（total/remain 任一可转数字）。
+
+    与 calc_totals 取数路径一致（quota_raw.userResource → usage_raw 兜底）。
+    快照不可用的账号（接口异常/字段缺失）估算不可信：
+    不覆盖内存估算、不触发阈值切号，真实额度耗尽交给上游 429 兜底。
+    """
+    ur = (quota_raw or {}).get("userResource") if quota_raw else None
+    if not ur:
+        ur = usage_raw
+    if not ur or not isinstance(ur, dict):
+        return False
+    try:
+        accounts = (ur.get("data") or {}).get("Response", {}).get("Data", {}).get("Accounts") or []
+    except AttributeError:
+        return False
+    keys = ("CycleCapacitySizePrecise", "CycleCapacitySize",
+            "CapacitySizePrecise", "CapacitySize",
+            "CycleCapacityRemainPrecise", "CycleCapacityRemain",
+            "CapacityRemainPrecise", "CapacityRemain")
+    for a in accounts:
+        if not isinstance(a, dict):
+            continue
+        for k in keys:
+            v = a.get(k)
+            if v is None:
+                continue
+            try:
+                float(str(v).strip())
+                return True
+            except (ValueError, TypeError):
+                continue
+    return False
+
+
 class TokenRotator:
     """粘性优先账号池：锁定一个主账号持续使用，直到它额度耗尽/出错，
     再切到下一个。未被选中的账号保持干净（不轮询消耗）。
@@ -322,6 +357,11 @@ class TokenRotator:
             self._estimated_remain[account_id] = max(0, self._estimated_remain[account_id] - amount)
             if self._threshold <= 0 or self._estimated_remain[account_id] >= self._threshold:
                 return
+            # 快照不可用的账号估算不可信：不触发阈值切号，
+            # 宁可多用一个号，也不把「快照解析失败」误判成额度耗尽。
+            # 真实耗尽由上游 429/14018 → mark_disabled("quota") 兜底处理。
+            if account_id not in self._estimate_valid:
+                return
 
             acc = next((a for a in self._accounts if a.id == account_id), None)
             if not acc or acc.status != "normal":
@@ -427,11 +467,20 @@ class TokenRotator:
             快照可能因结算延迟偏高 —— 取小防估算被抬高导致超用。
             这点对 calibrate=True（手动刷新）同样成立：用户点刷新时网关可能在
             跑，刚扣的几次请求上游未必已结算，直接覆盖会把估算抬回去。
+          - 快照不可用（_snapshot_usable=False）：不覆盖内存估算（保留运行期
+            usage 扣减出的准确值），并移出 _estimate_valid —— 这类账号不触发
+            阈值切号，宁可多用一个号，也不把「快照解析失败」误判成额度耗尽。
+            真实耗尽由上游 429/14018 → mark_disabled("quota") 兜底。
         """
+        self._estimate_valid.clear()
         for acc in self._accounts:
             try:
                 total, used = calc_totals(acc.quota_raw, acc.usage_raw)
                 fresh = max(0, total - used)
+                if not _snapshot_usable(acc.quota_raw, acc.usage_raw):
+                    self._estimate_valid.discard(acc.id)
+                    continue
+                self._estimate_valid.add(acc.id)
                 prev = self._estimated_remain.get(acc.id)
                 if prev is None or prev == 0:
                     self._estimated_remain[acc.id] = fresh
@@ -439,7 +488,7 @@ class TokenRotator:
                     self._estimated_remain[acc.id] = min(fresh, prev)
             except Exception as e:
                 logger.warning("[调度] 账号=%s 额度估算失败: %r", acc.nickname or acc.id, e)
-                self._estimated_remain.setdefault(acc.id, 0.0)
+                self._estimate_valid.discard(acc.id)
 
     def _persist_cooldowns(self):
         with self._lock:
