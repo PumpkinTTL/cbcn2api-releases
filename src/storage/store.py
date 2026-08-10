@@ -51,6 +51,17 @@ def _run_migrations(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE accounts ADD COLUMN delete_batch INTEGER")
     except sqlite3.OperationalError:
         pass
+    # 旧数据补批次：批次功能上线前删除的账号 delete_batch 为 NULL，
+    # 按删除时间（秒）补一个批次号，让回收站旧数据也能整组恢复/删除。
+    # 幂等：补齐后不再命中 WHERE。UPDATE 是 DML，必须显式 commit。
+    try:
+        conn.execute(
+            "UPDATE accounts SET delete_batch = deleted_at * 1000 "
+            "WHERE status='deleted' AND delete_batch IS NULL AND deleted_at IS NOT NULL"
+        )
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
     try:
         conn.execute("ALTER TABLE accounts ADD COLUMN fingerprint TEXT")
     except sqlite3.OperationalError:
