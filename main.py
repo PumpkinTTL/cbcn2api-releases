@@ -22,9 +22,16 @@ from src.gui.app import GuiApi
 APP_TITLE = "AI Gateway"
 
 def _resource(name):
-    """获取资源路径，兼容打包环境。"""
+    """获取资源路径，兼容打包环境（dev / PyInstaller / Nuitka）。
+
+    PyInstaller: 资源在 sys._MEIPASS 解压目录。
+    Nuitka: 无 _MEIPASS，数据文件随 __file__ 解压到临时目录，用其目录解析。
+    """
     if getattr(sys, 'frozen', False):
-        return os.path.join(sys._MEIPASS, name)
+        base = getattr(sys, '_MEIPASS', None)
+        if base is None:
+            base = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(base, name)
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
 
 
