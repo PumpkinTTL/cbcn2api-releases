@@ -11,3 +11,7 @@ test_out.txt
 
 # IDE / 编辑器配置
 .zcode/
+.freebuff/
+.idea/
+.vscode/
+*.swp
