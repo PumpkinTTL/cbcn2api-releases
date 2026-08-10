@@ -34,7 +34,6 @@ echo [2/3] 开始 Nuitka 编译（首次 5~15 分钟）...
     --include-package=starlette ^
     --include-package=pydantic ^
     --include-package=requests ^
-    --include-package=webview ^
     --include-package=clr_loader ^
     --include-package=pythonnet ^
     --enable-plugin=pywebview ^
@@ -44,9 +43,8 @@ echo [2/3] 开始 Nuitka 编译（首次 5~15 分钟）...
     --mingw64 ^
     --assume-yes-for-downloads ^
     --lto=yes ^
-    --work-dir=E:\Nuitka\work ^
     --output-dir=dist ^
-    --output-filename="AI Gateway v1.0.8.exe" ^
+    --output-filename="AI Gateway v1.0.8-Nuitka.exe" ^
     main.py
 
 if %errorlevel% neq 0 (
@@ -55,5 +53,5 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [3/3] 完成: dist\AI Gateway v1.0.8.exe
+echo [3/3] 完成: dist\AI Gateway v1.0.8-Nuitka.exe
 pause
