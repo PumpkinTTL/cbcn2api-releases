@@ -553,7 +553,7 @@ def regenerate_theme_js(theme: str):
     # 找 gui 目录：dev 模式在源码树，打包模式在 sys._MEIPASS（只读，写入会失败，
     # 由调用方 try/except 兜底，回退到 onMounted 的 IPC 读主题）
     if getattr(sys, "frozen", False):
-        base = sys._MEIPASS
+        base = getattr(sys, "_MEIPASS", None) or os.path.dirname(sys.executable)
     else:
         base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         base = os.path.dirname(base)  # src/storage → src → 项目根

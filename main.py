@@ -8,6 +8,12 @@ import pathlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# 统一打包环境标记：PyInstaller 会设置 sys.frozen，Nuitka 不设置（只注入 __compiled__）。
+# 这里补齐，让 license/updater/store 等模块的 getattr(sys, "frozen", False) 判断
+# 在两种构建方式下行为一致（Nuitka 走 frozen 分支：远程授权服务器/资源解压目录）。
+if getattr(sys, "frozen", False) or "__compiled__" in globals():
+    sys.frozen = True
+
 # Windows 任务栏图标：设置 AppUserModelID 让系统识别为独立应用，
 # 否则任务栏显示 python.exe 默认图标。必须在创建窗口前调用。
 if sys.platform == "win32":
@@ -25,12 +31,12 @@ def _resource(name):
     """获取资源路径，兼容打包环境（dev / PyInstaller / Nuitka）。
 
     PyInstaller: 资源在 sys._MEIPASS 解压目录。
-    Nuitka: 无 _MEIPASS，数据文件随 __file__ 解压到临时目录，用其目录解析。
+    Nuitka: 无 _MEIPASS，数据文件随 exe 解压到临时目录（sys.executable 所在目录）。
     """
     if getattr(sys, 'frozen', False):
         base = getattr(sys, '_MEIPASS', None)
         if base is None:
-            base = os.path.dirname(os.path.abspath(__file__))
+            base = os.path.dirname(sys.executable)
         return os.path.join(base, name)
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
 
