@@ -79,29 +79,49 @@ def download_update(download_url: str, progress_callback=None) -> dict:
             target_dir = tempfile.gettempdir()
         final_path = os.path.join(target_dir, f"AI Gateway {tag}.exe")
         tmp_path = final_path + ".part"
-        resp = requests.get(download_url, stream=True, timeout=30, proxies=_proxy())
-        if resp.status_code != 200:
+        # 断点续传：.part 已存在的字节数作为 Range 起点
+        offset = 0
+        try:
+            offset = os.path.getsize(tmp_path) if os.path.exists(tmp_path) else 0
+        except OSError:
+            offset = 0
+        headers = {"Range": f"bytes={offset}-"} if offset > 0 else {}
+        resp = requests.get(download_url, stream=True, timeout=30, proxies=_proxy(), headers=headers)
+        # 206=续传命中（从 offset 续写）；200=全新下载（服务器不支持 Range 或文件已变，回退重头）
+        if resp.status_code == 206:
+            cr = resp.headers.get("Content-Range", "")
+            try:
+                total = int(cr.split("/")[-1])
+            except (ValueError, IndexError):
+                total = 0
+            mode = "ab"
+            downloaded = offset
+        elif resp.status_code == 200:
+            total = int(resp.headers.get("content-length", 0))
+            mode = "wb"
+            offset = 0
+            downloaded = 0
+        else:
             return {"error": f"下载失败: HTTP {resp.status_code}"}
-        total = int(resp.headers.get("content-length", 0))
-        downloaded = 0
+        # 续传时立即反映已下载进度，避免 UI 从 0% 跳起
+        if progress_callback and total > 0 and offset > 0:
+            progress_callback(int(downloaded * 100 / total))
         chunk_size = 65536
-        with open(tmp_path, "wb") as f:
+        with open(tmp_path, mode) as f:
             for chunk in resp.iter_content(chunk_size=chunk_size):
                 if chunk:
                     f.write(chunk)
                     downloaded += len(chunk)
                     if progress_callback and total > 0:
                         progress_callback(int(downloaded * 100 / total))
+        # 完整性校验：累计字节数必须等于 total（不完整保留 .part，下次可继续续传）
         if total > 0 and downloaded != total:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
             return {"error": "下载不完整"}
         # 下载完成：替换为目标文件名（覆盖同名旧下载）
         os.replace(tmp_path, final_path)
         return {"ok": True, "path": final_path, "size": downloaded, "tag": tag}
     except Exception as e:
+        # 异常（网络中断等）保留 .part，下次调用可从断点继续
         return {"error": f"下载失败: {e}"}
 
 
