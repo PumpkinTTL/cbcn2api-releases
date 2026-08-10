@@ -119,7 +119,7 @@
     </nav>
     <div class="sidebar-nav-section">推荐</div>
     <nav class="sidebar-nav">
-      <button class="nav-item shop-item" :class="{ active: currentView === 'shop-cards' }" @click="showShopCards">
+      <button class="nav-item shop-item" v-if="false" :class="{ active: currentView === 'shop-cards' }" @click="showShopCards">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 01-8 0"/></svg>
         联营店铺
       </button>
@@ -736,7 +736,7 @@
     </div>
 
     <!-- ── Shop Cards ── -->
-    <div class="shop-cards" id="shopCardsView" v-show="currentView === 'shop-cards'">
+    <div class="shop-cards" id="shopCardsView" v-if="false">
       <div class="shop-cards-header">联营店铺</div>
       <div class="shop-cards-desc">
         <h4>关于流量卡</h4>
