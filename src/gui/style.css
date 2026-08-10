@@ -328,9 +328,6 @@ body {
 .about-block { display: flex; flex-direction: column; gap: 8px; }
 .about-block-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
 .about-block-content { font-size: 14px; color: var(--text); line-height: 1.8; }
-.about-wechat-label { color: var(--text-muted); margin-right: 8px; }
-.about-wechat-value { font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: .5px; }
-.about-wechat-icon { color: #07c160; flex-shrink: 0; margin-right: 8px; vertical-align: -2px; }
 .about-disclaimer-text p { margin: 0; font-size: 13px; color: var(--text-secondary); }
 .about-license-row {
   display: flex; align-items: center; gap: 10px;
