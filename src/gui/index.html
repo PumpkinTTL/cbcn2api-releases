@@ -1924,8 +1924,11 @@ const vApp = createApp({
       if (regionFilter.value !== 'all') {
         result = result.filter(a => {
           const phone = normalizePhone(a);
-          if (regionFilter.value === 'hk') return phone.startsWith('852');
-          if (regionFilter.value === 'cn') return phone.length === 11 && !phone.startsWith('852');
+          if (!phone) return false;
+          // 大陆号：11 位且非 852 开头；其余（8 位香港本地号、852 开头等）一律算香港号
+          const isCN = phone.length === 11 && !phone.startsWith('852');
+          if (regionFilter.value === 'hk') return !isCN;
+          if (regionFilter.value === 'cn') return isCN;
           return true;
         });
       }
