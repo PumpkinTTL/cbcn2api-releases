@@ -1293,6 +1293,61 @@ input[type="number"] { -moz-appearance: textfield; }
 }
 
 /* Account Grid & Cards */
+/* 账号统计概览栏：状态项可点切换筛选，低积分告警只读。
+   紧凑横排，数字大（等宽）、标签小、状态色点在数字前 */
+/* 概览统计行：融入 filter-bar 同一容器，独占一行（flex-basis 100%），
+   顶部虚线与上方控件分隔；底色继承 filter-bar（surface 卡片） */
+.accounts-overview {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  flex-basis: 100%;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.overview-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  user-select: none;
+}
+.overview-item:hover { background: var(--surface-hover); }
+.overview-item.active { background: var(--primary-light); }
+.overview-item.active .overview-num,
+.overview-item.active .overview-label { color: var(--primary); }
+.overview-num {
+  font-size: 17px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  line-height: 1;
+  color: var(--text);
+}
+.overview-label { font-size: 11px; color: var(--text-muted); line-height: 1; }
+/* 状态色点（::before 放数字前） */
+.overview-normal::before,
+.overview-disabled::before,
+.overview-banned::before,
+.overview-warn::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.overview-normal::before { background: #22c55e; }
+.overview-disabled::before { background: #94a3b8; }
+.overview-banned::before { background: #ef4444; }
+.overview-warn::before { background: #f59e0b; }
+/* 排序下拉推到概览栏最右 */
+.overview-sort { margin-left: auto; }
+
 .account-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));

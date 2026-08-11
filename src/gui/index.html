@@ -424,6 +424,10 @@
             <span v-if="batchFingerprintLoading" class="spinner-sm"></span>
             <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M5.625 12.5c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5"/><path d="M9.625 12.5c0-1.5 1.2-2.75 2.875-2.75s2.875 1.25 2.875 2.75c0 2.5-1.1 4.75-2.875 6.25"/><path d="M5.625 12.5c0 3 1.6 5.5 4 7"/><path d="M8.625 9.5c-1.6 1.2-2.75 3-2.75 4.75 0 1.5.4 2.75 1 4"/></svg> 指纹</template>
           </button>
+          <button class="btn btn-sm btn-ghost" :disabled="selectedCount === 0 || batchTagLoading" @click="openBatchTags" title="批量设置选中账号的标签（替换原有标签）">
+            <span v-if="batchTagLoading" class="spinner-sm"></span>
+            <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><circle cx="7" cy="7" r="1.5" fill="currentColor"/></svg> 标签</template>
+          </button>
           <button class="btn btn-sm btn-ghost" :disabled="selectedCount === 0 || batchStatusLoading" @click="batchEnable" title="启用选中的禁用账号">
             <span v-if="batchStatusLoading" class="spinner-sm"></span>
             <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg> 启用</template>
@@ -543,6 +547,44 @@
             </div>
           </div>
         </div>
+      <!-- 账号统计概览：一眼看全局健康度；状态项可点切换筛选，低积分告警为只读统计 -->
+      <div class="accounts-overview" v-show="accounts.length">
+        <div class="overview-item" :class="{ active: statusFilter==='all' }" @click="selectStatusFilter('all')" title="全部账号">
+          <span class="overview-num">{{ accounts.length }}</span>
+          <span class="overview-label">总数</span>
+        </div>
+        <div class="overview-item overview-normal" :class="{ active: statusFilter==='normal' }" @click="selectStatusFilter('normal')" title="点击只看正常账号">
+          <span class="overview-num">{{ statusCount('normal') }}</span>
+          <span class="overview-label">正常</span>
+        </div>
+        <div class="overview-item overview-disabled" :class="{ active: statusFilter==='disabled' }" @click="selectStatusFilter('disabled')" title="点击只看已禁用账号">
+          <span class="overview-num">{{ statusCount('disabled') }}</span>
+          <span class="overview-label">已禁用</span>
+        </div>
+        <div class="overview-item overview-banned" :class="{ active: statusFilter==='banned' }" @click="selectStatusFilter('banned')" title="点击只看封禁账号">
+          <span class="overview-num">{{ statusCount('banned') }}</span>
+          <span class="overview-label">封禁</span>
+        </div>
+        <div class="overview-item overview-warn" :class="{ active: dangerOnly }" @click="toggleDangerOnly" title="点击只看低积分告警账号（使用率 ≥80%）；再点关闭">
+          <span class="overview-num">{{ lowQuotaCount }}</span>
+          <span class="overview-label">低积分告警</span>
+        </div>
+        <!-- 排序：复用 status-dropdown 组件，推到概览栏最右 -->
+        <div class="status-dropdown overview-sort" :class="{ open: sortOpen }" @click.stop="sortOpen = !sortOpen" title="账号列表排序方式">
+          <div class="status-dropdown-trigger">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M6 12h12M10 18h4"/></svg>
+            <span>{{ sortLabel }}</span>
+            <svg class="status-dropdown-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          </div>
+          <div class="status-dropdown-menu" v-show="sortOpen" style="min-width:150px">
+            <div class="status-dropdown-item" :class="{ active: sortKey==='default' }" @click.stop="setSort('default')">默认排序</div>
+            <div class="status-dropdown-item" :class="{ active: sortKey==='quota_asc' }" @click.stop="setSort('quota_asc')">积分 · 低到高</div>
+            <div class="status-dropdown-item" :class="{ active: sortKey==='quota_desc' }" @click.stop="setSort('quota_desc')">积分 · 高到低</div>
+            <div class="status-dropdown-item" :class="{ active: sortKey==='name' }" @click.stop="setSort('name')">名称</div>
+            <div class="status-dropdown-item" :class="{ active: sortKey==='created' }" @click.stop="setSort('created')">最近添加</div>
+          </div>
+        </div>
+      </div>
       </div>
 
       <!-- Account Grid -->
@@ -912,6 +954,19 @@
               </span>
             </div>
           </div>
+          <div class="settings-item">
+            <div class="settings-item-label">
+              <span class="settings-item-name">问题反馈</span>
+              <span class="settings-item-desc">遇到问题？导出诊断信息（含版本 / 系统 / 日志）发送给我们排查</span>
+            </div>
+            <div class="settings-item-control">
+              <button class="btn btn-ghost btn-sm" :disabled="exporting" @click="exportDiagnostics" title="导出诊断信息为文本文件">
+                <span v-if="exporting" class="spinner-sm"></span>
+                <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+                {{ exporting ? '导出中…' : '导出诊断信息' }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1106,26 +1161,29 @@
   </div>
 
 
-  <!-- Tag Edit Modal -->
+  <!-- Tag Edit Modal（单账号 / 批量复用：batchTagMode 控制语义） -->
   <div class="modal-overlay" id="tagModal" :class="{ show: activeModal === 'tagEdit' }">
     <div class="modal" style="max-width:380px">
       <div class="modal-header">
-        <h2>编辑标签</h2>
-        <p>{{ tagEditAccountName }}</p>
+        <h2>{{ batchTagMode ? '批量打标签' : '编辑标签' }}</h2>
+        <p>{{ batchTagMode ? `已选 ${selectedCount} 个账号 · 将替换其标签` : tagEditAccountName }}</p>
       </div>
       <div class="modal-body">
         <div class="form-group">
           <label>标签（逗号或空格分隔，如：主号, 备用, 测试）</label>
-          <input v-model="tagEditInput" type="text" placeholder="主号, 备用, 测试" @keyup.enter="saveTags"
+          <input v-model="tagEditInput" type="text" :placeholder="batchTagMode ? '留空则清空选中账号的标签' : '主号, 备用, 测试'" @keyup.enter="saveTags"
             style="width:100%;height:32px;padding:0 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:13px;outline:none;font-family:inherit;box-sizing:border-box">
         </div>
-        <div v-if="(tagEditAccount.tags || []).length" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px">
+        <div v-if="!batchTagMode && (tagEditAccount.tags || []).length" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px">
           <span v-for="t in tagEditAccount.tags" :key="t" class="tag-pill" @click="removeTagChip(t)" title="点击移除">{{ t }} ×</span>
         </div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" @click="activeModal = null">取消</button>
-        <button class="btn btn-primary" @click="saveTags">保存</button>
+        <button class="btn btn-primary" :disabled="batchTagLoading" @click="saveTags">
+          <span v-if="batchTagLoading" class="spinner-sm"></span>
+          {{ batchTagMode ? '应用到选中' : '保存' }}
+        </button>
       </div>
     </div>
   </div>
@@ -1322,7 +1380,7 @@
           <li>修复更新后机器码变化导致需要重新激活的问题</li>
           <li>修复删除确认弹窗备注输入框与按钮重叠的问题</li>
           <li>修复窗口最大化时显示异常的问题</li>
-          <li>修复部分永久离线激活码无法正常激活的问题</li>
+          <li>修复部分离线激活码无法正常激活的问题</li>
         </ul>
 
         <div class="changelog-section-title">功能新增</div>
@@ -1331,6 +1389,10 @@
           <li>在线更新支持断点续传，下载中断后从断点继续</li>
           <li>新增账号积分区间筛选，可按剩余积分范围快速过滤账号</li>
           <li>新增「设置」中心，关闭行为、主题、运行参数集中管理</li>
+          <li>账号统计概览：筛选栏内显示总数、各状态、低积分告警，点击数字可快速筛选对应账号</li>
+          <li>账号排序：支持按剩余积分、名称、最近添加排序</li>
+          <li>批量打标签：多选账号后一键设置标签</li>
+          <li>问题反馈：关于页可一键导出诊断信息（版本 / 系统 / 日志）便于排查</li>
         </ul>
 
         <div class="changelog-section-title">体验优化</div>
@@ -1340,6 +1402,7 @@
           <li>统一状态、标签、地区筛选下拉样式</li>
           <li>对话框与关闭确认弹窗按钮增加图标，操作更直观</li>
           <li>验活入口移至工具栏独立按钮，启动阈值统一在设置页管理</li>
+          <li>全局异常捕获：未处理错误自动记录到运行日志，配合诊断导出形成报错闭环</li>
         </ul>
 
         <div class="changelog-version" style="margin-top:24px">v1.0.8</div>
@@ -1875,6 +1938,28 @@ const PRESET_MODELS = [
   { id:'deepseek-v4-pro', provider:'deepseek', name:'Deepseek-V4-Pro' },
 ].map(m => ({ ...m, icon: MODEL_ICONS[m.provider] || MODEL_ICONS.auto }));
 
+// ── 全局 JS 异常兜底：未捕获错误 / Promise 拒绝 → 写 runtime.log（诊断闭环）──
+// pywebview.api 在报错发生时若未就绪则静默（try/catch 兜底），不二次抛出
+window.addEventListener('error', function(e) {
+  try {
+    pywebview.api.log_js_error(
+      String(e.message || ''),
+      String(e.filename || ''),
+      e.lineno || 0, e.colno || 0,
+      String((e.error && e.error.stack) || '')
+    );
+  } catch (_) {}
+});
+window.addEventListener('unhandledrejection', function(e) {
+  try {
+    var r = e.reason;
+    pywebview.api.log_js_error(
+      '未处理的 Promise 拒绝: ' + ((r && (r.stack || r.message)) || String(r)),
+      '', 0, 0, (r && r.stack) || ''
+    );
+  } catch (_) {}
+});
+
 const vApp = createApp({
   setup() {
     // ── 核心状态 ──
@@ -1917,6 +2002,8 @@ const vApp = createApp({
     const tagFilterOpen = ref(false);
     const tagEditAccount = ref({});
     const tagEditInput = ref('');
+    const batchTagMode = ref(false);   // 标签 modal 批量模式（复用 modal，true=循环应用到选中）
+    const batchTagLoading = ref(false);
     const tagEditAccountName = computed(() => tagEditAccount.value.nickname || tagEditAccount.value.email || tagEditAccount.value.id || '');
     const allTags = computed(() => {
       const set = new Set();
@@ -2170,13 +2257,6 @@ const vApp = createApp({
           return true;
         });
       }
-      if (proxyCurrentAccount.value) {
-        result = [...result].sort((a,b) => {
-          if (a.id === proxyCurrentAccount.value) return -1;
-          if (b.id === proxyCurrentAccount.value) return 1;
-          return 0;
-        });
-      }
       // 积分区間过滤：开启时只显示剩余积分落在 [min,max] 的账号。
       // min/max 留空表示该侧不限。无额度数据的账号在开启时排除（保守不显示）。
       if (lowQuotaActive.value) {
@@ -2186,6 +2266,30 @@ const vApp = createApp({
           const r = getCardQuota(a)?.adjRemain;
           if (r === undefined || r === null || isNaN(r)) return false;
           return r >= min && r <= max;
+        });
+      }
+      // 低积分告警过滤（概览栏 toggle）：只看使用率≥80% 的账号
+      if (dangerOnly.value) {
+        result = result.filter(a => getCardQuota(a)?.cls === 'danger');
+      }
+      // 排序（default 除外）：在过滤之后、置顶之前，保证当前代理账号始终第一、其余按所选维度
+      if (sortKey.value !== 'default') {
+        result = [...result].sort((a, b) => {
+          switch (sortKey.value) {
+            case 'quota_asc': return (getCardQuota(a)?.adjRemain ?? Infinity) - (getCardQuota(b)?.adjRemain ?? Infinity);
+            case 'quota_desc': return (getCardQuota(b)?.adjRemain ?? -Infinity) - (getCardQuota(a)?.adjRemain ?? -Infinity);
+            case 'name': return (a.nickname || a.email || '').localeCompare(b.nickname || b.email || '');
+            case 'created': return (b.created_at || 0) - (a.created_at || 0);
+            default: return 0;
+          }
+        });
+      }
+      // 当前代理账号置顶（最后做，保证它始终第一，其余保持上面的排序）
+      if (proxyCurrentAccount.value) {
+        result = [...result].sort((a,b) => {
+          if (a.id === proxyCurrentAccount.value) return -1;
+          if (b.id === proxyCurrentAccount.value) return 1;
+          return 0;
         });
       }
       return result;
@@ -2228,6 +2332,23 @@ const vApp = createApp({
 
     function getStatusBadgeClass(a) { const s=a.status||'normal'; if(s==='banned')return 'badge-status-banned'; if(s==='disabled')return 'badge-status-disabled'; return 'badge-status-normal'; }
     function getStatusText(a) { const s=a.status||'normal'; if(s==='banned')return '封禁'; if(s==='disabled')return '已禁用'; return '正常'; }
+
+    // 账号统计概览：按状态计数（可点切换筛选）+ 低积分告警计数（cls=danger，只读）
+    function statusCount(s) { return accounts.value.filter(a => (a.status||'normal') === s).length; }
+    const lowQuotaCount = computed(() => accounts.value.filter(a => getCardQuota(a)?.cls === 'danger').length);
+
+    // 低积分告警过滤（概览栏点击 toggle）：只保留 cls==='danger' 的账号
+    const dangerOnly = ref(false);
+    function toggleDangerOnly() { dangerOnly.value = !dangerOnly.value; }
+
+    // 账号排序：default=原始顺序，其余按维度（过滤后、置顶前生效）
+    const sortKey = ref('default');
+    const sortOpen = ref(false);
+    const sortLabel = computed(() => ({
+      default: '默认排序', quota_asc: '积分 · 低到高', quota_desc: '积分 · 高到低',
+      name: '名称', created: '最近添加',
+    }[sortKey.value]));
+    function setSort(k) { sortKey.value = k; sortOpen.value = false; }
     function getPlanBadgeClass(a) {
       const pkg = a.quota_raw?.userResource?.data?.Response?.Data?.Accounts;
       let isPro=false, isTrial=false;
@@ -2535,6 +2656,27 @@ const vApp = createApp({
       } catch {}
     }
 
+    // ─── 诊断信息导出（用户报错闭环：版本/机器码/系统/日志打包成 txt）───
+    const exporting = ref(false);
+    async function exportDiagnostics() {
+      if (exporting.value) return;
+      exporting.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.export_diagnostics());
+        if (r.ok) {
+          showToast(`诊断信息已导出至：${r.path}`, 'success');
+        } else if (r.cancelled) {
+          // 用户取消，静默
+        } else if (r.error) {
+          showToast(`导出失败：${r.error}`, 'error');
+        }
+      } catch (e) {
+        showToast(`导出失败：${e}`, 'error');
+      } finally {
+        exporting.value = false;
+      }
+    }
+
     // ─── Detect & enable（并发验活全部账号，达标则启用）───
     const detectThresholdTemp = ref(0);
     const detectTargetCount = computed(() => accounts.value.length);
@@ -2673,9 +2815,19 @@ const vApp = createApp({
     async function editTags(id) {
       const acc = accounts.value.find(a => a.id === id);
       if (!acc) return;
+      batchTagMode.value = false;  // 单账号模式
       tagEditAccount.value = acc;
       tagEditInput.value = (acc.tags || []).join(', ');
       moreOpenId.value = null;
+      activeModal.value = 'tagEdit';
+    }
+
+    // 批量打标签：复用标签 modal，batchTagMode=true 时 saveTags 循环应用到所有选中
+    function openBatchTags() {
+      if (!selectedCount.value) return;
+      batchTagMode.value = true;
+      tagEditAccount.value = { tags: [] };  // 占位，避免模板访问 .tags 报错
+      tagEditInput.value = '';
       activeModal.value = 'tagEdit';
     }
 
@@ -2687,6 +2839,27 @@ const vApp = createApp({
     async function saveTags() {
       const raw = (tagEditInput.value || '').split(/[,，\s]+/).map(s => s.trim()).filter(Boolean);
       const tags = [...new Set(raw)];
+      // 批量模式：循环 update_tags 到所有选中账号（替换语义）
+      if (batchTagMode.value) {
+        const ids = Object.keys(selectedIds);
+        if (!ids.length) { showToast('未选中账号', 'error'); return; }
+        batchTagLoading.value = true;
+        let ok = 0, fail = 0;
+        try {
+          for (const id of ids) {
+            try {
+              const r = JSON.parse(await pywebview.api.update_tags(currentPlatform.value, id, JSON.stringify(tags)));
+              if (r.error) fail++; else ok++;
+            } catch { fail++; }
+          }
+          showToast(`已${tags.length ? '设置' : '清空'}标签：${ok} 个成功${fail ? '，' + fail + ' 个失败' : ''}`, fail ? 'warn' : 'success');
+          activeModal.value = null;
+          await loadAccountsLight();
+        } catch(e) { showToast('批量打标签失败: ' + e, 'error'); }
+        finally { batchTagLoading.value = false; }
+        return;
+      }
+      // 单账号模式
       try {
         const r = JSON.parse(await pywebview.api.update_tags(currentPlatform.value, tagEditAccount.value.id, JSON.stringify(tags)));
         if (r.error) { showToast(r.error, 'error'); return; }
@@ -3768,6 +3941,7 @@ const vApp = createApp({
       batchFpAccounts, batchFpCount,
       proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, quotaThreshold, proxyToggling,
       enableThreshold, detecting, detectProgress, detectThresholdTemp, detectTargetCount,
+      exporting, exportDiagnostics,
       chatCardCollapsed, chatMessages, chatInput, chatSending, modelList, currentModel, modelDropdownOpen,
       syncLoading, syncLabel, wbExportLoading, wbExportLabel, cbExportLoading, cbExportLabel, exportDdOpen, chatMessagesRef,
       exportLoading, checkinAllLoading, refreshAllLoading, accountsRefreshLoading, cardLoading, moreOpenId,
@@ -3776,6 +3950,9 @@ const vApp = createApp({
       deletedAccounts, recycleBusy, deletedSelected, deletedSelectedCount, allDeletedSelected,
       deletedFilter, deletedKeyword, deletedFilters, deletedDateFilter, deletedDateFilterOpen, deletedDateFilters, deletedCustomDate, rCalOpen, rCalPickDay, rCalIsSelected, filteredDeletedAccounts, groupedDeletedAccounts, deletedFilterCounts,
       allSelected, someSelected, selectedCount, lowQuotaMin, lowQuotaMax, lowQuotaActive,
+      statusCount, lowQuotaCount,
+      dangerOnly, toggleDangerOnly,
+      sortKey, sortOpen, sortLabel, setSort,
       usageSummary, usageCacheRate,
       oauthUrlText, oauthStatusHtml,
       importJsonText, importLoading,
@@ -3801,6 +3978,7 @@ const vApp = createApp({
       batchEnable, batchDisable, batchRefresh, batchCheckin,
       openBatchFingerprint, batchRandomFingerprint, randomOneFingerprint, saveOneFingerprint,
       editTags, saveTags, removeTagChip,
+      batchTagMode, batchTagLoading, openBatchTags,
       openFingerprint, randomFingerprint, saveFingerprint, resetFingerprint,
       openRecycle, restoreDeleted, restoreAllDeleted, restoreSelected, destroyDeleted, destroySelected,
       restoreBatch, destroyBatch, editBatchNote,

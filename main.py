@@ -175,6 +175,15 @@ def _mark_started():
 
 
 def main():
+    # 运行日志 + 全局异常捕获（主线程/子线程未捕获异常落 runtime.log，
+    # 配合「导出诊断信息」形成报错-排错闭环）。初始化失败不阻断启动。
+    try:
+        from src.gui.log_setup import setup_logging, install_excepthooks
+        setup_logging()
+        install_excepthooks()
+    except Exception:
+        pass
+
     api = GuiApi()
 
     window = webview.create_window(

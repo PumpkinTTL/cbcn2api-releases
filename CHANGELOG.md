@@ -5,14 +5,16 @@
 
 ## [v1.0.9] — 2026-08-12
 
-离线激活码永久码修复 + 窗口最大化跨线程修复 + 托盘交互重构 + 设置中心 + 积分区间筛选 + 工具栏/对话框 UI 统一。
+离线激活码生成修复 + 窗口最大化跨线程修复 + 托盘交互重构 + 设置中心 + 积分区间筛选 + 工具栏/对话框 UI 统一。
 
-### 离线激活码永久码修复（`lic-admin/server.py` 已部署 + 客户端清理）
+### 离线激活码生成修复（`lic-admin/server.py` 已部署 + 客户端清理）
+
+> 离线激活码在客户端仅当前会话有效（`src/license.py`：激活后存内存、关闭即作废），属单次授权。`exp` 只控制验签时间窗口；下文「长期码」指 `duration=0`（exp 取 `0xFFFFFFFF`，即 2106 年）的码，不等于永久授权。
 
 - **双层根因**：
-  1. 永久授权 `exp` 原填 `0xFFFFFFFF`，超过 32 位无符号上限，编码时被截断成 1970 年附近时间戳，验签时 `exp` 校验异常。
-  2. 离线码算法确定性（80bit = `exp:32` + `HMAC sig:48`，见 `src/license_core.py`），同一 `exp` 永远生成同一码字符串；永久码若共用一个 `exp`，跨批次生成完全相同的码，命中客户端 `offline_license_records` 防重用表，第二次即被判「该码已用过」。
-- **修复**：永久码 `base_exp` 改为 `0xFFFFFFFF - secrets.randbelow(0x10000000)` 随机起算——既不溢出 32 位，又让每个永久码 `exp` 各不相同，避免码字符串碰撞。
+  1. 长期码（`duration=0`）`exp` 原填 `0xFFFFFFFF`，超过 32 位无符号上限，编码时被截断成 1970 年附近时间戳，验签时 `exp` 校验异常。
+  2. 离线码算法确定性（80bit = `exp:32` + `HMAC sig:48`，见 `src/license_core.py`），同一 `exp` 永远生成同一码字符串；长期码若共用一个 `exp`，跨批次生成完全相同的码，命中客户端 `offline_license_records` 防重用表，第二次即被判「该码已用过」。
+- **修复**：长期码 `base_exp` 改为 `0xFFFFFFFF - secrets.randbelow(0x10000000)` 随机起算——既不溢出 32 位，又让每个码 `exp` 各不相同，避免码字符串碰撞。
 - **客户端**：清理本地 `offline_license_records`（`src/storage/store.py`）中因旧算法残留的失效记录。
 
 ### 窗口最大化跨线程修复（`main.py`）
@@ -41,6 +43,26 @@
 - **对话框图标**：`showConfirm` / `showCloseChoice` 按钮增加语义图标（取消 / 确定 / 危险 / 退出 / 最小化到托盘）。
 - **筛选下拉统一**：状态 / 标签 / 地区筛选由 native `select` 改为 `status-dropdown` 组件。
 - **细节**：全局隐藏 `input[type=number]` 浏览器自带 spinner；积分区间输入居中对齐，占位「最小/最大」对称。
+
+### 诊断导出 + 全局异常捕获（报错-排错闭环）
+
+- **运行日志基础设施**（`src/gui/log_setup.py` 新建）：`RotatingFileHandler` 落 `~/.cbcn2api/runtime.log`（1MB × 1 备份）；`install_excepthook` 装 `sys.excepthook` + `threading.excepthook`，主线程/子线程未捕获异常栈写日志；`main.py` 启动即初始化，失败不阻断启动。
+- **JS 异常兜底**（`index.html`）：`window.onerror` + `unhandledrejection` → `pywebview.api.log_js_error` → `write_runtime_log`，前端未捕获错误也进 runtime.log。
+- **诊断导出**（`app.py export_diagnostics`）：打包版本/机器码/系统/授权/事件日志（`proxy_logs` 两平台最近 500 条合并按时间倒序）/runtime.log 末尾 300 行 → `create_file_dialog(SAVE)` 让用户存 txt。关于页「问题反馈」项触发。
+
+### 账号统计概览栏（`index.html` + `style.css`）
+
+- filter-bar 与 account-grid 之间新增 `.accounts-overview`：总数 / 正常 / 已禁用 / 封禁 / 低积分告警（`cls==='danger'` 即使用率≥80% 的计数，只读）。
+- 状态项可点切换 `statusFilter`（复用 `selectStatusFilter`），`active` 态联动当前筛选高亮；状态色点 `::before`。
+
+### 账号排序（`index.html`）
+
+- `filteredAccounts` 重构为「过滤 → 积分区间 → 排序 → 置顶」四层，置顶最后做保证当前代理账号始终第一、其余按所选维度。
+- `sortKey`：`default` / `quota_asc` / `quota_desc`（按 `getCardQuota().adjRemain`）/ `name`（`localeCompare`）/ `created`（`created_at` 倒序）。概览栏右侧复用 `status-dropdown` 切换。
+
+### 批量打标签（`index.html`）
+
+- 复用标签编辑 modal（`batchTagMode` 标志）：批量操作区「标签」按钮 → `openBatchTags` 置批量模式；`saveTags` 批量分支循环 `update_tags` 到所有选中账号（替换语义），统计成功/失败数。单账号 `editTags` 重置标志，modal 标题/描述/占位随模式动态切换。
 
 > v1.0.9 早期已发布内容（机器码稳定、回收站批次备注、在线更新断点续传、回收站布局优化）技术细节见此前提交，用户向更新条目见应用内更新日志。
 

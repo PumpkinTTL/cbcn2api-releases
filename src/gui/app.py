@@ -1641,6 +1641,105 @@ class GuiApi:
         store.save_setting("log_enabled", "1" if enabled else "0")
         return json.dumps({"ok": True, "enabled": enabled})
 
+    def export_diagnostics(self) -> str:
+        """打包诊断信息为 txt：版本/机器码/系统/授权/事件日志/运行日志，弹保存对话框。
+
+        面向「用户报错 → 一键导出 → 开发者排错」闭环。事件日志来自 proxy_logs
+        （各平台最近 500 条合并按时间倒序）；运行日志来自 DB_DIR/runtime.log
+        （由全局异常捕获写入，若不存在则跳过）。
+        """
+        import platform as _plat
+        from src.updater import APP_VERSION
+        lines = []
+        lines.append("=" * 60)
+        lines.append("AI Gateway 诊断信息")
+        lines.append("=" * 60)
+        lines.append(f"导出时间: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append(f"版本: {APP_VERSION}")
+        try:
+            from src import license as lic
+            mc = lic.machine_code()
+        except Exception as e:
+            mc = f"获取失败: {e!r}"
+        lines.append(f"机器码: {mc}")
+        lines.append(f"操作系统: {_plat.platform()}")
+        lines.append(f"架构: {_plat.machine()}")
+        lines.append(f"Python: {_plat.python_version()}")
+        lines.append(f"数据目录: {store.DB_DIR}")
+        lines.append(f"授权检查: {'需授权' if _LICENSE_ENABLED else '免授权'}")
+        lines.append("")
+        lines.append("-" * 60)
+        lines.append("事件日志（最近 500 条）")
+        lines.append("-" * 60)
+        try:
+            from src.storage.store import list_logs
+            all_logs = []
+            for p in ("workbuddy", "codebuddy"):
+                try:
+                    all_logs.extend(list_logs(p, limit=500))
+                except Exception:
+                    pass
+            all_logs.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+            for lg in all_logs[:500]:
+                ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(lg.get("timestamp", 0)))
+                lines.append(
+                    f"[{ts}] {lg.get('platform','')} | {lg.get('event','')} | "
+                    f"{lg.get('account_id','')} | {lg.get('detail','')}"
+                )
+            if not all_logs:
+                lines.append("（无事件日志）")
+        except Exception as e:
+            lines.append(f"事件日志读取失败: {e!r}")
+        # 运行日志文件（由全局异常捕获写入，不存在则跳过）
+        run_log = store.DB_DIR / "runtime.log"
+        if run_log.exists():
+            lines.append("")
+            lines.append("-" * 60)
+            lines.append("运行日志（runtime.log 末尾 300 行）")
+            lines.append("-" * 60)
+            try:
+                tail = run_log.read_text(encoding="utf-8", errors="replace").splitlines()[-300:]
+                lines.extend(tail)
+            except Exception as e:
+                lines.append(f"运行日志读取失败: {e!r}")
+        content = "\n".join(lines)
+        if not self._window:
+            return json.dumps({"error": "窗口未就绪"})
+        try:
+            import webview
+            result = self._window.create_file_dialog(
+                webview.FileDialog.SAVE,
+                directory=str(Path.home() / "Downloads"),
+                save_filename=f"diagnostics-{time.strftime('%Y%m%d-%H%M%S')}.txt",
+                file_types=("文本文件 (*.txt)",),
+            )
+        except Exception as e:
+            return json.dumps({"error": f"打开保存对话框失败: {e}"})
+        if not result:
+            return json.dumps({"cancelled": True})
+        path = result if isinstance(result, str) else result[0]
+        if not path.lower().endswith(".txt"):
+            path += ".txt"
+        try:
+            Path(path).write_text(content, encoding="utf-8")
+        except Exception as e:
+            return json.dumps({"error": f"写入失败: {e}"})
+        return json.dumps({"ok": True, "path": path})
+
+    def log_js_error(self, message: str, source: str = "", lineno: int = 0,
+                     colno: int = 0, stack: str = "") -> str:
+        """前端 window.onerror 兜底：把 JS 未捕获异常写入 runtime.log（诊断闭环）。"""
+        try:
+            from src.gui.log_setup import write_runtime_log
+            write_runtime_log(
+                f"[JS ERROR] {message}\n"
+                f"  at {source}:{lineno}:{colno}\n"
+                f"  {stack}"
+            )
+        except Exception:
+            pass
+        return json.dumps({"ok": True})
+
     # ========== Auto Update ==========
 
     def check_update(self) -> str:
