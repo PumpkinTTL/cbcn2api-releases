@@ -339,6 +339,40 @@ body {
 .about-license-status { font-weight: 700; }
 .about-license-expiry { color: var(--text-secondary); font-size: 13px; margin-left: auto; }
 
+/* ── 设置页 ── */
+.settings-view { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; padding: 32px 40px; gap: 24px; }
+.settings-header { padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+.settings-title { font-size: 22px; font-weight: 700; color: var(--text); letter-spacing: -0.2px; }
+.settings-sub { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+.settings-body { display: flex; flex-direction: column; gap: 24px; max-width: 640px; }
+.settings-block { display: flex; flex-direction: column; gap: 8px; }
+.settings-block-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; }
+.settings-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 12px 14px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.settings-item-label { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.settings-item-name { font-size: 14px; font-weight: 600; color: var(--text); }
+.settings-item-desc { font-size: 12px; color: var(--text-muted); }
+.settings-item-control { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+/* 设置页下拉框：直接用页面现成的 status-dropdown 组件（trigger + 自定义菜单，
+   弹层非系统原生白底，与状态/标签/地区筛选完全同款）。仅去掉它的 margin-left:auto */
+.settings-dropdown { margin-left: 0; }
+.settings-num {
+  width: 90px; height: 28px; padding: 0 8px; box-sizing: border-box;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 12px; color: var(--text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  text-align: right; outline: none; transition: var(--transition);
+}
+.settings-num:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light); }
+.settings-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; color: var(--text); user-select: none; }
+.settings-toggle input { width: 14px; height: 14px; accent-color: var(--primary); cursor: pointer; margin: 0; }
+.settings-toggle span { min-width: 18px; font-weight: 600; color: var(--text-secondary); }
+.settings-license-status { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; }
+.settings-license-status.authorized { color: #16a34a; }
+.settings-license-status.expired { color: #dc2626; }
+
 .shop-cards-header {
   padding: 20px 24px 16px;
   font-size: 16px; font-weight: 700; color: var(--text);
@@ -1115,6 +1149,10 @@ body {
   overflow: hidden;
 }
 .detect-field:focus-within { border-color: var(--primary); }
+/* 少积分过滤开启态：trigger 主色高亮 + 整体边框主色，和 .filter-icon-btn.active 风格一致 */
+.detect-field.active { border-color: var(--primary-border); background: var(--primary-light); }
+.detect-field.active span { color: var(--primary); }
+.detect-trigger.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 .detect-field span {
   font-size: 11px;
   font-weight: 600;
@@ -1153,6 +1191,27 @@ body {
 }
 .detect-trigger:hover:not(:disabled) { background: var(--primary-hover); }
 .detect-trigger:disabled { cursor: default; }
+/* 积分区間筛选：双输入 + 分隔符。range-field 复用 detect-field 外观，仅缩窄输入框。
+   文本居中，让左右两个输入的占位符（0 / ∞）与实际数值在视觉上严格对齐 */
+.range-field .range-input {
+  width: 40px;
+  text-align: center;
+  padding: 0 3px;
+}
+.range-field .range-sep {
+  font-size: 12px;
+  color: var(--text-muted);
+  user-select: none;
+  line-height: 1;
+  opacity: 0.6;
+}
+/* 隐藏 number input 浏览器自带的上下增减箭头（spinner），紧凑 UI 中多余且不和谐 */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] { -moz-appearance: textfield; }
 .detect-count {
   font-size: 10px;
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -1408,14 +1467,16 @@ body {
 .fp-pill { display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 7px; font-size: 10px; border-radius: 4px; border: 1px solid var(--primary); color: var(--primary); background: var(--primary-light); cursor: default; box-sizing: border-box; }
 .tag-pill-mini { height: 16px; padding: 0 6px; font-size: 9px; border-radius: 8px; }
 
-/* 过滤组（filter-bar 内右侧分区）：搜索 + 标签 + 状态 */
+/* 过滤组（filter-bar 内右侧分区）：日期 + 搜索 + 标签 + 状态 */
 .filter-tools {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-left: auto;
   flex-wrap: wrap;
-}/* 覆盖全局 input[type="text"]（1759 行，specificity 同级且后定义）：
+}
+/* 日期下拉归入右侧过滤簇：和标签/状态/地区一组靠右，左簇只留操作+搜索+阈值，
+   两个簇之间单一间距，整体分布更均匀 */
+.filter-bar .date-filter { margin-left: auto; }/* 覆盖全局 input[type="text"]（1759 行，specificity 同级且后定义）：
    必须把 border/padding/background 一并覆盖，否则搜索 input 会带完整边框
    套在 .account-search 容器里，看起来像两个搜索框叠在一起 */
 .filter-bar .account-search input {

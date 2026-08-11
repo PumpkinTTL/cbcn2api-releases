@@ -92,13 +92,16 @@
       </div>
     </div>
     <div class="titlebar-controls">
+      <button class="titlebar-btn" onclick="goSettings()" title="设置（含关闭行为）" style="margin-right:6px">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
       <button class="titlebar-btn" onclick="winMin()" title="最小化">
         <svg viewBox="0 0 12 12" width="12" height="12"><rect x="1.5" y="5.5" width="9" height="1" rx="0.5" fill="currentColor"/></svg>
       </button>
       <button class="titlebar-btn" onclick="winMax()" title="最大化/还原" id="winMaxBtn">
         <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="1.5" y="1.5" width="9" height="9" rx="1.5"/></svg>
       </button>
-      <button class="titlebar-btn titlebar-close" onclick="winClose()" title="关闭">
+      <button class="titlebar-btn titlebar-close" onclick="winClose(event)" title="关闭（按住 Shift 重新选择行为）">
         <svg viewBox="0 0 12 12" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg>
       </button>
     </div>
@@ -115,6 +118,10 @@
       <button class="nav-item" :class="{ active: currentView === 'logs' }" @click="showLogs">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         运行日志
+      </button>
+      <button class="nav-item" :class="{ active: currentView === 'settings' }" @click="showSettings">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        设置
       </button>
     </nav>
     <div class="sidebar-nav-section">推荐</div>
@@ -375,19 +382,24 @@
           <span v-if="accountsRefreshLoading" class="spinner-sm"></span>
           <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v5h-5"/></svg>
         </button>
+        <!-- 验活全部账号：按设置页「启动阈值」启用达标禁用号。主栏只留图标入口，阈值去设置页改 -->
+        <button class="filter-icon-btn" :class="{ active: detecting }" :disabled="detecting" @click="openDetectModal" :title="detecting ? `验活中 ${detectProgress.done}/${detectProgress.total}` : '验活全部账号（按设置页启动阈值启用达标）'">
+          <span v-if="detecting" class="spinner-sm"></span>
+          <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
+        </button>
         <div class="account-search">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
           <input v-model="accountSearch" type="text" placeholder="搜索昵称 / 邮箱 / ID" @input="onSearchInput">
           <button v-if="accountSearch" class="account-search-clear" @click="accountSearch=''" title="清空">×</button>
         </div>
-        <!-- 验活并启用：填启动阈值，回车或点右侧图标并发验活全部账号，剩余积分≥阈值则启用 -->
-        <div class="proxy-field detect-field" title="验活全部账号：拉取最新额度，剩余积分≥此值的禁用号将被启用（0=不卡门槛）">
-          <span>启动阈值</span>
-          <input type="number" v-model.number="enableThreshold" min="0" step="0.01" placeholder="0=不卡门槛" @change="saveEnableThreshold" @keyup.enter="openDetectModal">
-          <button class="detect-trigger" :disabled="detecting" @click="openDetectModal" :title="detecting ? `验活中 ${detectProgress.done}/${detectProgress.total}` : '验活全部账号并启用达标的'">
-            <span v-if="detecting" class="spinner-sm"></span>
-            <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg></template>
-            <span v-if="detecting" class="detect-count">{{ detectProgress.done }}/{{ detectProgress.total }}</span>
+        <!-- 积分区間过滤：按剩余积分区间筛选账号。留空=该侧不限。点按钮切换开/关 -->
+        <div class="proxy-field detect-field range-field" :class="{ active: lowQuotaActive }" title="按剩余积分区间筛选账号；留空表示该侧不限。再点按钮关闭">
+          <span>积分</span>
+          <input type="number" class="range-input" v-model.number="lowQuotaMin" min="0" step="0.01" placeholder="最小" @keyup.enter="toggleLowQuotaFilter">
+          <span class="range-sep">–</span>
+          <input type="number" class="range-input" v-model.number="lowQuotaMax" min="0" step="0.01" placeholder="最大" @keyup.enter="toggleLowQuotaFilter">
+          <button class="detect-trigger" :class="{ active: lowQuotaActive }" @click="toggleLowQuotaFilter" :title="lowQuotaActive ? '已开启积分区间过滤（点此关闭）' : '按剩余积分区间筛选'">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h18l-7 8v6l-4 2v-8z"/></svg>
           </button>
         </div>
         <!-- 批量操作：仅多选模式时出现，行内放不下时随 filter-bar 自动换行 -->
@@ -434,7 +446,7 @@
           </button>
         </div>
         <!-- 日期筛选下拉 -->
-        <div class="status-dropdown" :class="{ open: dateFilterOpen }" @click.stop="toggleDateFilter">
+        <div class="status-dropdown date-filter" :class="{ open: dateFilterOpen }" @click.stop="toggleDateFilter">
           <div class="status-dropdown-trigger">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/></svg>
             <span>{{ dateFilterLabel }}</span>
@@ -789,6 +801,116 @@
             <span class="about-license-dot"></span>
             <span class="about-license-status">{{ licenseAuthorized ? '已授权' : '已过期' }}</span>
             <span class="about-license-expiry">测试授权到期时间：{{ licenseExpiry }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Settings View ── -->
+    <div class="settings-view" id="settingsView" v-show="currentView === 'settings'">
+      <div class="settings-header">
+        <h2 class="settings-title">设置</h2>
+        <p class="settings-sub">窗口行为、运行参数与应用信息</p>
+      </div>
+
+      <div class="settings-body">
+        <div class="settings-block">
+          <div class="settings-block-title">常规</div>
+          <div class="settings-item">
+            <div class="settings-item-label">
+              <span class="settings-item-name">关闭行为</span>
+              <span class="settings-item-desc">点击关闭按钮时的默认动作；「每次询问」会弹出选择框</span>
+            </div>
+            <div class="settings-item-control">
+              <div class="status-dropdown settings-dropdown" :class="{ open: closeActionOpen }" @click.stop="closeActionOpen = !closeActionOpen" title="修改后立即生效，下次关闭按钮按此执行">
+                <div class="status-dropdown-trigger">
+                  <span>{{ closeActionPref === 'tray' ? '最小化到托盘' : closeActionPref === 'exit' ? '退出程序' : '每次询问' }}</span>
+                  <svg class="status-dropdown-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                </div>
+                <div class="status-dropdown-menu" v-show="closeActionOpen" style="min-width:130px">
+                  <div class="status-dropdown-item" :class="{ active: closeActionPref === '' }" @click.stop="setCloseAction('')">每次询问</div>
+                  <div class="status-dropdown-item" :class="{ active: closeActionPref === 'tray' }" @click.stop="setCloseAction('tray')">最小化到托盘</div>
+                  <div class="status-dropdown-item" :class="{ active: closeActionPref === 'exit' }" @click.stop="setCloseAction('exit')">退出程序</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="settings-item">
+            <div class="settings-item-label">
+              <span class="settings-item-name">主题</span>
+              <span class="settings-item-desc">浅色 / 深色外观</span>
+            </div>
+            <div class="settings-item-control">
+              <div class="status-dropdown settings-dropdown" :class="{ open: themeOpen }" @click.stop="themeOpen = !themeOpen">
+                <div class="status-dropdown-trigger">
+                  <span>{{ themePref === 'dark' ? '深色' : '浅色' }}</span>
+                  <svg class="status-dropdown-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                </div>
+                <div class="status-dropdown-menu" v-show="themeOpen" style="min-width:100px">
+                  <div class="status-dropdown-item" :class="{ active: themePref === 'light' }" @click.stop="setThemePref('light')">浅色</div>
+                  <div class="status-dropdown-item" :class="{ active: themePref === 'dark' }" @click.stop="setThemePref('dark')">深色</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-block">
+          <div class="settings-block-title">运行</div>
+          <div class="settings-item">
+            <div class="settings-item-label">
+              <span class="settings-item-name">日志记录</span>
+              <span class="settings-item-desc">记录请求 / 成功 / 错误等运行日志</span>
+            </div>
+            <div class="settings-item-control">
+              <label class="settings-toggle">
+                <input type="checkbox" v-model="logEnabled" @change="toggleLogEnabled">
+                <span>{{ logEnabled ? '开' : '关' }}</span>
+              </label>
+            </div>
+          </div>
+          <div class="settings-item">
+            <div class="settings-item-label">
+              <span class="settings-item-name">启动阈值</span>
+              <span class="settings-item-desc">验活时剩余积分 ≥ 此值才启用（0 = 不卡门槛）</span>
+            </div>
+            <div class="settings-item-control">
+              <input type="number" class="settings-num" v-model.number="enableThreshold" min="0" step="0.01" @change="saveEnableThreshold" title="修改后立即生效">
+            </div>
+          </div>
+          <div class="settings-item">
+            <div class="settings-item-label">
+              <span class="settings-item-name">切号阈值</span>
+              <span class="settings-item-desc">剩余积分低于此值自动禁用当前账号并切换（0 = 关闭）</span>
+            </div>
+            <div class="settings-item-control">
+              <input type="number" class="settings-num" v-model.number="quotaThreshold" min="0" step="0.01" @change="saveQuotaThreshold" title="修改后立即生效">
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-block">
+          <div class="settings-block-title">关于</div>
+          <div class="settings-item">
+            <div class="settings-item-label">
+              <span class="settings-item-name">版本</span>
+              <span class="settings-item-desc">更新日志与检查更新</span>
+            </div>
+            <div class="settings-item-control">
+              <span class="version-link" @click="openModal('changelog')">v1.0.9</span>
+              <button class="btn btn-ghost btn-sm" @click="checkForUpdate">检查更新</button>
+            </div>
+          </div>
+          <div class="settings-item">
+            <div class="settings-item-label">
+              <span class="settings-item-name">授权状态</span>
+              <span class="settings-item-desc">测试授权到期时间：{{ licenseExpiry }}</span>
+            </div>
+            <div class="settings-item-control">
+              <span class="settings-license-status" :class="{ authorized: licenseAuthorized, expired: !licenseAuthorized }">
+                <span class="about-license-dot"></span>{{ licenseAuthorized ? '已授权' : '已过期' }}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -1193,23 +1315,31 @@
       </div>
       <div class="modal-body">
         <div class="changelog-version">v1.0.9</div>
-        <div class="changelog-date">2026-08-11</div>
+        <div class="changelog-date">2026-08-12</div>
 
         <div class="changelog-section-title">问题修复</div>
         <ul class="changelog-list">
           <li>修复更新后机器码变化导致需要重新激活的问题</li>
           <li>修复删除确认弹窗备注输入框与按钮重叠的问题</li>
+          <li>修复窗口最大化时显示异常的问题</li>
+          <li>修复部分永久离线激活码无法正常激活的问题</li>
         </ul>
 
         <div class="changelog-section-title">功能新增</div>
         <ul class="changelog-list">
           <li>回收站批次备注：批量删除时可填写备注，回收站内可查看 / 编辑，支持按备注搜索</li>
           <li>在线更新支持断点续传，下载中断后从断点继续</li>
+          <li>新增账号积分区间筛选，可按剩余积分范围快速过滤账号</li>
+          <li>新增「设置」中心，关闭行为、主题、运行参数集中管理</li>
         </ul>
 
         <div class="changelog-section-title">体验优化</div>
         <ul class="changelog-list">
           <li>回收站界面布局优化，间距与按钮尺寸统一，超长备注自动换行</li>
+          <li>优化关闭按钮交互，支持最小化到托盘后台运行（首次可选择并记住偏好）</li>
+          <li>统一状态、标签、地区筛选下拉样式</li>
+          <li>对话框与关闭确认弹窗按钮增加图标，操作更直观</li>
+          <li>验活入口移至工具栏独立按钮，启动阈值统一在设置页管理</li>
         </ul>
 
         <div class="changelog-version" style="margin-top:24px">v1.0.8</div>
@@ -1450,13 +1580,59 @@ async function winMax(){
     if(btn) btn.classList.toggle('is-max', !!r.maximized);
   }catch(e){}
 }
-let _closingConfirmed = false;
-async function winClose(){
-  if (_closingConfirmed) return;
-  const ok = await showConfirm('确定要关闭窗口吗？', '关闭确认');
-  if (!ok) return;
-  _closingConfirmed = true;
-  try{ await pywebview.api.win_close(); }catch(e){ _closingConfirmed = false; }
+async function winClose(e){
+  // 业界标准：X→托盘后台。首次弹选择框（最小化到托盘/退出），勾"不再询问"后记住选择。
+  // Shift+点击强制重弹选择框（改回已记住的行为）。
+  const forced = e && e.shiftKey;
+  if (!forced) {
+    const saved = localStorage.getItem('gw_closeAction');
+    if (saved === 'tray') return winToTray();
+    if (saved === 'exit') return winExit();
+  }
+  const r = await showCloseChoice();
+  if (!r) return;
+  if (r.remember) localStorage.setItem('gw_closeAction', r.action);
+  if (r.action === 'tray') winToTray(); else winExit();
+}
+async function winToTray(){ try{ await pywebview.api.win_minimize_to_tray(); }catch(e){} }
+async function winExit(){ try{ await pywebview.api.win_close(); }catch(e){} }
+
+// 标题栏齿轮：跳转设置页（Vue setup 内注册 window.__goSettings）。
+// 关闭行为的修改收敛到设置页（含「不再询问」后的改回入口）。
+function goSettings(){ if (window.__goSettings) window.__goSettings(); }
+
+// 关闭行为选择框（最小化到托盘 / 退出 / 取消 + 不再询问），样式复用 confirm-overlay。
+function showCloseChoice(){
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.className = 'confirm-overlay';
+    ov.innerHTML =
+      '<div class="confirm-box" role="dialog" aria-modal="true" style="max-width:380px">' +
+        '<div class="confirm-title"></div>' +
+        '<div class="confirm-msg"></div>' +
+        '<label class="confirm-check"><input type="checkbox"><span></span></label>' +
+        '<div class="confirm-actions">' +
+          '<button class="btn btn-ghost btn-sm cc-no"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>取消</button>' +
+          '<button class="btn btn-sm btn-danger cc-exit"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg>退出程序</button>' +
+          '<button class="btn btn-sm btn-primary cc-tray"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v7"/><path d="M8 7l4 4 4-4"/><path d="M4 17h16"/></svg>最小化到托盘</button>' +
+        '</div></div>';
+    ov.querySelector('.confirm-title').textContent = '关闭窗口';
+    ov.querySelector('.confirm-msg').textContent = '确认退出程序？';
+    const cb = ov.querySelector('.confirm-check input'); cb.checked = false;
+    ov.querySelector('.confirm-check span').textContent = '不再询问（记住选择）';
+    document.body.appendChild(ov);
+    requestAnimationFrame(() => ov.classList.add('show'));
+    let settled = false;
+    function done(v){ if(settled) return; settled=true; ov.classList.remove('show'); setTimeout(()=>ov.remove(),160); resolve(v); }
+    ov.querySelector('.cc-tray').onclick = () => done({action:'tray', remember: cb.checked});
+    ov.querySelector('.cc-exit').onclick = () => done({action:'exit', remember: cb.checked});
+    ov.querySelector('.cc-no').onclick = () => done(null);
+    ov.onclick = e => { if(e.target===ov) done(null); };
+    document.addEventListener('keydown', function onKey(e){
+      if(e.key==='Escape'){ done(null); document.removeEventListener('keydown',onKey); }
+    });
+    ov.querySelector('.cc-tray').focus();
+  });
 }
 
 // Resize handles
@@ -1528,7 +1704,13 @@ function showConfirm(msg, title, opts) {
     const yes = ov.querySelector('.confirm-yes'), no = ov.querySelector('.confirm-no');
     ov.querySelector('.confirm-title').textContent = title || '确认操作';
     ov.querySelector('.confirm-msg').textContent = msg;
-    no.textContent = cancelText; yes.textContent = okText;
+    // 按钮图标：取消=X，确定=勾（危险操作=垃圾桶），与标题栏/批量按钮风格一致
+    const _i = (path, w=2.4) => '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="'+w+'" stroke-linecap="round" stroke-linejoin="round">'+path+'</svg>';
+    const _icCancel = _i('<path d="M18 6L6 18M6 6l12 12"/>');
+    const _icOk = danger
+      ? _i('<path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>', 2)
+      : _i('<path d="M5 13l4 4L19 7"/>');
+    no.innerHTML = _icCancel + cancelText; yes.innerHTML = _icOk + okText;
     yes.classList.add(danger ? 'btn-danger' : 'btn-primary');
     if (cb) {
       const input = ov.querySelector('.confirm-check input');
@@ -1995,6 +2177,17 @@ const vApp = createApp({
           return 0;
         });
       }
+      // 积分区間过滤：开启时只显示剩余积分落在 [min,max] 的账号。
+      // min/max 留空表示该侧不限。无额度数据的账号在开启时排除（保守不显示）。
+      if (lowQuotaActive.value) {
+        const min = (lowQuotaMin.value === '' || lowQuotaMin.value === null || isNaN(lowQuotaMin.value)) ? -Infinity : Number(lowQuotaMin.value);
+        const max = (lowQuotaMax.value === '' || lowQuotaMax.value === null || isNaN(lowQuotaMax.value)) ? Infinity : Number(lowQuotaMax.value);
+        result = result.filter(a => {
+          const r = getCardQuota(a)?.adjRemain;
+          if (r === undefined || r === null || isNaN(r)) return false;
+          return r >= min && r <= max;
+        });
+      }
       return result;
     });
 
@@ -2090,6 +2283,35 @@ const vApp = createApp({
     }
     function showShopCards() { currentView.value = 'shop-cards'; }
     function showAbout() { currentView.value = 'about'; }
+    function showSettings() {
+      currentView.value = 'settings';
+      closeActionPref.value = localStorage.getItem('gw_closeAction') || '';
+      themePref.value = localStorage.getItem('theme') || window.__THEME__ || 'light';
+    }
+    window.__goSettings = showSettings;  // 标题栏齿轮跳转入口
+
+    // ─── 设置页数据：关闭行为 + 主题（自定义下拉，组件样式同状态筛选）───
+    const closeActionPref = ref(localStorage.getItem('gw_closeAction') || '');
+    const closeActionOpen = ref(false);
+    function saveCloseAction() {
+      try { localStorage.setItem('gw_closeAction', closeActionPref.value); } catch(_) {}
+      showToast('关闭行为已设为：' + (closeActionPref.value === 'tray' ? '最小化到托盘' : closeActionPref.value === 'exit' ? '退出程序' : '每次询问'), 'success');
+    }
+    function setCloseAction(v) {
+      closeActionPref.value = v;
+      closeActionOpen.value = false;
+      saveCloseAction();
+    }
+    const themePref = ref(localStorage.getItem('theme') || window.__THEME__ || 'light');
+    const themeOpen = ref(false);
+    function setThemePref(v) {
+      themePref.value = v;
+      themeOpen.value = false;
+      setThemeUI(v);
+      window.__THEME__ = v;
+      try { localStorage.setItem('theme', v); } catch(_) {}
+      try { pywebview.api.set_theme(v); } catch(_) {}
+    }
     function openShop(url, name) {
       shopUrl.value = url; shopName.value = name;
       currentShopUrl = url; currentView.value = 'shop';
@@ -2577,6 +2799,15 @@ const vApp = createApp({
       } else {
         filteredAccounts.value.forEach(a => { selectedIds[a.id] = true; });
       }
+    }
+
+    // 积分区間过滤：lowQuotaActive 开启时只显示剩余积分落在 [min,max] 的账号。
+    // min/max 留空表示该侧不限。toggle 仅切换开关；输入随时改，关闭/重开都按当前输入算。
+    const lowQuotaMin = ref('');
+    const lowQuotaMax = ref('');
+    const lowQuotaActive = ref(false);
+    function toggleLowQuotaFilter() {
+      lowQuotaActive.value = !lowQuotaActive.value;
     }
 
     async function batchExport() {
@@ -3544,7 +3775,7 @@ const vApp = createApp({
       batchStatusLoading, batchRefreshLoading, batchCheckinLoading, batchFingerprintLoading,
       deletedAccounts, recycleBusy, deletedSelected, deletedSelectedCount, allDeletedSelected,
       deletedFilter, deletedKeyword, deletedFilters, deletedDateFilter, deletedDateFilterOpen, deletedDateFilters, deletedCustomDate, rCalOpen, rCalPickDay, rCalIsSelected, filteredDeletedAccounts, groupedDeletedAccounts, deletedFilterCounts,
-      allSelected, someSelected, selectedCount,
+      allSelected, someSelected, selectedCount, lowQuotaMin, lowQuotaMax, lowQuotaActive,
       usageSummary, usageCacheRate,
       oauthUrlText, oauthStatusHtml,
       importJsonText, importLoading,
@@ -3560,13 +3791,13 @@ const vApp = createApp({
       getStatusBadgeClass, getStatusText, getPlanBadgeClass, getPlanText,
       parseCheckin, getCardQuota,
       selectStatusFilter, getStatusDotClass, getStatusFilterLabel,
-      showConsole, showLogs, showShopCards, showAbout, licenseExpiry, licenseAuthorized, openShop, openShopExternal, openModal,
+      showConsole, showLogs, showShopCards, showAbout, showSettings, closeActionPref, closeActionOpen, saveCloseAction, setCloseAction, themePref, themeOpen, setThemePref, licenseExpiry, licenseAuthorized, openShop, openShopExternal, openModal,
       toggleTheme,
       setFilterDate, saveQuotaThreshold, saveEnableThreshold, detectAndEnable, openDetectModal, confirmDetect,
       exportAccounts, checkinAll, refreshAll, refreshAccounts, loadAccounts,
       loadUsageSummary,
       doCheckin, refreshOne, detectOne, deleteOne, setPriorityAccount, toggleAccountStatus,
-      toggleSelectMode, toggleSelect, toggleSelectAll, clearSelection, batchExport, batchDetect, batchDelete,
+      toggleSelectMode, toggleSelect, toggleSelectAll, toggleLowQuotaFilter, clearSelection, batchExport, batchDetect, batchDelete,
       batchEnable, batchDisable, batchRefresh, batchCheckin,
       openBatchFingerprint, batchRandomFingerprint, randomOneFingerprint, saveOneFingerprint,
       editTags, saveTags, removeTagChip,

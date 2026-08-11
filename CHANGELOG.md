@@ -3,6 +3,51 @@
 本文件面向开发者，记录每个版本的技术变更（根因、涉及的文件、机制改动）。
 面向终端用户的更新日志见应用内「更新日志」弹窗（`src/gui/index.html`）。
 
+## [v1.0.9] — 2026-08-12
+
+离线激活码永久码修复 + 窗口最大化跨线程修复 + 托盘交互重构 + 设置中心 + 积分区间筛选 + 工具栏/对话框 UI 统一。
+
+### 离线激活码永久码修复（`lic-admin/server.py` 已部署 + 客户端清理）
+
+- **双层根因**：
+  1. 永久授权 `exp` 原填 `0xFFFFFFFF`，超过 32 位无符号上限，编码时被截断成 1970 年附近时间戳，验签时 `exp` 校验异常。
+  2. 离线码算法确定性（80bit = `exp:32` + `HMAC sig:48`，见 `src/license_core.py`），同一 `exp` 永远生成同一码字符串；永久码若共用一个 `exp`，跨批次生成完全相同的码，命中客户端 `offline_license_records` 防重用表，第二次即被判「该码已用过」。
+- **修复**：永久码 `base_exp` 改为 `0xFFFFFFFF - secrets.randbelow(0x10000000)` 随机起算——既不溢出 32 位，又让每个永久码 `exp` 各不相同，避免码字符串碰撞。
+- **客户端**：清理本地 `offline_license_records`（`src/storage/store.py`）中因旧算法残留的失效记录。
+
+### 窗口最大化跨线程修复（`main.py`）
+
+- **根因**：pywebview 窗口事件处理器跑在后台线程（`pywebview/event.py` 每个 handler 新起 `Thread`），而 `SetWindowLongPtrW` 子类化（`src/gui/win_chrome.py` / `tray.py`）必须在创建窗口的 UI 线程执行；跨线程调用导致 WM_GETMINMAXINFO 处理失效，最大化时边框/客户区计算错位。
+- **修复**：`_apply_window_chrome(window)` 改用 `form.Invoke(Func[Type](cb))` 把 `apply_system_chrome` + `tray.ensure` 编组回 UI 线程。pythonnet 虚方法覆盖不可行（`BrowserForm` 在 `webview/platforms/winforms.py:190` 硬编码，必须在类定义时注册），故采用运行时 Invoke 编组方案。
+
+### 托盘交互重构（`main.py` + `src/gui/app.py`）
+
+- **行为改为业界标准**：关闭按钮（X）→ 最小化到托盘（首次弹选择框：最小化到托盘 / 退出，带「不再询问」，Shift+点击 X 强制重弹）；最小化按钮 → 任务栏（不再进托盘）。
+- **实现**：删除 `_on_window_minimized`；`app.py` 新增 `set_tray_config(path, on_restore)` 与 `win_minimize_to_tray()` API（均经 `Form.Invoke` 编组到 UI 线程）；`showCloseChoice()` 复用 `confirm-overlay` 样式。
+
+### 设置中心（`src/gui/index.html` + `style.css`）
+
+- 侧边栏新增「设置」视图，三区块：常规（关闭行为 + 主题）、运行（日志记录 + 启动/切号阈值）、关于（版本 + 检查更新 + 授权状态）。
+- 主题与下拉复用 `status-dropdown` 组件（统一非 native select 风格）；标题栏齿轮按钮经 `window.__goSettings` 桥接跳设置页。
+
+### 积分区间筛选（`src/gui/index.html`）
+
+- 主筛选栏新增按「剩余积分区间」过滤：`lowQuotaMin` / `lowQuotaMax` / `lowQuotaActive` 三个 ref；`filteredAccounts` computed 在所有筛选条件（状态/日期/搜索/标签/地区/置顶）之后，按 `getCardQuota().adjRemain` 落在 `[min, max]` 过滤；留空 = 该侧不限，无额度数据的账号开启时排除。
+- 控件复用 `detect-field` 外观（`range-field` 变体），双输入 + 分隔符 + 漏斗切换按钮，开启时主色高亮。
+
+### 工具栏与对话框 UI 优化（`src/gui/index.html` + `style.css`）
+
+- **启动阈值输入框移除**：主栏不再放启动阈值输入（设置页已有），验活功能改为工具栏独立图标按钮（`filter-icon-btn`），复用设置页 `enableThreshold`。
+- **对话框图标**：`showConfirm` / `showCloseChoice` 按钮增加语义图标（取消 / 确定 / 危险 / 退出 / 最小化到托盘）。
+- **筛选下拉统一**：状态 / 标签 / 地区筛选由 native `select` 改为 `status-dropdown` 组件。
+- **细节**：全局隐藏 `input[type=number]` 浏览器自带 spinner；积分区间输入居中对齐，占位「最小/最大」对称。
+
+> v1.0.9 早期已发布内容（机器码稳定、回收站批次备注、在线更新断点续传、回收站布局优化）技术细节见此前提交，用户向更新条目见应用内更新日志。
+
+## [v1.0.8] — 2026-08-09
+
+（技术变更细节待补；用户向更新条目见应用内「更新日志」弹窗：额度快照异常误切号修复、回收站按批次分组、验活结果弹窗优化、香港号 8 位本地号识别。）
+
 ## [v1.0.7] — 2026-08-07
 
 授权系统上线 + 导入模型双平台支持 + 额度双口径汇算 + 调度稳定性加固 + UI 优化。

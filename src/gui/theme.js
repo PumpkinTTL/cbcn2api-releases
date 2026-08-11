@@ -1,1 +1,1 @@
-window.__THEME__=(function(){var d='dark';try{var s=localStorage.getItem("theme");if(s==="light"||s==="dark")d=s;document.documentElement.setAttribute("data-theme",d);}catch(e){document.documentElement.setAttribute("data-theme",d);}return d;})();
+window.__THEME__=(function(){var d='light';try{var s=localStorage.getItem("theme");if(s==="light"||s==="dark")d=s;document.documentElement.setAttribute("data-theme",d);}catch(e){document.documentElement.setAttribute("data-theme",d);}return d;})();

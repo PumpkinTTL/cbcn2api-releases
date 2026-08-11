@@ -40,6 +40,8 @@ class GuiApi:
         self._current_oauth_login_id = None
         self._window = None
         self._cached_hwnd = 0
+        self._ico_path = ""
+        self._on_tray_restore = None
         self._detect_lock = threading.Lock()
         self._detect_state = {
             "running": False, "finished": False, "total": 0, "done": 0,
@@ -84,6 +86,36 @@ class GuiApi:
         # 把调用编组到 UI 线程，而 js_api 方法本身跑在别的线程上。
         if self._window:
             self._window.minimize()
+        return json.dumps({"ok": True})
+
+    def set_tray_config(self, ico_path, on_restore):
+        """注入托盘图标路径 + 恢复回调，供 win_minimize_to_tray 用。"""
+        self._ico_path = ico_path
+        self._on_tray_restore = on_restore
+
+    def win_minimize_to_tray(self) -> str:
+        """关闭按钮 → 最小化到系统托盘：隐藏主窗口 + 确保托盘图标。
+
+        与 win_minimize 的区别：minimize 进任务栏（窗口仍可见）；本方法彻底隐藏
+        窗口（仅托盘图标可见），用于"关闭即后台"语义。js_api 方法跑在 pywebview
+        后台线程，tray.ensure 的原生子类化走 Form.Invoke 编组到 UI 线程。
+        """
+        try:
+            from src.gui import tray, win_chrome
+            hwnd = win_chrome.find_main_hwnd(self._APP_TITLE, timeout=3)
+            if hwnd:
+                try:
+                    from System import Func, Type
+                    self._window.native.Invoke(Func[Type](
+                        lambda: tray.ensure(hwnd, self._ico_path, on_restore=self._on_tray_restore)
+                    ))
+                except Exception as e:
+                    print(f"[tray] Form.Invoke 失败，回退直调: {e!r}")
+                    tray.ensure(hwnd, self._ico_path, on_restore=self._on_tray_restore)
+        except Exception as e:
+            print(f"[tray] 最小化到托盘失败: {e!r}")
+        if self._window:
+            self._window.hide()
         return json.dumps({"ok": True})
 
     def win_toggle_max(self) -> str:

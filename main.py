@@ -103,12 +103,20 @@ def _write_theme_bootstrap():
 
 _write_theme_bootstrap()
 
-def _apply_window_chrome():
-    """窗口出现后补上图标和圆角。
+def _apply_window_chrome(window):
+    """窗口出现后恢复系统行为 + 补图标（原生窗口改动在 UI 线程执行）。
 
-    frameless 窗口本身没有非客户区，干净无白边，不需要任何样式补丁。resize 走
-    前端 delta + SetWindowPos（见 win_chrome.resize_delta），也不依赖窗口样式。
-    所以这里只做两件不影响外观的事：设任务栏图标、显式声明 Win11 圆角。
+    frameless 窗口本身没有非客户区，干净无白边。但去掉系统样式也丢掉了
+    任务栏点击 roll-up、Win11 最小化/最大化动画、最大化贴边 ——
+    apply_system_chrome 加回样式（NCCALCSIZE 隐藏渲染，外观不变），
+    并接管圆角状态（最大化贴边无圆角、还原恢复圆角）。
+
+    线程约束：SetWindowLongPtrW(GWL_WNDPROC) 子类化 + SWP_FRAMECHANGED 作用于
+    窗口，必须在窗口所属线程（UI 线程）执行。本函数跑在后台线程（main() 里
+    Thread 启动），所以用 Form.Invoke 把实际改动编组到 UI 线程——这和 pywebview
+    自己跨线程操作（winforms.py 里大量 self.Invoke(Func[Type](...))）一致。
+    不编组的话子类化会与 .NET Form.WndProc 消息泵竞态，表现为最大化盖任务栏 /
+    圆角切换失效 / 任务栏点击不 roll-up 等时灵时不灵。
     """
     if sys.platform != "win32":
         return
@@ -119,15 +127,26 @@ def _apply_window_chrome():
     if not hwnd:
         return
 
-    try:
-        win_chrome.set_window_icon(hwnd, _ICO_PATH)
-    except Exception:
-        pass
+    form = getattr(window, "native", None)
+    if form is None:
+        return  # Form 尚未创建（find_main_hwnd 已确认窗口存在，理论不会到这）
+
+    def _on_ui():
+        try:
+            win_chrome.apply_system_chrome(hwnd)
+        except Exception as e:
+            print(f"[chrome] 系统样式恢复失败: {e!r}")
+        try:
+            win_chrome.set_window_icon(hwnd, _ICO_PATH)
+        except Exception:
+            pass
 
     try:
-        win_chrome.set_rounded_corners(hwnd)
+        from System import Func, Type
+        form.Invoke(Func[Type](_on_ui))
     except Exception as e:
-        print(f"[chrome] 圆角设置失败: {e!r}")
+        print(f"[chrome] Form.Invoke 失败，回退直调: {e!r}")
+        _on_ui()
 
 
 def _mark_started():
@@ -193,26 +212,11 @@ def main():
         except Exception:
             pass
 
-    def _on_window_minimized():
-        """窗口最小化时隐藏到系统托盘：任务栏不再占位，防止误点关闭。
+    # 关闭按钮走"最小化到托盘"语义（业界标准：X→托盘后台，最小化按钮→任务栏）。
+    # 把图标路径和恢复回调注入 GuiApi，win_minimize_to_tray 在关闭时建托盘。
+    api.set_tray_config(_ICO_PATH, _restore_from_tray)
 
-        隐藏用 pywebview window.hide()（WinForms 原生 Hide，状态同步）；
-        托盘左键/双击/菜单"显示主界面"通过 on_restore 回调恢复。
-        事件回调在 pywebview 后台线程执行，hide 内部 Invoke 到 UI 线程。
-        """
-        try:
-            from src.gui import tray, win_chrome
-            hwnd = win_chrome.find_main_hwnd(APP_TITLE, timeout=3)
-            if hwnd:
-                tray.ensure(hwnd, _ICO_PATH, on_restore=_restore_from_tray)
-            window.hide()
-        except Exception:
-            pass
-
-    # 最小化到系统托盘（任务栏不占位，防止误点关闭）
-    window.events.minimized += _on_window_minimized
-
-    threading.Thread(target=_apply_window_chrome, daemon=True).start()
+    threading.Thread(target=lambda: _apply_window_chrome(window), daemon=True).start()
 
     webview.start(
         _mark_started,
