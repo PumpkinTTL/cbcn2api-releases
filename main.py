@@ -180,6 +180,38 @@ def main():
     import atexit
     atexit.register(api.cleanup)
 
+    def _restore_from_tray():
+        """托盘恢复窗口：走 pywebview show/restore 保持 WinForms 状态同步。
+
+        不能用 SW_RESTORE 直接恢复——它会绕过 .NET 的 WindowState 缓存，
+        .NET 仍认为窗口是 Minimized，之后 minimize/maximize 状态判断错乱，
+        表现为缩小/全屏按钮失效。
+        """
+        try:
+            window.show()
+            window.restore()
+        except Exception:
+            pass
+
+    def _on_window_minimized():
+        """窗口最小化时隐藏到系统托盘：任务栏不再占位，防止误点关闭。
+
+        隐藏用 pywebview window.hide()（WinForms 原生 Hide，状态同步）；
+        托盘左键/双击/菜单"显示主界面"通过 on_restore 回调恢复。
+        事件回调在 pywebview 后台线程执行，hide 内部 Invoke 到 UI 线程。
+        """
+        try:
+            from src.gui import tray, win_chrome
+            hwnd = win_chrome.find_main_hwnd(APP_TITLE, timeout=3)
+            if hwnd:
+                tray.ensure(hwnd, _ICO_PATH, on_restore=_restore_from_tray)
+            window.hide()
+        except Exception:
+            pass
+
+    # 最小化到系统托盘（任务栏不占位，防止误点关闭）
+    window.events.minimized += _on_window_minimized
+
     threading.Thread(target=_apply_window_chrome, daemon=True).start()
 
     webview.start(

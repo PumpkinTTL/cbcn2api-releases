@@ -101,6 +101,11 @@ class GuiApi:
         # 销毁窗口前先停 uvicorn 并清理调度器状态，避免后台线程残留、端口占用。
         # cleanup 会做 should_exit=True + _active_count 归零，和 proxy_stop 对齐。
         self.cleanup()
+        try:
+            from src.gui import tray
+            tray.remove()
+        except Exception:
+            pass
         if self._window:
             self._window.destroy()
         return json.dumps({"ok": True})
