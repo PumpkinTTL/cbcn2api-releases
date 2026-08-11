@@ -44,7 +44,7 @@ echo [2/3] 开始 Nuitka 编译（首次 5~15 分钟）...
     --assume-yes-for-downloads ^
     --lto=yes ^
     --output-dir=dist ^
-    --output-filename="AI Gateway v1.0.8-Nuitka.exe" ^
+    --output-filename="AI Gateway v1.0.9-Nuitka.exe" ^
     main.py
 
 if %errorlevel% neq 0 (
@@ -53,5 +53,5 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [3/3] 完成: dist\AI Gateway v1.0.8-Nuitka.exe
+echo [3/3] 完成: dist\AI Gateway v1.0.9-Nuitka.exe
 pause

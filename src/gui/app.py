@@ -140,7 +140,7 @@ class GuiApi:
             return json.dumps(account.to_dict())
         return json.dumps({"error": "账号不存在"})
 
-    def delete_account(self, platform: str, account_id: str, soft: str = "1") -> str:
+    def delete_account(self, platform: str, account_id: str, soft: str = "1", note: str = "") -> str:
         # 最后号保护：删完若池中没有任何可用账号，拒绝删除。
         # 与 set_account_status 的禁用保护同一套判定（has_usable_besides）。
         is_soft = str(soft).lower() not in ("0", "false", "no")
@@ -154,7 +154,8 @@ class GuiApi:
         if is_soft:
             # 软删除：status='deleted'，数据保留在库（回收站可见），可随时恢复
             # 每次删除动作生成一个批次号（同一次批量删除共用），回收站按批次整组操作
-            store.soft_delete_account(platform, account_id, int(time.time() * 1000))
+            # 备注仅软删除可填（批次存在才有地方挂），硬删除无批次直接忽略
+            store.soft_delete_account(platform, account_id, int(time.time() * 1000), note)
         else:
             # 硬删除：物理删除 + tombstone 防快照并发回写复活
             store.remove_account(platform, account_id)
@@ -168,7 +169,7 @@ class GuiApi:
             pass
         return json.dumps({"success": True})
 
-    def delete_accounts(self, platform: str, account_ids_json: str, soft: str = "1") -> str:
+    def delete_accounts(self, platform: str, account_ids_json: str, soft: str = "1", note: str = "") -> str:
         ids = json.loads(account_ids_json)
         # 最后号保护：批量删完后若池中没有任何可用账号，拒绝整批删除。
         # 注意是「删完整批之后」而不是「每删一个查一次」—— 用户批量选中
@@ -183,10 +184,11 @@ class GuiApi:
                 pass
         is_soft = str(soft).lower() not in ("0", "false", "no")
         # 同一次批量删除 = 同一批次号，回收站按批次整组恢复/彻底删除
+        # 备注仅软删除可填（挂在本批次上），硬删除无批次忽略
         batch = int(time.time() * 1000) if is_soft else None
         for aid in ids:
             if is_soft:
-                store.soft_delete_account(platform, aid, batch)
+                store.soft_delete_account(platform, aid, batch, note)
             else:
                 store.remove_account(platform, aid)
         # 循环外只 reload 一次：每删一个都 reload 会反复重建内存池并竞争锁，
@@ -300,6 +302,15 @@ class GuiApi:
         except Exception:
             pass
         return json.dumps({"success": True, "destroyed": destroyed})
+
+    def set_batch_note(self, platform: str, batch: str, note: str = "") -> str:
+        """回收站批次备注：编辑/清空某删除批次的备注（该批次所有账号同步）。"""
+        try:
+            batch = int(batch)
+        except (ValueError, TypeError):
+            return json.dumps({"error": "无效的批次号"})
+        store.set_batch_note(platform, batch, (note or "").strip())
+        return json.dumps({"success": True})
 
     def import_from_json(self, platform: str, json_content: str) -> str:
         content = (json_content or "").strip()

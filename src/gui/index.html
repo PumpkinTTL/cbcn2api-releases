@@ -133,7 +133,7 @@
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> 切换主题
       </button>
       <div style="text-align:center;font-size:11px;margin-top:8px">
-        <span class="version-link" @click="openModal('changelog')">v1.0.8</span>
+        <span class="version-link" @click="openModal('changelog')">v1.0.9</span>
         <span style="margin:0 4px;color:var(--text-muted)">|</span>
         <span class="version-link" @click="checkForUpdate">检查更新
           <span v-if="hasUpdate" id="updateBadge" style="margin-left:4px;color:var(--accent,#2563eb);vertical-align:-1px">
@@ -770,7 +770,7 @@
         <img src="icons/workbuddy-logo.svg" class="about-logo" alt="">
         <div class="about-header-text">
           <h2 class="about-title">AI Gateway</h2>
-          <p class="about-version">v1.0.8</p>
+          <p class="about-version">v1.0.9</p>
         </div>
       </div>
 
@@ -886,12 +886,15 @@
         <p>软删除账号仍保留在数据库，可随时恢复或彻底删除</p>
       </div>
       <div class="modal-body" style="max-height:420px;overflow:auto">
-        <div v-if="deletedAccounts.length > 0" style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-          <button v-for="f in deletedFilters" :key="f.value" class="btn btn-sm" :class="deletedFilter === f.value ? 'btn-primary' : 'btn-ghost'"
-            @click="deletedFilter = f.value">
-            {{ f.label }}<span v-if="deletedFilterCounts[f.value] > 0" style="opacity:.75;margin-left:3px">{{ deletedFilterCounts[f.value] }}</span>
-          </button>
-          <div class="status-dropdown" :class="{ open: deletedDateFilterOpen }" @click.stop="deletedDateFilterOpen = !deletedDateFilterOpen; rCalOpen = false" style="margin-left:auto;position:relative">
+        <div v-if="deletedAccounts.length > 0" style="margin-bottom:14px">
+          <input v-model="deletedKeyword" type="text" placeholder="搜索备注 / 昵称 / 邮箱 / ID"
+            style="width:100%;box-sizing:border-box;height:32px;padding:0 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font-size:12px;outline:none;margin-bottom:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button v-for="f in deletedFilters" :key="f.value" class="btn btn-sm" :class="deletedFilter === f.value ? 'btn-primary' : 'btn-ghost'"
+              @click="deletedFilter = f.value">
+              {{ f.label }}<span v-if="deletedFilterCounts[f.value] > 0" style="opacity:.75;margin-left:3px">{{ deletedFilterCounts[f.value] }}</span>
+            </button>
+            <div class="status-dropdown" :class="{ open: deletedDateFilterOpen }" @click.stop="deletedDateFilterOpen = !deletedDateFilterOpen; rCalOpen = false" style="margin-left:auto;position:relative">
             <div class="status-dropdown-trigger">
               <span>{{ deletedDateFilter === 'custom' ? (deletedCustomDate || '选择日期') : ((deletedDateFilters.find(f => f.value === deletedDateFilter) || {}).label || '全部时间') }}</span>
               <svg class="status-dropdown-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
@@ -922,22 +925,30 @@
               </div>
             </div>
           </div>
+          </div>
         </div>
         <div v-if="filteredDeletedAccounts.length === 0" style="padding:24px 0;text-align:center;color:var(--text-muted);font-size:13px">
           {{ deletedAccounts.length === 0 ? '回收站是空的' : '没有符合条件的账号' }}
         </div>
         <template v-for="g in groupedDeletedAccounts" :key="g.batch || 'nb'">
-          <div style="display:flex;align-items:center;gap:10px;margin:16px 0 8px">
-            <span style="flex:1;height:1px;background:var(--border)"></span>
-            <span style="font-size:12px;font-weight:600;color:var(--text-muted)">{{ g.label }} · {{ g.items.length }} 个</span>
-            <template v-if="g.batch">
-              <button class="btn btn-sm btn-primary" :disabled="recycleBusy" @click="restoreBatch(g.batch)">整组恢复</button>
-              <button class="btn btn-sm btn-danger" :disabled="recycleBusy" @click="destroyBatch(g.batch)">整组删除</button>
-            </template>
-            <span style="flex:1;height:1px;background:var(--border)"></span>
+          <div style="margin:18px 0 10px">
+            <div style="display:flex;align-items:flex-start;gap:12px">
+              <div style="flex:1;min-width:0">
+                <div v-if="g.note" style="font-size:13px;color:var(--text);font-weight:600;line-height:1.5;word-break:break-all">{{ g.note }}</div>
+                <div style="font-size:12px;color:var(--text-muted);font-weight:600;margin-top:2px">{{ g.label }} · {{ g.items.length }} 个</div>
+              </div>
+              <template v-if="g.batch">
+                <div style="display:flex;gap:6px;flex-shrink:0;padding-top:2px">
+                  <button class="btn btn-sm btn-ghost" :disabled="recycleBusy" @click="editBatchNote(g.batch, g.note)" title="给这个批次加备注，方便查找">备注</button>
+                  <button class="btn btn-sm btn-primary" :disabled="recycleBusy" @click="restoreBatch(g.batch)">整组恢复</button>
+                  <button class="btn btn-sm btn-danger" :disabled="recycleBusy" @click="destroyBatch(g.batch)">整组删除</button>
+                </div>
+              </template>
+            </div>
+            <div style="height:1px;background:var(--border);margin-top:10px"></div>
           </div>
           <div v-for="d in g.items" :key="d.id"
-            style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:8px;background:var(--bg)">
+            style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:10px;background:var(--bg)">
             <input type="checkbox" :checked="!!deletedSelected[d.id]" @click.stop @change="toggleDeletedSelect(d.id)"
               style="flex-shrink:0;accent-color:var(--primary)">
             <span class="badge-status" :class="getStatusBadgeClass(d)" style="flex-shrink:0">{{ getStatusText(d) }}</span>
@@ -955,17 +966,17 @@
           </div>
         </template>
       </div>
-      <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <div style="display:flex;gap:6px;align-items:center">
+      <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;gap:10px">
+        <div style="display:flex;gap:10px;align-items:center">
           <label style="font-size:12px;color:var(--text-secondary);cursor:pointer;user-select:none">
             <input type="checkbox" :checked="allDeletedSelected" @change="selectAllDeleted" style="accent-color:var(--primary);margin-right:4px">全选{{ deletedFilter !== 'all' ? '当前筛选' : '' }}
           </label>
           <span v-if="deletedSelectedCount > 0" style="font-size:11px;color:var(--text-muted)">已选 {{ deletedSelectedCount }}</span>
         </div>
-        <div style="display:flex;gap:6px">
-          <button class="btn btn-ghost" @click="activeModal = null">关闭</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sm btn-ghost" @click="activeModal = null">关闭</button>
           <button class="btn btn-sm btn-ghost" :disabled="deletedSelectedCount === 0 || recycleBusy" @click="restoreSelected">恢复选中</button>
-          <button class="btn btn-primary" :disabled="filteredDeletedAccounts.length === 0 || recycleBusy" @click="restoreAllDeleted">恢复{{ deletedFilter !== 'all' ? '筛选' : '全部' }}</button>
+          <button class="btn btn-sm btn-primary" :disabled="filteredDeletedAccounts.length === 0 || recycleBusy" @click="restoreAllDeleted">恢复{{ deletedFilter !== 'all' ? '筛选' : '全部' }}</button>
           <button class="btn btn-sm btn-danger" :disabled="deletedSelectedCount === 0 || recycleBusy" @click="destroySelected">彻底删除选中</button>
         </div>
       </div>
@@ -1181,7 +1192,28 @@
         </button>
       </div>
       <div class="modal-body">
-        <div class="changelog-version">v1.0.8</div>
+        <div class="changelog-version">v1.0.9</div>
+        <div class="changelog-date">2026-08-11</div>
+
+        <div class="changelog-section-title">问题修复</div>
+        <ul class="changelog-list">
+          <li>修复更新后机器码变化导致需要重新激活的问题（改用系统稳定标识，不再随网卡 / VPN 变化）</li>
+          <li>修复在线更新下载中断后需要从头下载的问题</li>
+          <li>修复删除确认弹窗备注输入框与按钮重叠的问题</li>
+        </ul>
+
+        <div class="changelog-section-title">功能新增</div>
+        <ul class="changelog-list">
+          <li>回收站批次备注：批量删除时可填写备注，回收站内可查看 / 编辑，支持按备注搜索</li>
+          <li>在线更新支持断点续传，下载中断后从断点继续</li>
+        </ul>
+
+        <div class="changelog-section-title">体验优化</div>
+        <ul class="changelog-list">
+          <li>回收站界面布局优化，间距与按钮尺寸统一，超长备注自动换行</li>
+        </ul>
+
+        <div class="changelog-version" style="margin-top:24px">v1.0.8</div>
         <div class="changelog-date">2026-08-09</div>
 
         <div class="changelog-section-title">问题修复</div>
@@ -1481,6 +1513,7 @@ function showConfirm(msg, title, opts) {
   opts = opts || {};
   const okText = opts.okText || '确定', cancelText = opts.cancelText || '取消', danger = opts.danger !== false;
   const cb = opts.checkbox || null;
+  const inp = opts.input || null;
   return new Promise(resolve => {
     const ov = document.createElement('div');
     ov.className = 'confirm-overlay';
@@ -1488,6 +1521,7 @@ function showConfirm(msg, title, opts) {
       '<div class="confirm-box" role="dialog" aria-modal="true">' +
         '<div class="confirm-title"></div><div class="confirm-msg"></div>' +
         (cb ? '<label class="confirm-check"><input type="checkbox"><span></span></label>' : '') +
+        (inp ? '<div class="confirm-input" style="margin:10px 0 16px;display:none"><input type="text" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg);color:var(--text);font-size:13px;outline:none" maxlength="40" placeholder=""></div>' : '') +
         '<div class="confirm-actions">' +
           '<button class="btn btn-ghost btn-sm confirm-no"></button>' +
           '<button class="btn btn-sm confirm-yes"></button>' +
@@ -1501,6 +1535,20 @@ function showConfirm(msg, title, opts) {
       const input = ov.querySelector('.confirm-check input');
       input.checked = cb.checked !== false;
       ov.querySelector('.confirm-check span').textContent = cb.label;
+      // checkbox 与 input 联动：勾选（软删除）显示输入框，取消勾选（硬删除）隐藏
+      if (inp) {
+        const box = ov.querySelector('.confirm-input');
+        const onCb = () => { box.style.display = input.checked ? '' : 'none'; };
+        input.addEventListener('change', onCb);
+        onCb();
+      }
+    } else if (inp) {
+      ov.querySelector('.confirm-input').style.display = '';
+    }
+    if (inp) {
+      const iv = ov.querySelector('.confirm-input input');
+      iv.placeholder = inp.placeholder || '';
+      if (inp.value !== undefined) iv.value = inp.value;
     }
     document.body.appendChild(ov);
     requestAnimationFrame(() => ov.classList.add('show'));
@@ -1510,8 +1558,11 @@ function showConfirm(msg, title, opts) {
       document.removeEventListener('keydown', onKey);
       ov.classList.remove('show');
       setTimeout(() => ov.remove(), 160);
-      if (cb) resolve({ ok: v, checked: ov.querySelector('.confirm-check input').checked });
-      else resolve(v);
+      if (!v) { resolve(false); return; }
+      const res = { ok: true };
+      if (cb) res.checked = ov.querySelector('.confirm-check input').checked;
+      if (inp) res.value = ov.querySelector('.confirm-input input').value.trim();
+      resolve(res);
     }
     function onKey(e) { if (e.key==='Escape') done(false); else if (e.key==='Enter') done(true); }
     yes.onclick = () => done(true); no.onclick = () => done(false);
@@ -1726,6 +1777,7 @@ const vApp = createApp({
     const recycleBusy = ref(false);
     const deletedSelected = ref({});
     const deletedFilter = ref('all');
+    const deletedKeyword = ref('');
     const deletedDateFilter = ref('all');
     const deletedDateFilterOpen = ref(false);
     const deletedCustomDate = ref('');
@@ -1765,6 +1817,15 @@ const vApp = createApp({
           return true;
         });
       }
+      if (deletedKeyword.value) {
+        const kw = deletedKeyword.value.trim().toLowerCase();
+        if (kw) r = r.filter(a =>
+          (a.note || '').toLowerCase().includes(kw) ||
+          (a.nickname || '').toLowerCase().includes(kw) ||
+          (a.email || '').toLowerCase().includes(kw) ||
+          (a.id || '').toLowerCase().includes(kw)
+        );
+      }
       return r;
     });
     // 按删除批次分组：同一次批量删除的账号归为一组，可整组恢复/彻底删除
@@ -1773,9 +1834,10 @@ const vApp = createApp({
       const byBatch = new Map();
       for (const a of list) {
         const key = a.batch ? String(a.batch) : '__nobatch__';
-        if (!byBatch.has(key)) byBatch.set(key, { batch: a.batch, deleted_at: a.deleted_at || 0, items: [] });
+        if (!byBatch.has(key)) byBatch.set(key, { batch: a.batch, deleted_at: a.deleted_at || 0, note: a.note || '', items: [] });
         const g = byBatch.get(key);
         g.items.push(a);
+        if (a.note && !g.note) g.note = a.note;
         if (!g.deleted_at || (a.deleted_at || 0) < g.deleted_at) g.deleted_at = a.deleted_at || 0;
       }
       const groups = [...byBatch.values()].sort((x, y) => (y.deleted_at || 0) - (x.deleted_at || 0));
@@ -1784,7 +1846,7 @@ const vApp = createApp({
         const label = t
           ? `${t.getMonth()+1}月${t.getDate()}日 ${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')} 删除的一批`
           : '未分组';
-        return { batch: g.batch, label, items: g.items };
+        return { batch: g.batch, label, items: g.items, note: g.note };
       });
     });
     const deletedFilterCounts = computed(() => {
@@ -2692,6 +2754,21 @@ const vApp = createApp({
       else { deletedSelected.value[id] = true; }
     }
 
+    async function editBatchNote(batch, current) {
+      const c = await showConfirm('给这个删除批次加个备注，方便以后查找（留空则清除）', '批次备注', {
+        okText: '保存',
+        input: { placeholder: '如：清退测试号', value: current || '' }
+      });
+      if (!c.ok) return;
+      try {
+        const r = JSON.parse(await pywebview.api.set_batch_note(currentPlatform.value, String(batch), c.value || ''));
+        if (r.success) {
+          showToast('备注已保存', 'success');
+          deletedAccounts.value = JSON.parse(await pywebview.api.list_deleted_accounts(currentPlatform.value));
+        } else showToast(r.error || '保存失败', 'error');
+      } catch(e) { showToast('保存备注失败: '+e, 'error'); }
+    }
+
     function selectAllDeleted() {
       if (allDeletedSelected.value) deletedSelected.value = {};
       else { const m = {}; filteredDeletedAccounts.value.forEach(a => m[a.id] = true); deletedSelected.value = m; }
@@ -2811,13 +2888,16 @@ const vApp = createApp({
       if (!ids.length) return;
       const c = await showConfirm(`确定删除选中的 ${ids.length} 个账号吗？`, '批量删除确认', {
         okText: '删除',
-        checkbox: { label: '软删除：数据存入回收站，可随时恢复（取消勾选则永久删除）', checked: true }
+        checkbox: { label: '软删除：数据存入回收站，可随时恢复（取消勾选则永久删除）', checked: true },
+        input: { placeholder: '可选：给这批账号加个备注，方便查找' }
       });
       if (!c.ok) return;
       if (!c.checked && !await showConfirm(`硬删除将永久清除选中的 ${ids.length} 个账号及所有数据，确认删除吗？`, '不可逆操作', { okText: '删除', danger: true })) return;
       batchDeleteLoading.value = true;
       try {
-        const r = JSON.parse(await pywebview.api.delete_accounts(currentPlatform.value, JSON.stringify(ids), c.checked ? '1' : '0'));
+        // 备注仅软删除可填（硬删除无批次，不传）
+        const note = c.checked ? (c.value || '') : '';
+        const r = JSON.parse(await pywebview.api.delete_accounts(currentPlatform.value, JSON.stringify(ids), c.checked ? '1' : '0', note));
         if (r.success === false) {
           // 后端拒绝（删完池空）：不删任何账号，提示用户取消一些勾选
           showToast(r.error || '删除失败', 'error');
@@ -3464,7 +3544,7 @@ const vApp = createApp({
       selectMode, selectedIds, batchDeleteLoading, batchExportLoading, batchDetectLoading,
       batchStatusLoading, batchRefreshLoading, batchCheckinLoading, batchFingerprintLoading,
       deletedAccounts, recycleBusy, deletedSelected, deletedSelectedCount, allDeletedSelected,
-      deletedFilter, deletedFilters, deletedDateFilter, deletedDateFilterOpen, deletedDateFilters, deletedCustomDate, rCalOpen, rCalPickDay, rCalIsSelected, filteredDeletedAccounts, groupedDeletedAccounts, deletedFilterCounts,
+      deletedFilter, deletedKeyword, deletedFilters, deletedDateFilter, deletedDateFilterOpen, deletedDateFilters, deletedCustomDate, rCalOpen, rCalPickDay, rCalIsSelected, filteredDeletedAccounts, groupedDeletedAccounts, deletedFilterCounts,
       allSelected, someSelected, selectedCount,
       usageSummary, usageCacheRate,
       oauthUrlText, oauthStatusHtml,
@@ -3493,7 +3573,7 @@ const vApp = createApp({
       editTags, saveTags, removeTagChip,
       openFingerprint, randomFingerprint, saveFingerprint, resetFingerprint,
       openRecycle, restoreDeleted, restoreAllDeleted, restoreSelected, destroyDeleted, destroySelected,
-      restoreBatch, destroyBatch,
+      restoreBatch, destroyBatch, editBatchNote,
       toggleDeletedSelect, selectAllDeleted,
       showQuotaDetail, refreshQuota,
       showOAuthModal, cancelOAuth,

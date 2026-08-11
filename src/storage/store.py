@@ -51,6 +51,10 @@ def _run_migrations(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE accounts ADD COLUMN delete_batch INTEGER")
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE accounts ADD COLUMN batch_note TEXT")
+    except sqlite3.OperationalError:
+        pass
     # 旧数据补批次：批次功能上线前删除的账号 delete_batch 为 NULL，
     # 按删除时间（秒）补一个批次号，让回收站旧数据也能整组恢复/删除。
     # 幂等：补齐后不再命中 WHERE。UPDATE 是 DML，必须显式 commit。
@@ -291,7 +295,7 @@ def list_deleted_accounts(platform: str) -> list[dict]:
     conn = _get_conn()
     try:
         rows = conn.execute(
-            "SELECT id, email, nickname, deleted_at, delete_batch FROM accounts "
+            "SELECT id, email, nickname, deleted_at, delete_batch, batch_note FROM accounts "
             "WHERE platform=? AND status='deleted' ORDER BY deleted_at DESC, id ASC",
             (platform,)
         ).fetchall()
@@ -304,6 +308,7 @@ def list_deleted_accounts(platform: str) -> list[dict]:
                 "status": states.get(r["id"], "normal"),
                 "deleted_at": r["deleted_at"] or 0,
                 "batch": r["delete_batch"],
+                "note": r["batch_note"] or "",
             }
             for r in rows
         ]
@@ -311,10 +316,11 @@ def list_deleted_accounts(platform: str) -> list[dict]:
         conn.close()
 
 
-def soft_delete_account(platform: str, account_id: str, batch: Optional[int] = None):
+def soft_delete_account(platform: str, account_id: str, batch: Optional[int] = None, note: str = ""):
     """软删除：status='deleted' + 记录删除时间（及删除批次），数据保留在库，各读路径自动过滤，可随时恢复。
     恢复时还原软删前的原状态（banned 还是 banned、disabled 还是 disabled）。
     batch：同一次批量删除共用同一批次号，回收站按批次整组恢复/彻底删除。
+    note：批次备注（可选，回收站展示/查找用），仅软删除（有批次）才填。
     整个 SELECT+UPDATE+_soft_states 写入在同一锁内，与 restore 互斥，无竞态窗口。"""
     with _soft_states_lock:
         conn = _get_conn()
@@ -325,11 +331,20 @@ def soft_delete_account(platform: str, account_id: str, batch: Optional[int] = N
             ).fetchone()
             if not row:
                 return
-            conn.execute(
-                "UPDATE accounts SET status='deleted', deleted_at=?, delete_batch=? "
-                "WHERE id=? AND platform=? AND status != 'deleted'",
-                (int(time.time()), batch, account_id, platform)
-            )
+            if note:
+                # 带备注：写入批次备注
+                conn.execute(
+                    "UPDATE accounts SET status='deleted', deleted_at=?, delete_batch=?, batch_note=? "
+                    "WHERE id=? AND platform=? AND status != 'deleted'",
+                    (int(time.time()), batch, note, account_id, platform)
+                )
+            else:
+                # 无备注：只写状态+批次，不覆盖批次已有备注（同批次先删的号带了备注时保留）
+                conn.execute(
+                    "UPDATE accounts SET status='deleted', deleted_at=?, delete_batch=? "
+                    "WHERE id=? AND platform=? AND status != 'deleted'",
+                    (int(time.time()), batch, account_id, platform)
+                )
             conn.commit()
             prev = row["status"] or "normal"
         finally:
@@ -348,7 +363,7 @@ def restore_account(platform: str, account_id: str) -> bool:
         conn = _get_conn()
         try:
             cur = conn.execute(
-                "UPDATE accounts SET status=?, deleted_at=NULL, delete_batch=NULL "
+                "UPDATE accounts SET status=?, deleted_at=NULL, delete_batch=NULL, batch_note=NULL "
                 "WHERE id=? AND platform=? AND status='deleted'",
                 (prev, account_id, platform)
             )
@@ -392,6 +407,19 @@ def destroy_batch(platform: str, batch: int) -> int:
         except Exception:
             pass
     return destroyed
+
+
+def set_batch_note(platform: str, batch: int, note: str):
+    """批次备注：编辑/清空回收站某个删除批次的备注（该批次所有账号同步）。"""
+    conn = _get_conn()
+    try:
+        conn.execute(
+            "UPDATE accounts SET batch_note=? WHERE platform=? AND status='deleted' AND delete_batch=?",
+            (note or None, platform, batch)
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 # ── 软删除原状态记录：恢复时还原（banned 还是 banned，不强制回 normal）──

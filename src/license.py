@@ -55,7 +55,24 @@ def generate(expiry_ts: int) -> str:
 
 
 def machine_code() -> str:
-    """采集本机唯一标识（基于网卡 MAC 哈希，稳定不变）。"""
+    """采集本机唯一标识（稳定不变）。
+
+    优先 Windows MachineGuid（HKLM\\SOFTWARE\\Microsoft\\Cryptography，
+    系统安装时生成、重装系统才变，不随网卡/VPN/虚拟网卡漂移）。
+    读取失败时退回网卡 MAC 哈希。
+    不能主用 uuid.getnode()：它在 3.12 走 UuidCreateSequential，会取到
+    虚拟网卡（VPN/Hyper-V）的 MAC 甚至无网卡时生成随机数，导致机器码
+    漂移、用户被迫重新激活。
+    """
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography") as k:
+            guid, _ = winreg.QueryValueEx(k, "MachineGuid")
+            if guid:
+                raw = "MG-" + str(guid).strip()
+                return "MID-" + hashlib.sha256(raw.encode()).hexdigest()[:16].upper()
+    except Exception:
+        pass
     raw = uuid.UUID(int=uuid.getnode()).hex
     return "MID-" + hashlib.sha256(raw.encode()).hexdigest()[:16].upper()
 
