@@ -640,6 +640,35 @@ async def proxy_info():
     }
 
 
+@router.get("/__gw/quota")
+async def gw_quota():
+    """网关额度（注入 WorkBuddy 用）。完全复刻 app.get_stats 算法，和 GUI 顶部额度条同口径：
+    跳过 banned；calc_totals(quota_raw, usage_raw, active_only=False) + account_stats.total_credit。
+    每次 fetch 实时算 —— 消耗通过 total_credit（token_rotator 每次请求扣减写 store）实时反映。"""
+    from src.storage import store
+    from src.api import quota as Q
+    accs = store.list_accounts(_platform)
+    stats = {s["account_id"]: s for s in store.list_account_stats(_platform)}
+    total_used = 0.0
+    total_remain = 0.0
+    for a in accs:
+        if a.status == "banned":
+            continue
+        try:
+            t, u = Q.calc_totals(a.quota_raw, a.usage_raw, active_only=False)
+        except Exception:
+            t, u = 0.0, 0.0
+        credit = float((stats.get(a.id) or {}).get("total_credit") or 0)
+        used = u + credit
+        total_used += used
+        total_remain += max(0.0, t - used)
+    return {
+        "used": round(total_used, 2),
+        "remain": round(total_remain, 2),
+        "count": len(accs),
+    }
+
+
 app = FastAPI(title="cbcn2api Proxy", version="0.3.0", docs_url=None, redoc_url=None)
 app.add_middleware(
     CORSMiddleware,

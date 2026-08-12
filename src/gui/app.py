@@ -1335,11 +1335,44 @@ class GuiApi:
 
             self._proxy_server = server
             self._proxy_port = port_num
+            # 集成 WorkBuddy：注入快捷方式 CDP 参数（用户双击桌面图标即带调试端口），
+            # 后台轮询检测到 WorkBuddy CDP 起来后自动注入额度横条（WorkBuddy 未开则静默等）
+            try:
+                from src.gui.wb_shortcut import inject as _wb_shortcut_inject
+                _wb_shortcut_inject()
+            except Exception:
+                pass
+            self._start_cdp_inject_loop(port_num)
             return json.dumps({"success": True, "port": port_num})
         except Exception as e:
             return json.dumps({"error": f"网关启动失败: {str(e)[:200]}"})
 
+    def _start_cdp_inject_loop(self, port_num: int):
+        """后台线程：WorkBuddy CDP（9222）起来且横条不在时注入额度横条。
+        WorkBuddy 重启 / 页面 reload 后横条丢失会自动重注入。
+        退出条件：捕获启动时的 server 引用——代理停止（_proxy_server 置 None）或
+        已换新 server（快速 stop→start）时线程自然退出，杜绝死线程/双线程并存。"""
+
+        server_ref = getattr(self, "_proxy_server", None)
+        if server_ref is None:
+            return
+
+        def _loop():
+            import time
+            from src.gui.cdp_injector import inject_quota_bar, bar_present
+            while getattr(self, "_proxy_server", None) is server_ref:
+                try:
+                    if not bar_present() and inject_quota_bar(port_num).get("ok"):
+                        pass
+                except Exception:
+                    pass
+                time.sleep(5)
+
+        threading.Thread(target=_loop, daemon=True).start()
+
     def proxy_stop(self) -> str:
+        # 注意：停代理不还原 WorkBuddy 快捷方式 CDP 参数——
+        # 只有程序真正关闭（cleanup）时才还原，避免停代理后 WorkBuddy 失去 CDP/横条
         server = getattr(self, "_proxy_server", None)
         if server:
             server.should_exit = True
@@ -1371,6 +1404,12 @@ class GuiApi:
         })
 
     def cleanup(self):
+        # 兜底还原 WorkBuddy 快捷方式 CDP 参数（异常退出也还原）
+        try:
+            from src.gui.wb_shortcut import restore as _wb_shortcut_restore
+            _wb_shortcut_restore()
+        except Exception:
+            pass
         server = getattr(self, "_proxy_server", None)
         if server:
             server.should_exit = True
