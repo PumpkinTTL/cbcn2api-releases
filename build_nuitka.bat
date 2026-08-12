@@ -42,7 +42,6 @@ echo [2/3] 开始 Nuitka 编译（首次 5~15 分钟）...
     --include-data-files=gateway.ico=gateway.ico ^
     --mingw64 ^
     --assume-yes-for-downloads ^
-    --lto=yes ^
     --output-dir=dist ^
     --output-filename="AI Gateway v1.0.9-Nuitka.exe" ^
     main.py
