@@ -21,7 +21,8 @@ def probe_chat_available(account, access_token: str) -> str:
     """返回 'ok' | 'banned' | 'unknown'。"""
     from src.api.client import get_session
 
-    headers = build_headers(access_token, user_id=account.uid or None, fingerprint=account.fingerprint)
+    headers = build_headers(access_token, user_id=account.uid or None, fingerprint=account.fingerprint,
+                            enterprise_id=account.enterprise_id, domain=account.domain)
     headers["X-TUID"] = account.uid or ""
     headers["x-traffic-id"] = account.uid or ""
 

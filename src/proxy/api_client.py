@@ -17,23 +17,48 @@ _WORKBUDDY_CLI_VERSIONS = ["2.106.4", "2.106.5", "2.107.0", "2.107.1", "2.108.1"
 _STAINLESS_VERSIONS = ["6.25.0", "6.24.0", "6.23.1", "6.26.0", "6.25.1", "6.22.0"]
 _NODE_RUNTIME_VERSIONS = ["v22.21.1", "v22.20.0", "v22.22.0", "v22.19.0", "v20.19.0", "v20.18.1", "v23.0.0", "v22.18.0"]
 
-# build_headers 允许账号指纹覆盖的字段白名单（其余 header 一律不接受覆盖）
+# build_headers 允许账号指纹覆盖的字段白名单（其余 header 一律不接受覆盖）。
+# X-IDE-Type / X-IDE-Name 是上游识别客户端身份的核心头 —— 只改 UA 不生效，
+# 必须与 UA 三件套一起换（社区指纹规范：CLI 三件套 = UA + Type + Name）。
 FINGERPRINT_FIELDS = (
     "X-IDE-Version",
     "User-Agent",
     "x-stainless-package-version",
     "x-stainless-runtime-version",
+    "X-IDE-Type",
+    "X-IDE-Name",
 )
 
 
-def generate_fingerprint() -> dict:
+def generate_fingerprint(style: str = "workbuddy") -> dict:
+    """随机一套成套指纹。style: workbuddy（默认）| cli —— 三件套联动，不会撕裂。
+
+    workbuddy 风格：Type/Name=WorkBuddy，UA=WorkBuddy/{ide} WorkBuddy/{ide} CLI/{cli}
+    cli 风格：Type/Name=CLI，UA=CLI/{ver} CodeBuddy/{ver}（社区指纹规范形态）
+    """
+    stainless = (
+        random.choice(_STAINLESS_VERSIONS),
+        random.choice(_NODE_RUNTIME_VERSIONS),
+    )
+    if (style or "workbuddy").lower() == "cli":
+        ver = random.choice(_WORKBUDDY_CLI_VERSIONS)
+        return {
+            "X-IDE-Type": "CLI",
+            "X-IDE-Name": "CLI",
+            "X-IDE-Version": ver,
+            "User-Agent": f"CLI/{ver} CodeBuddy/{ver}",
+            "x-stainless-package-version": stainless[0],
+            "x-stainless-runtime-version": stainless[1],
+        }
     ide = random.choice(_WORKBUDDY_IDE_VERSIONS)
     cli = random.choice(_WORKBUDDY_CLI_VERSIONS)
     return {
+        "X-IDE-Type": "WorkBuddy",
+        "X-IDE-Name": "WorkBuddy",
         "X-IDE-Version": ide,
         "User-Agent": f"WorkBuddy/{ide} WorkBuddy/{ide} CLI/{cli}",
-        "x-stainless-package-version": random.choice(_STAINLESS_VERSIONS),
-        "x-stainless-runtime-version": random.choice(_NODE_RUNTIME_VERSIONS),
+        "x-stainless-package-version": stainless[0],
+        "x-stainless-runtime-version": stainless[1],
     }
 
 
@@ -87,8 +112,14 @@ def build_headers(
     user_id: Optional[str] = None,
     conversation_id: Optional[str] = None,
     fingerprint: Optional[dict] = None,
+    enterprise_id: Optional[str] = None,
+    domain: Optional[str] = None,
 ) -> dict:
     client_profile = UPSTREAM_CLIENT_PROFILES[DEFAULT_UPSTREAM_CLIENT]
+    # Origin/Referer 按账号区域匹配（社区指纹规范）：国内 codebuddy.cn，国际 workbuddy.ai。
+    # 无 domain 时按国内处理（本项目账号体系为 copilot.tencent.com）。
+    is_intl = bool(domain) and "workbuddy.ai" in domain
+    origin = "https://www.workbuddy.ai" if is_intl else "https://www.codebuddy.cn"
     headers = {
         "Host": "copilot.tencent.com",
         "Accept": "text/event-stream",
@@ -115,8 +146,19 @@ def build_headers(
         "Authorization": f"Bearer {bearer_token}",
         "X-User-Id": user_id or "00000000-0000-0000-0000-000000000000",
         "X-Product": "SaaS",
+        "Origin": origin,
+        "Referer": origin + "/",
         "User-Agent": client_profile["User-Agent"],
     }
+    # 账号头带全（社区指纹规范）：有值发实名头，缺省按官方 CLI 的 X-No-* 约定
+    if enterprise_id:
+        headers["X-Enterprise-Id"] = str(enterprise_id)
+    else:
+        headers["X-No-Enterprise-Id"] = "1"
+    if domain:
+        headers["X-Domain"] = domain
+    else:
+        headers["X-No-Department-Info"] = "1"
     if fingerprint:
         for key in FINGERPRINT_FIELDS:
             value = fingerprint.get(key)

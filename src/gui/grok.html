@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grok Build</title>
+<script>
+// 主题引导：iframe 内独立设置 data-theme，避免继承主 frame 的闪烁。
+// 读 localStorage（与主界面同源共享），fallback 取 parent。
+(function(){
+  try {
+    var t = localStorage.getItem('theme');
+    if (t !== 'light' && t !== 'dark') {
+      t = (window.parent && window.parent.document.documentElement.getAttribute('data-theme')) || 'light';
+    }
+  } catch(e){ t = 'light'; }
+  document.documentElement.setAttribute('data-theme', t);
+  window.__THEME__ = t;
+})();
+</script>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="grok.css">
+<script src="vue.prod.js"></script>
+</head>
+<body>
+<div id="grok-app">
+  <!-- 页头：与主界面同款按钮（图标 + 文字） -->
+  <header class="grok-header">
+    <div class="grok-title">
+      <span class="grok-logo">✦</span>
+      <h2>Grok Build</h2>
+      <span class="grok-count" v-if="accounts.length">{{ accounts.length }} 个账号</span>
+    </div>
+    <div class="grok-actions">
+      <button class="btn btn-ghost" @click="loadAccounts" :disabled="loading">
+        <span v-if="loading" class="spinner-sm"></span>
+        <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>
+        刷新列表
+      </button>
+      <button class="btn btn-primary" @click="startLogin" :disabled="login.busy">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        添加 Grok 账号
+      </button>
+    </div>
+  </header>
+
+  <!-- 桥接异常提示（主 frame 无响应 / 未提供方法） -->
+  <div class="grok-conn-error" v-if="bridgeError">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+    <span>无法连接主界面桥接——请确认在主界面中打开本页面</span>
+    <button class="btn btn-sm" @click="loadAccounts" :disabled="loading">重试</button>
+  </div>
+
+  <!-- 账号卡片：复用主界面 .account-grid/.card 布局 -->
+  <div class="account-grid" v-if="accounts.length">
+    <div class="card" v-for="a in accounts" :key="a.id">
+      <div class="card-header">
+        <div style="display:flex;align-items:center;flex:1;min-width:0">
+          <div class="card-info">
+            <div class="card-name">{{ a.email || a.nickname || a.id }}</div>
+            <div class="card-meta">
+              <span v-if="a.subscription_tier" class="badge badge-pro">{{ a.subscription_tier }}</span>
+              <span v-if="a.has_grok_code_access" class="badge badge-trial">Grok Code</span>
+              <span class="badge" :class="statusBadgeClass(a.status)">{{ statusText(a.status) }}</span>
+              <span v-if="a.expires_at" class="grok-expire">
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                到期 {{ formatExpire(a.expires_at) }}
+              </span>
+              <span v-for="t in (a.tags || [])" :key="t" class="tag-pill">{{ t }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <div class="card-actions">
+          <button class="btn btn-ghost btn-sm" @click="refreshAccount(a.id)" :disabled="a._refreshing">
+            <span v-if="a._refreshing" class="spinner-sm"></span>
+            <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>
+            刷新凭证
+          </button>
+          <button class="btn btn-ghost btn-sm btn-danger" @click="deleteAccount(a)" :disabled="a._deleting">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
+            删除
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 空状态（网关可达但无账号） -->
+  <div class="empty-state" v-else-if="!loading && !bridgeError">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+    <h3>还没有 Grok 账号</h3>
+    <p>点击右上角「添加 Grok 账号」，用 xAI 账号设备码授权登录</p>
+  </div>
+
+  <!-- device code 登录面板 -->
+  <div class="gb-modal" v-if="login.shown" @click.self="cancelLogin">
+    <div class="gb-modal-card">
+      <h3>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" style="vertical-align:-3px"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+        登录 Grok Build
+      </h3>
+      <template v-if="login.error">
+        <p class="gb-error">{{ login.error }}</p>
+        <button class="btn btn-primary" style="width:100%;justify-content:center" @click="startLogin">重试</button>
+      </template>
+      <template v-else-if="login.userCode">
+        <p class="gb-step">1. 在打开的验证页输入下方代码：</p>
+        <div class="gb-usercode" @click="copyCode" title="点击复制">{{ login.userCode }}</div>
+        <a class="btn btn-primary gb-verify-link" :href="login.verifyUrl" target="_blank" rel="noopener">
+          打开验证页面
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M8 7h9v9"/></svg>
+        </a>
+        <p class="gb-step gb-step-2">2. 授权完成后这里会自动继续…</p>
+        <p class="gb-pending" v-if="login.pending">
+          <span class="spinner-sm"></span> 等待授权中
+        </p>
+      </template>
+      <template v-else>
+        <p class="gb-pending"><span class="spinner-sm"></span> 正在请求设备码…</p>
+      </template>
+      <button class="btn gb-cancel" @click="cancelLogin">取消</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const { createApp, ref, onMounted } = Vue;
+
+createApp({
+  setup() {
+    const accounts = ref([]);
+    const loading = ref(false);
+    const bridgeError = ref(false);  // postMessage 桥接不可用（主 frame 无响应/未提供方法）
+    const login = ref({ shown: false, busy: false, loginId: '', userCode: '', verifyUrl: '', pending: false, error: '', timer: null });
+
+    // ── postMessage RPC：请求主 frame 转发到 pywebview.api（与 CodeBuddy 同款链路）──
+    // 不直连网关 HTTP（那要求网关已启动）；postMessage 跨 frame 保证可用。
+    let rpcId = 0;
+    const pending = new Map();
+    window.addEventListener('message', (e) => {
+      const d = e.data;
+      if (!d || d.__grokRpc !== true || !pending.has(d.id)) return;
+      const { resolve, reject } = pending.get(d.id);
+      pending.delete(d.id);
+      // 能收到回复说明桥是通的（哪怕 Python 侧业务报错）
+      bridgeError.value = false;
+      if (d.payload && d.payload.error) reject(new Error(d.payload.error));
+      else resolve(d.payload);
+    });
+
+    function rpc(method, ...args) {
+      return new Promise((resolve, reject) => {
+        const id = ++rpcId;
+        pending.set(id, { resolve, reject });
+        try {
+          window.parent.postMessage({ __grokRpc: true, id, method, args }, '*');
+        } catch (e) {
+          pending.delete(id);
+          bridgeError.value = true;
+          reject(new Error('桥接调用失败'));
+        }
+        setTimeout(() => {
+          if (pending.has(id)) {
+            pending.delete(id);
+            bridgeError.value = true;   // 主界面没回 = 桥断
+            reject(new Error('主界面无响应'));
+          }
+        }, 8000);
+      });
+    }
+
+    async function loadAccounts() {
+      loading.value = true;
+      try {
+        const data = await rpc('grok_accounts');
+        accounts.value = (data.accounts || []).map(a => ({ ...a, _refreshing: false, _deleting: false }));
+      } catch(e) {
+        console.error('loadAccounts', e);
+      } finally {
+        loading.value = false;
+      }
+    }
+
+    function statusText(s) {
+      if (s === 'disabled') return '已禁用';
+      if (s === 'banned') return '封禁';
+      return '正常';
+    }
+    function statusBadgeClass(s) {
+      return (!s || s === 'normal') ? 'badge-free' : 'gb-badge-danger';
+    }
+
+    async function startLogin() {
+      login.value = { shown: true, busy: true, loginId:'', userCode:'', verifyUrl:'', pending:false, error:'', timer:null };
+      try {
+        const r = await rpc('grok_oauth_start');
+        login.value.loginId = r.login_id;
+        login.value.userCode = r.user_code;
+        login.value.verifyUrl = r.verification_uri_complete || r.verification_uri;
+        login.value.busy = false;
+        login.value.pending = true;
+        pollLogin();
+      } catch(e) {
+        login.value.error = '请求设备码失败：' + e.message;
+        login.value.busy = false;
+      }
+    }
+
+    function pollLogin() {
+      clearInterval(login.value.timer);
+      login.value.timer = setInterval(async () => {
+        try {
+          const r = await rpc('grok_oauth_poll', login.value.loginId);
+          if (r.status === 'ok') {
+            clearInterval(login.value.timer);
+            // 保存账号
+            await rpc('grok_oauth_complete', JSON.stringify(r.credentials));
+            login.value.shown = false;
+            loadAccounts();
+          }
+        } catch(e) {
+          clearInterval(login.value.timer);
+          login.value.error = '授权失败：' + e.message;
+          login.value.pending = false;
+        }
+      }, 2000);
+    }
+
+    function cancelLogin() {
+      if (login.value.timer) clearInterval(login.value.timer);
+      if (login.value.loginId) {
+        rpc('grok_oauth_cancel', login.value.loginId).catch(()=>{});
+      }
+      login.value.shown = false;
+    }
+
+    function copyCode() {
+      if (navigator.clipboard && login.value.userCode) {
+        navigator.clipboard.writeText(login.value.userCode).catch(()=>{});
+      }
+    }
+
+    async function refreshAccount(id) {
+      const a = accounts.value.find(x => x.id === id);
+      if (a) a._refreshing = true;
+      try {
+        await rpc('grok_refresh', id);
+        await loadAccounts();
+      } catch(e) {
+        alert('刷新失败：' + e.message);
+      } finally {
+        if (a) a._refreshing = false;
+      }
+    }
+
+    async function deleteAccount(a) {
+      if (!confirm(`确定删除账号 ${a.email || a.id}？`)) return;
+      a._deleting = true;
+      try {
+        await rpc('grok_delete', a.id);
+        await loadAccounts();
+      } catch(e) {
+        alert('删除失败：' + e.message);
+      } finally {
+        a._deleting = false;
+      }
+    }
+
+    function formatExpire(ts) {
+      if (!ts) return '';
+      const d = new Date(ts * 1000);
+      return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    }
+
+    onMounted(loadAccounts);
+
+    return { accounts, loading, bridgeError, login, loadAccounts, startLogin, cancelLogin, copyCode, refreshAccount, deleteAccount, formatExpire, statusText, statusBadgeClass };
+  }
+}).mount('#grok-app');
+</script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+/* Grok Build 子页面专属样式（iframe 内）。
+   卡片/按钮/徽章等一律复用主界面 style.css 的全局类（.card/.btn/.badge/.tag-pill/.empty-state），
+   这里只定义 grok 自己的布局，不污染主界面。 */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  font-size: 14px;
+  padding: 20px 24px;
+}
+
+/* 顶部栏 */
+.grok-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.grok-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.grok-title h2 { margin: 0; font-size: 18px; font-weight: 600; white-space: nowrap; }
+.grok-logo { color: var(--primary); font-size: 20px; }
+.grok-count { color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+.grok-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* 网关未启动横幅 */
+.grok-conn-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border-radius: var(--radius-sm);
+  background: rgba(217, 119, 6, 0.1);
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  color: var(--warning);
+  font-size: 13px;
+}
+.grok-conn-error svg { flex-shrink: 0; }
+.grok-conn-error span { flex: 1; }
+
+/* 卡片内的小字到期时间 */
+.grok-expire {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* 非 normal 状态徽章（danger 色调，补 style.css 没有的变体） */
+.gb-badge-danger {
+  background: rgba(217, 83, 79, 0.12);
+  color: #d9534f;
+  border: 1px solid rgba(217, 83, 79, 0.3);
+}
+
+/* 登录模态 */
+.gb-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.gb-modal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 28px 32px;
+  width: 380px;
+  max-width: 90vw;
+  text-align: center;
+}
+.gb-modal-card h3 { margin: 0 0 18px; font-size: 17px; }
+.gb-step { color: var(--text-secondary); font-size: 13px; margin: 14px 0 8px; }
+.gb-step-2 { margin-top: 22px; }
+.gb-usercode {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 4px;
+  font-family: "Consolas", "SF Mono", monospace;
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-hover);
+  border-radius: 8px;
+  padding: 14px;
+  margin: 10px 0;
+  cursor: pointer;
+  color: var(--primary);
+  user-select: all;
+}
+.gb-verify-link { margin-top: 8px; width: 100%; }
+.gb-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 16px 0;
+}
+.gb-error { color: var(--danger); font-size: 13px; margin: 14px 0; }
+.gb-cancel { margin-top: 18px; width: 100%; }

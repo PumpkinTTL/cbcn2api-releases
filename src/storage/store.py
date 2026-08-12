@@ -70,6 +70,12 @@ def _run_migrations(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE accounts ADD COLUMN fingerprint TEXT")
     except sqlite3.OperationalError:
         pass
+    # auth_raw：grok 等新 provider 的 OAuth 原始数据兜底（id_token/scope/订阅信息）。
+    # account.py 早已定义该字段，这里补落库；CodeBuddy 账号该列为 NULL，零影响。
+    try:
+        conn.execute("ALTER TABLE accounts ADD COLUMN auth_raw TEXT")
+    except sqlite3.OperationalError:
+        pass
     # 新表无条件建（老库 user_version 已 1，_ensure_schema 不再跑）
     try:
         conn.execute("""
@@ -181,9 +187,9 @@ def upsert_account(platform: str, account: Account) -> Account:
                 enterprise_id, enterprise_name,
                 access_token, refresh_token, token_type, expires_at, domain,
                 status, tags,
-                last_checkin_time, checkin_streak, quota_raw,
+                last_checkin_time, checkin_streak, quota_raw, auth_raw,
                 created_at, last_used
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(id) DO UPDATE SET
                 email=COALESCE(NULLIF(excluded.email, ''), accounts.email),
                 uid=COALESCE(NULLIF(excluded.uid, ''), accounts.uid),
@@ -200,6 +206,7 @@ def upsert_account(platform: str, account: Account) -> Account:
                 last_checkin_time=COALESCE(excluded.last_checkin_time, accounts.last_checkin_time),
                 checkin_streak=CASE WHEN excluded.checkin_streak > 0 THEN excluded.checkin_streak ELSE accounts.checkin_streak END,
                 quota_raw=COALESCE(excluded.quota_raw, accounts.quota_raw),
+                auth_raw=COALESCE(excluded.auth_raw, accounts.auth_raw),
                 created_at=accounts.created_at,
                 last_used=excluded.last_used
         """, (
@@ -211,6 +218,7 @@ def upsert_account(platform: str, account: Account) -> Account:
             json.dumps(account.tags, ensure_ascii=False) if account.tags else None,
             account.last_checkin_time, account.checkin_streak or 0,
             json.dumps(account.quota_raw, ensure_ascii=False) if account.quota_raw else None,
+            json.dumps(account.auth_raw, ensure_ascii=False) if account.auth_raw else None,
             account.created_at, account.last_used,
         ))
         conn.commit()
@@ -255,6 +263,7 @@ def _row_to_account(row: sqlite3.Row) -> Account:
     tags = json.loads(row["tags"]) if row["tags"] else None
     quota_raw = json.loads(row["quota_raw"]) if row["quota_raw"] else None
     fingerprint = json.loads(row["fingerprint"]) if row["fingerprint"] else None
+    auth_raw = json.loads(row["auth_raw"]) if row["auth_raw"] else None
     return Account(
         id=row["id"], email=row["email"] or "", uid=row["uid"],
         nickname=row["nickname"],
@@ -270,6 +279,7 @@ def _row_to_account(row: sqlite3.Row) -> Account:
         last_checkin_time=row["last_checkin_time"],
         checkin_streak=row["checkin_streak"] or 0,
         quota_raw=quota_raw,
+        auth_raw=auth_raw,
         created_at=row["created_at"] or 0,
         last_used=row["last_used"] or 0,
     )

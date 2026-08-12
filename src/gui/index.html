@@ -123,6 +123,10 @@
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         设置
       </button>
+      <button class="nav-item" :class="{ active: currentView === 'grok' }" @click="showGrok">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"/></svg>
+        Grok Build
+      </button>
     </nav>
     <div class="sidebar-nav-section">推荐</div>
     <nav class="sidebar-nav">
@@ -987,6 +991,11 @@
       <iframe id="shopFrame" class="shop-frame" :src="shopUrl"></iframe>
     </div>
 
+    <!-- ── Grok Build iframe（独立子系统；经 postMessage 桥 → pywebview.api 调 Python）── -->
+    <div class="grok-view" id="grokView" v-show="currentView === 'grok'" v-if="grokFrameUrl">
+      <iframe id="grokFrame" :src="grokFrameUrl" class="grok-frame" frameborder="0"></iframe>
+    </div>
+
   </div><!-- end .content -->
 
   <!-- ── Modals ── -->
@@ -1200,8 +1209,23 @@
           指纹是发给上游服务器的客户端标识。为每个账号配置一套独立指纹，
           可避免多个账号被上游识别为同一客户端。未配置时使用全局默认（WorkBuddy 5.2.6）。
         </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+          <span style="font-size:12px;color:var(--text-secondary)">随机风格</span>
+          <button class="btn btn-ghost btn-sm" :style="fpRandomStyle==='workbuddy' ? 'background:var(--primary);color:#fff;border-color:var(--primary)' : ''"
+                  @click="fpRandomStyle='workbuddy'" title="随机 WorkBuddy 成套指纹">WorkBuddy</button>
+          <button class="btn btn-ghost btn-sm" :style="fpRandomStyle==='cli' ? 'background:var(--primary);color:#fff;border-color:var(--primary)' : ''"
+                  @click="fpRandomStyle='cli'" title="随机 CLI 成套指纹">CLI</button>
+        </div>
         <div class="form-group">
-          <label>X-IDE-Version（WorkBuddy 版本）</label>
+          <label>X-IDE-Type（客户端类型：WorkBuddy / CLI —— 与 UA 成套生效）</label>
+          <input v-model="fpForm['X-IDE-Type']" type="text" class="fp-input">
+        </div>
+        <div class="form-group">
+          <label>X-IDE-Name（客户端名称，同上成套）</label>
+          <input v-model="fpForm['X-IDE-Name']" type="text" class="fp-input">
+        </div>
+        <div class="form-group">
+          <label>X-IDE-Version（版本号）</label>
           <input v-model="fpForm['X-IDE-Version']" type="text" class="fp-input">
         </div>
         <div class="form-group">
@@ -1217,7 +1241,10 @@
           <input v-model="fpForm['x-stainless-runtime-version']" type="text" class="fp-input fp-mono">
         </div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
-          <button class="btn btn-ghost btn-sm" @click="randomFingerprint" :disabled="fpSaving">随机生成</button>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" @click="randomFingerprint" :disabled="fpSaving" title="随机 WorkBuddy 版本一套">随机生成</button>
+            <button class="btn btn-ghost btn-sm" @click="setCliFingerprint" :disabled="fpSaving" title="UA + X-IDE-Type/Name/Version 一键填成 CLI 成套">CLI 预设</button>
+          </div>
           <span v-if="!fpConfigured" style="font-size:12px;color:var(--text-muted)">未配置：使用全局默认（WorkBuddy 5.2.6）</span>
           <span v-else style="font-size:12px;color:var(--success)">已配置独立指纹</span>
         </div>
@@ -1242,6 +1269,15 @@
           为每个账号配置独立客户端指纹（X-IDE 版本 / User-Agent / stainless 版本），
           避免多个账号被上游识别为同一客户端。
         </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <span style="font-size:12px;color:var(--text-secondary)">批量风格</span>
+          <button class="btn btn-ghost btn-sm" :style="batchFpStyle==='workbuddy' ? 'background:var(--primary);color:#fff;border-color:var(--primary)' : ''"
+                  @click="batchFpStyle='workbuddy'" title="全部生成 WorkBuddy 成套（推荐，后台记录一致）">WorkBuddy（建议）</button>
+          <button class="btn btn-ghost btn-sm" :style="batchFpStyle==='cli' ? 'background:var(--primary);color:#fff;border-color:var(--primary)' : ''"
+                  @click="batchFpStyle='cli'" title="全部生成 CLI 成套">全部 CLI</button>
+          <button class="btn btn-ghost btn-sm" :style="batchFpStyle==='mixed' ? 'background:var(--primary);color:#fff;border-color:var(--primary)' : ''"
+                  @click="batchFpStyle='mixed'" title="每个账号随机 WorkBuddy 或 CLI">随机混合</button>
+        </div>
         <div class="fp-acc-list">
           <div v-for="acc in batchFpAccounts" :key="acc.id" class="fp-acc-row">
             <div class="fp-acc-head" @click="acc.expanded = !acc.expanded">
@@ -1251,7 +1287,15 @@
             </div>
             <div class="fp-acc-body" v-show="acc.expanded">
               <div class="form-group">
-                <label>X-IDE-Version（WorkBuddy 版本）</label>
+                <label>X-IDE-Type（WorkBuddy / CLI）</label>
+                <input v-model="acc.form['X-IDE-Type']" type="text" class="fp-input">
+              </div>
+              <div class="form-group">
+                <label>X-IDE-Name</label>
+                <input v-model="acc.form['X-IDE-Name']" type="text" class="fp-input">
+              </div>
+              <div class="form-group">
+                <label>X-IDE-Version（版本号）</label>
                 <input v-model="acc.form['X-IDE-Version']" type="text" class="fp-input">
               </div>
               <div class="form-group">
@@ -1280,10 +1324,11 @@
       </div>
       <div class="modal-actions">
         <button class="btn btn-ghost" @click="activeModal = null">取消</button>
-        <button class="btn btn-primary" @click="batchRandomFingerprint" :disabled="batchFingerprintLoading" title="每个账号随机一套，互不相同，覆盖现有指纹">
+        <button class="btn btn-ghost" @click="batchRandomFingerprint" :disabled="batchFingerprintLoading" title="按所选风格为每个账号生成一套随机指纹（不落库，展开可预览/修改）">
           <span v-if="batchFingerprintLoading" class="spinner-sm"></span>
-          <template v-else>一键随机生成</template>
+          <template v-else>生成预览</template>
         </button>
+        <button class="btn btn-primary" @click="batchSaveFingerprints" :disabled="batchFingerprintLoading" title="把每个账号表单里的指纹保存（覆盖现有配置）">保存全部</button>
       </div>
     </div>
   </div>
@@ -1980,15 +2025,18 @@ const vApp = createApp({
 
     // ── 客户端指纹 ──
     const DEFAULT_FINGERPRINT = {
+      'X-IDE-Type': 'WorkBuddy',
+      'X-IDE-Name': 'WorkBuddy',
       'X-IDE-Version': '5.2.6',
       'User-Agent': 'WorkBuddy/5.2.6 WorkBuddy/5.2.6 CLI/2.106.4',
       'x-stainless-package-version': '6.25.0',
       'x-stainless-runtime-version': 'v22.21.1',
     };
-    const FINGERPRINT_KEYS = ['X-IDE-Version', 'User-Agent', 'x-stainless-package-version', 'x-stainless-runtime-version'];
+    const FINGERPRINT_KEYS = ['X-IDE-Type', 'X-IDE-Name', 'X-IDE-Version', 'User-Agent', 'x-stainless-package-version', 'x-stainless-runtime-version'];
     const fingerprintAccount = ref({});
     const fingerprintAccountName = computed(() => fingerprintAccount.value.nickname || fingerprintAccount.value.email || fingerprintAccount.value.id || '');
     const fpForm = ref({ ...DEFAULT_FINGERPRINT });
+    const fpRandomStyle = ref('workbuddy');  // 随机生成风格：workbuddy | cli
     const fpConfigured = ref(false);
     const fpSaving = ref(false);
 
@@ -2038,6 +2086,7 @@ const vApp = createApp({
     const proxyActive = ref(false);
     const proxyPort = ref(8001);
     const proxyKey = ref('');
+    const grokFrameUrl = ref('');
     const quotaThreshold = ref(0);
     const enableThreshold = ref(0);
     const detecting = ref(false);
@@ -2169,6 +2218,7 @@ const vApp = createApp({
     const batchFingerprintLoading = ref(false);
     const batchFpAccounts = ref([]);
     const batchFpCount = ref(0);
+    const batchFpStyle = ref('workbuddy');  // 批量随机风格：workbuddy | cli | mixed
     // 通用结果确认弹窗（批量验活等用，替代 toast）
     const resultModalTitle = ref('');
     const resultModalText = ref('');
@@ -2409,6 +2459,12 @@ const vApp = createApp({
       currentView.value = 'settings';
       closeActionPref.value = localStorage.getItem('gw_closeAction') || '';
       themePref.value = localStorage.getItem('theme') || window.__THEME__ || 'light';
+    }
+    function showGrok() {
+      currentView.value = 'grok';
+      // 纯本地页面，无需透传任何参数：grok.html 经 postMessage 桥走 pywebview.api，
+      // 与 CodeBuddy/WorkBuddy 同款调用链，不依赖网关是否启动。
+      if (!grokFrameUrl.value) grokFrameUrl.value = 'grok.html';
     }
     window.__goSettings = showSettings;  // 标题栏齿轮跳转入口
 
@@ -2885,9 +2941,22 @@ const vApp = createApp({
       activeModal.value = 'fingerprint';
     }
 
+    function setCliFingerprint() {
+      // CLI 三件套预设（与社区指纹规范一致）：UA + X-IDE-Type/Name/Version 成套
+      fpForm.value = {
+        'X-IDE-Type': 'CLI',
+        'X-IDE-Name': 'CLI',
+        'X-IDE-Version': '2.108.1',
+        'User-Agent': 'CLI/2.108.1 CodeBuddy/2.108.1',
+        'x-stainless-package-version': '6.24.0',
+        'x-stainless-runtime-version': 'v22.20.0',
+      };
+      fpConfigured.value = true;
+    }
+
     async function randomFingerprint() {
       try {
-        const r = JSON.parse(await pywebview.api.generate_fingerprint());
+        const r = JSON.parse(await pywebview.api.generate_fingerprint(fpRandomStyle.value));
         if (r.error) { showToast(r.error, 'error'); return; }
         fpForm.value = r;
       } catch(e) { showToast('生成指纹失败: ' + e, 'error'); }
@@ -3045,26 +3114,49 @@ const vApp = createApp({
     }
 
     async function batchRandomFingerprint() {
+      // 生成预览：按所选风格给每个账号生成一套随机指纹，填充表单（不落库），默认展开方便查看
       if (!batchFpAccounts.value.length) return;
-      const ok = await showConfirm(`为选中的 ${batchFpAccounts.value.length} 个账号随机生成独立客户端指纹？（覆盖这些账号现有的指纹配置）`, '一键随机生成', {
-        okText: '生成', danger: false
+      batchFingerprintLoading.value = true;
+      try {
+        const ids = batchFpAccounts.value.map(a => a.id);
+        const r = JSON.parse(await pywebview.api.batch_generate_fingerprints(JSON.stringify(ids), batchFpStyle.value));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        const map = {};
+        (r.items || []).forEach(it => map[it.id] = it.fingerprint);
+        batchFpAccounts.value.forEach(acc => {
+          if (map[acc.id]) {
+            acc.form = { ...map[acc.id] };
+            acc.fingerprint = map[acc.id];   // 标记为「已配置」，badge 变绿
+            acc.expanded = true;              // 默认展开供预览
+          }
+        });
+        showToast('已生成预览，确认无误后点「保存全部」', 'info');
+      } catch(e) { showToast('批量生成指纹失败: '+e, 'error'); }
+      finally { batchFingerprintLoading.value = false; }
+    }
+
+    async function batchSaveFingerprints() {
+      // 保存全部：把每个账号表单里的指纹落库（覆盖现有）+ reload 即时生效
+      if (!batchFpAccounts.value.length) return;
+      const ok = await showConfirm(`保存选中的 ${batchFpAccounts.value.length} 个账号指纹？（覆盖现有配置）`, '保存全部', {
+        okText: '保存', danger: false
       });
       if (!ok) return;
       batchFingerprintLoading.value = true;
       try {
-        const ids = batchFpAccounts.value.map(a => a.id);
-        const r = JSON.parse(await pywebview.api.batch_set_fingerprints(currentPlatform.value, JSON.stringify(ids)));
+        const items = batchFpAccounts.value.map(a => ({ id: a.id, fingerprint: a.form }));
+        const r = JSON.parse(await pywebview.api.batch_save_fingerprints(currentPlatform.value, JSON.stringify(items)));
         if (r.error) { showToast(r.error, 'error'); return; }
-        showToast(`已为 ${r.saved} 个账号生成独立指纹`, 'success');
+        showToast(`已保存 ${r.saved} 个账号指纹`, 'success');
         activeModal.value = null;
         await loadAccountsLight();
-      } catch(e) { showToast('批量生成指纹失败: '+e, 'error'); }
+      } catch(e) { showToast('保存失败: '+e, 'error'); }
       finally { batchFingerprintLoading.value = false; }
     }
 
     async function randomOneFingerprint(acc) {
       try {
-        const r = JSON.parse(await pywebview.api.generate_fingerprint());
+        const r = JSON.parse(await pywebview.api.generate_fingerprint(batchFpStyle.value));
         if (r.error) { showToast(r.error, 'error'); return; }
         acc.form = r;
       } catch(e) { showToast('生成指纹失败: '+e, 'error'); }
@@ -3938,9 +4030,9 @@ const vApp = createApp({
       dateFilterOpen, dateFilterLabel, toggleDateFilter, setDatePreset, setLastDays, pickCustomDate,
       calOpen, calTitle, calWeeks, calPrevMonth, calNextMonth, calPrevYear, calNextYear, calPickDay, calIsToday, calIsSelected,
       tagFilter, tagFilterOpen, allTags, tagEditAccount, tagEditInput, tagEditAccountName,
-      fingerprintAccount, fingerprintAccountName, fpForm, fpConfigured, fpSaving,
-      batchFpAccounts, batchFpCount,
-      proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, quotaThreshold, proxyToggling,
+      fingerprintAccount, fingerprintAccountName, fpForm, fpRandomStyle, fpConfigured, fpSaving,
+      batchFpAccounts, batchFpCount, batchFpStyle,
+      proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, quotaThreshold, proxyToggling, grokFrameUrl,
       enableThreshold, detecting, detectProgress, detectThresholdTemp, detectTargetCount,
       exporting, exportDiagnostics,
       chatCardCollapsed, chatMessages, chatInput, chatSending, modelList, currentModel, modelDropdownOpen,
@@ -3969,7 +4061,7 @@ const vApp = createApp({
       getStatusBadgeClass, getStatusText, getPlanBadgeClass, getPlanText,
       parseCheckin, getCardQuota,
       selectStatusFilter, getStatusDotClass, getStatusFilterLabel,
-      showConsole, showLogs, showShopCards, showAbout, showSettings, closeActionPref, closeActionOpen, saveCloseAction, setCloseAction, themePref, themeOpen, setThemePref, licenseExpiry, licenseAuthorized, openShop, openShopExternal, openModal,
+      showConsole, showLogs, showShopCards, showAbout, showSettings, showGrok, closeActionPref, closeActionOpen, saveCloseAction, setCloseAction, themePref, themeOpen, setThemePref, licenseExpiry, licenseAuthorized, openShop, openShopExternal, openModal,
       toggleTheme,
       setFilterDate, saveQuotaThreshold, saveEnableThreshold, detectAndEnable, openDetectModal, confirmDetect,
       exportAccounts, checkinAll, refreshAll, refreshAccounts, loadAccounts,
@@ -3977,10 +4069,10 @@ const vApp = createApp({
       doCheckin, refreshOne, detectOne, deleteOne, setPriorityAccount, toggleAccountStatus,
       toggleSelectMode, toggleSelect, toggleSelectAll, toggleLowQuotaFilter, clearSelection, batchExport, batchDetect, batchDelete,
       batchEnable, batchDisable, batchRefresh, batchCheckin,
-      openBatchFingerprint, batchRandomFingerprint, randomOneFingerprint, saveOneFingerprint,
+      openBatchFingerprint, batchRandomFingerprint, batchSaveFingerprints, randomOneFingerprint, saveOneFingerprint,
       editTags, saveTags, removeTagChip,
       batchTagMode, batchTagLoading, openBatchTags,
-      openFingerprint, randomFingerprint, saveFingerprint, resetFingerprint,
+      openFingerprint, randomFingerprint, setCliFingerprint, saveFingerprint, resetFingerprint,
       openRecycle, restoreDeleted, restoreAllDeleted, restoreSelected, destroyDeleted, destroySelected,
       restoreBatch, destroyBatch, editBatchNote,
       toggleDeletedSelect, selectAllDeleted,
@@ -4012,6 +4104,32 @@ window._vueApp = vApp.mount('#app');
   } catch(e) {}
 })();
 
+</script>
+<script>
+// ── Grok iframe RPC 桥 ─────────────────────────────────────────────────
+// grok.html（iframe）经 window.parent.postMessage 请求 Python 方法，这里在
+// 主 frame 转发到 pywebview.api（与主界面其他调用同一链路），再回传结果。
+// 用 postMessage 而非直接访问 window.parent.pywebview：postMessage 跨 frame
+// 保证可用（不依赖 file:// 同源判定），pywebview 的 js_api 只在主 frame 注入。
+window.addEventListener('message', async (e) => {
+  const d = e.data;
+  if (!d || d.__grokRpc !== true) return;
+  // 只响应 grok iframe 的消息
+  const frame = document.getElementById('grokFrame');
+  if (!frame || e.source !== frame.contentWindow) return;
+  const { id, method, args } = d;
+  const reply = (payload) => { try { e.source.postMessage({ __grokRpc: true, id, payload }, '*'); } catch(_){} };
+  try {
+    const fn = window.pywebview && window.pywebview.api && window.pywebview.api[method];
+    if (typeof fn !== 'function') { reply({ error: '主界面未提供方法: ' + method }); return; }
+    const raw = await fn.apply(window.pywebview.api, args || []);
+    let data = raw;
+    if (typeof raw === 'string') { try { data = JSON.parse(raw); } catch(_){} }
+    reply(data);
+  } catch (err) {
+    reply({ error: String((err && err.message) || err) });
+  }
+});
 </script>
 </body>
 </html>

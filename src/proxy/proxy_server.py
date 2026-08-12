@@ -15,6 +15,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from .token_rotator import token_rotator
 from .api_client import build_headers, build_chat_payload, resolve_base_url, AVAILABLE_MODELS
 from src.storage.store import add_log, update_account_stats
+from src.grok import router as grok_router, configure as grok_configure, handle_request as grok_handle
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ def update_config(port: int, password: str, platform: str):
     _proxy_password = password
     _platform = platform
     _port = port
+    grok_configure(password)
 
 security = HTTPBearer(auto_error=False)
 
@@ -311,7 +313,9 @@ async def _stream_inner(
 
         base_url = resolve_base_url()
         api_url = f"{base_url}/v2/chat/completions"
-        headers = build_headers(acc.access_token, acc.uid, conversation_id, fingerprint=acc.fingerprint)
+        headers = build_headers(acc.access_token, acc.uid, conversation_id,
+                                fingerprint=acc.fingerprint,
+                                enterprise_id=acc.enterprise_id, domain=acc.domain)
         client = _get_http_client()
 
         try:
@@ -607,6 +611,33 @@ async def chat_completions(
         raise HTTPException(status_code=504, detail="Upstream API timed out")
 
 
+@router.post("/v1/responses")
+async def responses_api(request: Request, _auth=Depends(authenticate)):
+    """Grok Build（cli-chat-proxy）Responses API 透传端点。
+
+    与 /v1/chat/completions（CodeBuddy）完全独立：走 src.grok.provider.handle_request，
+    复用网关密码鉴权，日志落 platform='grok'。客户端需原生支持 Responses 格式。
+    """
+    try:
+        body = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+    if not body.get("input"):
+        raise HTTPException(status_code=400, detail="input required")
+    body["stream"] = True  # grok 强制流式（cli-chat-proxy 仅支持 stream）
+
+    def _on_log(event, aid, nick, model, msg, details=""):
+        try:
+            add_log(event, "grok", aid, nick, model, msg, details)
+        except Exception:
+            pass
+
+    return StreamingResponse(
+        grok_handle(body, on_log=_on_log),
+        media_type="text/event-stream",
+    )
+
+
 @router.get("/v1/models")
 async def list_models(_auth=Depends(authenticate)):
     return {
@@ -678,6 +709,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(router)
+app.include_router(grok_router)
 
 
 @app.on_event("startup")

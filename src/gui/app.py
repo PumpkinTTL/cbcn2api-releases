@@ -487,9 +487,9 @@ class GuiApi:
         store.upsert_account(platform, account)
         return json.dumps(account.to_dict())
 
-    def generate_fingerprint(self) -> str:
+    def generate_fingerprint(self, style: str = "workbuddy") -> str:
         from src.proxy.api_client import generate_fingerprint
-        return json.dumps(generate_fingerprint())
+        return json.dumps(generate_fingerprint(style))
 
     def save_fingerprint(self, platform: str, account_id: str, fingerprint_json: str) -> str:
         fingerprint = json.loads(fingerprint_json) if fingerprint_json else None
@@ -501,23 +501,45 @@ class GuiApi:
             fingerprint = {k: str(v) for k, v in fingerprint.items() if k in FINGERPRINT_FIELDS and v}
         store.save_fingerprint(platform, account_id, fingerprint)
         account.fingerprint = fingerprint
+        # 池内 Account 是缓存对象，不重载的话请求仍用旧指纹 —— reload 让修改即时生效
+        from src.proxy.token_rotator import token_rotator
+        token_rotator.reload(platform)
         return json.dumps(account.to_dict())
 
-    def batch_set_fingerprints(self, platform: str, ids_json: str) -> str:
-        """批量生成独立指纹：每个选中账号随机一套（互不相同），覆盖原指纹。"""
+    def batch_generate_fingerprints(self, ids_json: str, style: str = "workbuddy") -> str:
+        """批量生成指纹（不落库），返回 [{id, fingerprint}] 供前端预览/修改。
+
+        style: workbuddy（默认，建议）| cli | mixed（每个账号随机一种风格）"""
+        import random
         ids = json.loads(ids_json) if ids_json else []
         if not ids:
             return json.dumps({"error": "未选择账号"})
         from src.proxy.api_client import generate_fingerprint
+        items = []
+        for aid in ids:
+            st = style
+            if st == "mixed":
+                st = random.choice(("workbuddy", "cli"))
+            items.append({"id": aid, "fingerprint": generate_fingerprint(st)})
+        return json.dumps({"items": items}, ensure_ascii=False)
+
+    def batch_save_fingerprints(self, platform: str, items_json: str) -> str:
+        """批量保存指纹（前端预览确认后调用）。
+
+        items=[{id, fingerprint}]，按白名单过滤后落库，末尾 reload 让指纹即时生效。"""
+        items = json.loads(items_json) if items_json else []
+        if not items:
+            return json.dumps({"error": "无数据"})
         saved = 0
-        for account_id in ids:
-            account = store.load_account(platform, account_id)
-            if not account:
-                continue
-            fp = generate_fingerprint()
-            store.save_fingerprint(platform, account_id, fp)
-            account.fingerprint = fp
+        from src.proxy.api_client import FINGERPRINT_FIELDS
+        for it in items:
+            aid = it.get("id")
+            fp = it.get("fingerprint") or {}
+            fp = {k: str(v) for k, v in fp.items() if k in FINGERPRINT_FIELDS and v}
+            store.save_fingerprint(platform, aid, fp)
             saved += 1
+        from src.proxy.token_rotator import token_rotator
+        token_rotator.reload(platform)
         return json.dumps({"ok": True, "saved": saved})
 
     # ========== OAuth Login ==========
@@ -1275,6 +1297,55 @@ class GuiApi:
     def set_theme(self, theme: str):
         store.save_theme(theme)
         return json.dumps({"ok": True})
+
+    # ========== Grok Build（grok.html iframe 经 postMessage 桥调用，走 pywebview.api） ==========
+
+    def grok_accounts(self) -> str:
+        from src.grok import service
+        return json.dumps({"accounts": service.list_accounts()}, ensure_ascii=False)
+
+    def grok_oauth_start(self) -> str:
+        from src.grok import service
+        try:
+            return json.dumps(service.oauth_start(), ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"error": str(e)}, ensure_ascii=False)
+
+    def grok_oauth_poll(self, login_id: str) -> str:
+        from src.grok import service
+        try:
+            result = service.oauth_poll(login_id)
+        except ValueError as e:
+            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
+        if result is None:
+            return json.dumps({"status": "pending"}, ensure_ascii=False)
+        return json.dumps({"status": "ok", "credentials": result}, ensure_ascii=False)
+
+    def grok_oauth_cancel(self, login_id: str) -> str:
+        from src.grok import service
+        service.oauth_cancel(login_id)
+        return json.dumps({"ok": True}, ensure_ascii=False)
+
+    def grok_oauth_complete(self, credentials_json: str) -> str:
+        from src.grok import service
+        try:
+            import json as _json
+            cred = _json.loads(credentials_json or "{}")
+            return json.dumps({"ok": True, "account": service.complete_login(cred)}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
+
+    def grok_refresh(self, account_id: str) -> str:
+        from src.grok import service
+        try:
+            return json.dumps({"ok": True, **service.refresh(account_id)}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
+
+    def grok_delete(self, account_id: str) -> str:
+        from src.grok import service
+        service.delete(account_id)
+        return json.dumps({"ok": True}, ensure_ascii=False)
 
     # ========== Proxy Gateway ==========
 
