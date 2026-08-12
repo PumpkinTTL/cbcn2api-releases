@@ -1,6 +1,6 @@
 """CDP 注入模块：连 WorkBuddy CDP（9222），把网关额度横条注入 AI 对话输入框上方。
 
-横条每 1s fetch 网关 `/__gw/quota` 刷新（消耗通过 account_stats.total_credit 实时反映），
+横条每 5s fetch 网关 `/__gw/quota` 刷新（消耗通过 account_stats.total_credit 实时反映），
 带版本控制（多次注入自动失效旧 JS）、折叠按钮、MutationObserver（视图切换自动重挂）。
 WorkBuddy 未开启 CDP（9222 未监听）时静默返回 ok=False，不抛错。
 """
@@ -100,7 +100,7 @@ INJECT_JS_TEMPLATE = r"""
   if(!window.__gwInited){
     window.__gwInited = true;
     tick();
-    window.__gwInterval = setInterval(tick, 1000);
+    window.__gwInterval = setInterval(tick, 5000);
     try {
       const obs = new MutationObserver(()=>{ if(!document.getElementById('gw-quota-bar')) inject(); });
       obs.observe(document.body, {childList:true, subtree:true});
@@ -110,7 +110,7 @@ INJECT_JS_TEMPLATE = r"""
   if(window.__gwInterval) clearInterval(window.__gwInterval);
   tick();
   inject(true); loadData();
-  window.__gwInterval = setInterval(tick, 1000);
+  window.__gwInterval = setInterval(tick, 5000);
   return 'reinjected';
 })()
 """
