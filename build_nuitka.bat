@@ -36,14 +36,20 @@ echo [2/3] 开始 Nuitka 编译（首次 5~15 分钟）...
     --include-package=requests ^
     --include-package=clr_loader ^
     --include-package=pythonnet ^
+    --include-package=websocket ^
+    --include-module=pythoncom ^
+    --include-module=pywintypes ^
+    --include-module=win32com.client ^
     --enable-plugin=pywebview ^
     --enable-plugin=multiprocessing ^
     --include-data-dir=src\gui=src\gui ^
     --include-data-files=gateway.ico=gateway.ico ^
+    --include-data-files=.venv\Lib\site-packages\pywin32_system32\pythoncom312.dll=pywin32_system32\pythoncom312.dll ^
+    --include-data-files=.venv\Lib\site-packages\pywin32_system32\pywintypes312.dll=pywin32_system32\pywintypes312.dll ^
     --mingw64 ^
     --assume-yes-for-downloads ^
     --output-dir=dist ^
-    --output-filename="AI Gateway v1.0.9-Nuitka.exe" ^
+    --output-filename="AI Gateway v1.0.9.exe" ^
     main.py
 
 if %errorlevel% neq 0 (
@@ -52,5 +58,5 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [3/3] 完成: dist\AI Gateway v1.0.9-Nuitka.exe
+echo [3/3] 完成: dist\AI Gateway v1.0.9.exe
 pause
