@@ -28,9 +28,45 @@ APP = "cbcn2api"
 # 当前值 = 服务器 lic-admin 的 offline_secret.key（本地 lic-admin 已同步）。
 SECRET = b"febfe7465b42c748bf60d43de5d595f58c9b8b6da3906fd3f35366fdcef36c81"
 
+# 项目根 = src 的上一级（.env 放这里；按文件位置解析，与启动时 CWD 无关）
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _load_dotenv() -> None:
+    """极简 .env 加载（无依赖）：项目根 .env 的 KEY=VAL 塞进 os.environ（已有则不覆盖）。
+
+    只解析「键=值」和行注释，不做引号/转义（GW_DEV / LIC_SERVER 这类开关足够用）。
+    打包产物里此文件不存在，读到也没关系（_dev_bypass 由编译标志硬卡）。
+    """
+    try:
+        with open(os.path.join(_PROJECT_ROOT, ".env"), encoding="utf-8") as f:
+            for line in f:
+                line = line.split("#", 1)[0].strip()
+                if not line or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
+    except OSError:
+        pass
+
+
+_load_dotenv()
+
+
+def _dev_bypass() -> bool:
+    """开发豁免：仅「从源码运行」且 GW_DEV=1（环境变量或 .env）时跳过授权。
+
+    打包后（Nuitka __compiled__ / PyInstaller frozen）永不触发 —— 与 main.py
+    同款编译标志判断。豁免不含任何可伪造密钥，生产用户设 GW_DEV 或放 .env 均无效。
+    """
+    if getattr(sys, "frozen", False) or "__compiled__" in globals():
+        return False
+    return os.environ.get("GW_DEV") == "1"
+
+
 # 远端授权服务器（lic-admin）。
 # 开发模式（非打包）默认连本地 http://127.0.0.1:8022；打包版默认 https://license.bitlesu.com。
-# 环境变量 LIC_SERVER 始终优先，可覆盖。
+# 环境变量 LIC_SERVER 始终优先，可覆盖（也可写进项目根 .env）。
 if os.environ.get("LIC_SERVER"):
     _LIC_SERVER = os.environ["LIC_SERVER"]
 elif getattr(sys, "frozen", False):
@@ -99,6 +135,8 @@ def _http_json(method: str, path: str, payload: dict = None, timeout: int = _TIM
 def remote_license_enabled() -> bool:
     """查询远端：本产品（按硬编码 APP_ID）是否启用授权验证。
     返回 True/False；远端不可达时抛 ConnectionError，由调用方决定离线兜底。"""
+    if _dev_bypass():
+        return False  # 开发豁免：免授权，不查远端
     code, body = _http_json("GET", f"/api/v1/config?id={int(APP_ID)}", timeout=3)
     if code == 200 and isinstance(body, dict) and "enabled" in body:
         return bool(body["enabled"])
