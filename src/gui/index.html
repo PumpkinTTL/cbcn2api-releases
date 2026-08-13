@@ -208,7 +208,11 @@
               </label>
               <label class="proxy-field" title="客户端请求需携带的 Bearer Key，留空则不校验">
                 <span>Key</span>
-                <input type="password" v-model="proxyKey" placeholder="可选">
+                <input type="password" v-model="proxyKey" placeholder="可选" @focus="openKeyTip">
+                <input v-if="keyFocused" type="text" v-model="proxyKey" class="key-tip-input"
+                       placeholder="输入 Bearer Key（留空则不校验，回车或点别处收起）"
+                       @blur="keyFocused = false" @keyup.enter="keyFocused = false"
+                       ref="keyTipInput">
               </label>
               <label class="proxy-field" title="剩余积分低于此值自动禁用当前账号并切换下一个（0=关闭）">
                 <span>切号阈值</span>
@@ -2089,6 +2093,8 @@ const vApp = createApp({
     const proxyActive = ref(false);
     const proxyPort = ref(8001);
     const proxyKey = ref('');
+    const keyFocused = ref(false);
+    const keyTipInput = ref(null);
     const lanIps = ref([]);
     const quotaThreshold = ref(0);
     const enableThreshold = ref(0);
@@ -3668,6 +3674,12 @@ const vApp = createApp({
     // ─── Proxy ───
     function getProxyBaseUrl() { return `http://127.0.0.1:${proxyPort.value}`; }
 
+    // Key 输入：点窄框 → 展开下方宽框并自动聚焦（焦点始终落在宽框，编辑后 blur/回车收起）
+    function openKeyTip() {
+      keyFocused.value = true;
+      setTimeout(() => { if (keyTipInput.value) keyTipInput.value.focus(); }, 30);
+    }
+
     async function toggleProxy() {
       proxyToggling.value = true;
       try {
@@ -4042,7 +4054,7 @@ const vApp = createApp({
       tagFilter, tagFilterOpen, allTags, tagEditAccount, tagEditInput, tagEditAccountName,
       fingerprintAccount, fingerprintAccountName, DEFAULT_FINGERPRINT, fpForm, fpRandomStyle, fpConfigured, fpSaving,
       batchFpAccounts, batchFpCount, batchFpStyle,
-      proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, quotaThreshold, proxyToggling, lanIps,
+      proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, keyFocused, keyTipInput, quotaThreshold, proxyToggling, lanIps,
       enableThreshold, detecting, detectProgress, detectThresholdTemp, detectTargetCount,
       exporting, exportDiagnostics,
       chatCardCollapsed, chatMessages, chatInput, chatSending, modelList, currentModel, modelDropdownOpen,
@@ -4089,7 +4101,7 @@ const vApp = createApp({
       showQuotaDetail, refreshQuota,
       showOAuthModal, cancelOAuth,
       showImportModal, doImport, handleFileImport,
-      toggleProxy, copyEndpoint, copyLanEndpoint,
+      toggleProxy, copyEndpoint, copyLanEndpoint, openKeyTip,
       selectModel, syncModels, exportToIDE, exportToWorkBuddy, exportToCodeBuddy, sendTestChat,
       refreshLogs, toggleLogEnabled, clearLogs,
       checkForUpdate, doUpdate,

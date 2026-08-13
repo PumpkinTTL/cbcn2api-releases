@@ -949,19 +949,24 @@ body {
 }
 .proxy-field input[type="password"] {
   width: 80px;
-  transition: width .18s ease, padding .18s ease;
 }
-/* Key 输入框聚焦时浮层展开：平时紧凑不挤布局，点进去能看全输入内容 */
-.proxy-field input[type="password"]:focus {
-  width: 280px;
+/* Key 聚焦时下方弹出可编辑的宽输入框（定位 tips），不挤压右侧字段 */
+.key-tip-input {
   position: absolute;
-  left: 0; top: 0; bottom: 0;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 300px;
+  height: 32px;
   background: var(--surface);
   border: 1px solid var(--primary);
   border-radius: var(--radius-sm);
-  z-index: 20;
   padding: 0 10px;
-  box-shadow: 0 2px 8px rgba(0,0,0,.12);
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: var(--text);
+  outline: none;
+  z-index: 30;
+  box-shadow: 0 4px 12px rgba(0,0,0,.15);
 }
 .proxy-field + .proxy-field { border-left: 1px solid var(--border); }
 /* 高亮落在真正被聚焦的那一格，比整组描边更能说明「现在改的是哪个」 */
