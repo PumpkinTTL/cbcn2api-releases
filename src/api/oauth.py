@@ -20,7 +20,9 @@ def start_login(platform_key: str) -> dict:
     session = get_session()
     url = f"{BASE_URL}/v2/plugin/auth/state?platform={platform}"
 
-    resp = session.post(url, json={}, timeout=30)
+    # 必须带完整客户端身份头：上游对无 UA 请求有风控（如 user_resource 的 10085），
+    # 登录接口同样不能裸奔。build_headers() 无 token 时只带身份头。
+    resp = session.post(url, headers=build_headers(), json={}, timeout=30)
     resp.raise_for_status()
     body = resp.json()
 
@@ -67,7 +69,7 @@ def poll_token(login_id: str) -> Optional[dict]:
     url = f"{BASE_URL}/v2/plugin/auth/token?state={pending['state']}"
 
     try:
-        resp = session.get(url, timeout=15)
+        resp = session.get(url, headers=build_headers(), timeout=15)
         body = resp.json()
     except Exception as e:
         return None
@@ -120,9 +122,7 @@ def fetch_account_info(access_token: str, state: str,
     session = get_session()
     url = f"{BASE_URL}/v2/plugin/login/account?state={state}"
 
-    headers = {"Authorization": f"Bearer {access_token}"}
-    if domain:
-        headers["X-Domain"] = domain
+    headers = build_headers(access_token, domain=domain)
 
     resp = session.get(url, headers=headers, timeout=15)
     resp.raise_for_status()
