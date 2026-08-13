@@ -216,7 +216,8 @@ class GrokPool:
         self._disabled: dict[str, dict] = {}
         self._loaded: bool = False
 
-    def ensure_loaded(self):
+    def ensure_loaded(self, platform: str = None):
+        # platform 参数为兼容通用方法调用（pool.ensure_loaded(platform)），Grok 忽略值
         with self._lock:
             if not self._accounts:
                 self.reload()

@@ -40,6 +40,10 @@
         <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
         导出
       </button>
+      <button class="btn btn-ghost btn-sm" @click="openRecycle" title="回收站">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
+        回收站<span v-if="recycleCount" class="gb-recycle-badge">{{ recycleCount }}</span>
+      </button>
       <button class="btn btn-ghost btn-sm" @click="loadAccounts" :disabled="loading">
         <span v-if="loading" class="spinner-sm"></span>
         <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>
@@ -115,6 +119,7 @@
             <div class="card-name">{{ a.nickname || a.email || a.id }}</div>
             <div class="card-email" v-if="a.email && a.email !== (a.nickname || a.email)">{{ a.email }}</div>
             <div class="card-meta">
+              <span v-if="a._current" class="badge gb-current">当前</span>
               <span v-if="a.subscription_tier" class="badge badge-pro">{{ a.subscription_tier }}</span>
               <span v-if="a.has_grok_code_access" class="badge badge-trial">Grok Code</span>
               <span class="badge" :class="statusBadgeClass(a.status)">{{ statusText(a.status) }}</span>
@@ -186,6 +191,22 @@
     </div>
   </div>
 
+  <!-- 回收站 -->
+  <div class="gb-modal" v-if="recycleModal" @click.self="recycleModal=false">
+    <div class="gb-modal-card gb-recycle-card">
+      <h3>回收站</h3>
+      <div v-if="!recycleList.length" class="gb-pending">回收站为空</div>
+      <div v-for="a in recycleList" :key="a.id" class="gb-recycle-row">
+        <div class="gb-recycle-name">{{ a.nickname || a.email || a.id }}</div>
+        <div class="gb-recycle-ops">
+          <button class="btn btn-ghost btn-sm" @click="restoreOne(a.id)">恢复</button>
+          <button class="btn btn-ghost btn-sm btn-danger" @click="destroyOne(a.id)">彻底删除</button>
+        </div>
+      </div>
+      <button class="btn gb-cancel" @click="recycleModal=false">关闭</button>
+    </div>
+  </div>
+
   <!-- device code 登录面板 -->
   <div class="gb-modal" v-if="login.shown" @click.self="cancelLogin">
     <div class="gb-modal-card">
@@ -239,6 +260,11 @@ createApp({
     const credential = ref(null);
     const credModal = ref(false);
 
+    // 回收站
+    const recycleModal = ref(false);
+    const recycleList = ref([]);
+    const recycleCount = ref(0);
+
     // ── postMessage RPC：请求主 frame 转发到 pywebview.api（与 CodeBuddy 同款链路） ──
     let rpcId = 0;
     const pending = new Map();
@@ -287,21 +313,27 @@ createApp({
       try {
         const list = await rpc('list_accounts', 'grok');  // [account.to_dict()]
         const arr = Array.isArray(list) ? list : [];
-        let extra = {};
+        let extra = {}, currentId = null;
         if (arr.length) {
-          try { extra = await rpc('grok_extra', JSON.stringify(arr.map(a => a.id))) || {}; } catch(e) {}
+          try {
+            const ex = await rpc('grok_extra', JSON.stringify(arr.map(a => a.id)));
+            extra = (ex && ex.items) || {};
+            currentId = ex && ex.current;
+          } catch(e) {}
         }
         accounts.value = arr.map(a => {
           const e = extra[a.id] || {};
           return {
             ...a,
-            _refreshing: false, _deleting: false,
+            _refreshing: false, _deleting: false, _current: a.id === currentId,
             available_models: e.available_models || [],
             billing: e.billing || {},
             subscription_tier: e.subscription_tier,
             has_grok_code_access: e.has_grok_code_access,
           };
         });
+        // 顺带刷新回收站计数
+        try { recycleCount.value = ((await rpc('list_deleted_accounts', 'grok')) || []).length; } catch(e) {}
       } catch(e) {
         console.error('loadAccounts', e);
       } finally {
@@ -394,16 +426,41 @@ createApp({
       } catch(e) { showToast('读取凭证失败: ' + e.message); }
     }
     async function exportAccounts() {
+      // export_accounts 走原生保存对话框（WebView2 里 Blob 下载会静默落下载目录，用户找不到）
       try {
         const r = await rpc('export_accounts', 'grok');
-        const text = typeof r === 'string' ? r : JSON.stringify(r, null, 2);
-        const blob = new Blob([text], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url; link.download = 'grok_accounts.json'; link.click();
-        URL.revokeObjectURL(url);
-        showToast('已导出 grok_accounts.json', 'success');
+        if (r && r.error) { showToast(r.error); return; }
+        showToast('已导出' + (r && r.path ? '：' + r.path : ''), 'success');
       } catch(e) { showToast('导出失败: ' + e.message); }
+    }
+
+    // ── 回收站（复用通用 list_deleted_accounts/restore_accounts/destroy_accounts） ──
+    async function openRecycle() {
+      try {
+        const r = await rpc('list_deleted_accounts', 'grok');
+        recycleList.value = Array.isArray(r) ? r : [];
+        recycleModal.value = true;
+      } catch(e) { showToast('读取回收站失败: ' + e.message); }
+    }
+    async function restoreOne(id) {
+      try {
+        const r = await rpc('restore_accounts', 'grok', JSON.stringify([id]));
+        if (r && r.error) { showToast(r.error); return; }
+        showToast('已恢复', 'success');
+        recycleList.value = recycleList.value.filter(a => a.id !== id);
+        recycleCount.value = recycleList.value.length;
+        await loadAccounts();
+      } catch(e) { showToast('恢复失败: ' + e.message); }
+    }
+    async function destroyOne(id) {
+      if (!confirm('彻底删除将无法恢复，确认？')) return;
+      try {
+        const r = await rpc('destroy_accounts', 'grok', JSON.stringify([id]));
+        if (r && r.error) { showToast(r.error); return; }
+        showToast('已彻底删除', 'success');
+        recycleList.value = recycleList.value.filter(a => a.id !== id);
+        recycleCount.value = recycleList.value.length;
+      } catch(e) { showToast('删除失败: ' + e.message); }
     }
 
     // ── 批量操作 ──
@@ -540,6 +597,7 @@ createApp({
       loadAccounts, setPriority, toggleStatus, refreshOne, refreshAll, deleteAccount, viewCredential, exportAccounts,
       batchSetStatus, batchDelete,
       credential, credModal, copyText,
+      recycleModal, recycleList, recycleCount, openRecycle, restoreOne, destroyOne,
       statusText, statusBadgeClass, quotaText, quotaEmpty, formatExpire,
     };
   }

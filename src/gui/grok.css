@@ -198,6 +198,19 @@ body {
 }
 .gb-error { color: var(--danger); font-size: 13px; margin: 14px 0; }
 .gb-cancel { margin-top: 18px; width: 100%; }
+.gb-current { background: var(--primary); color: #fff; border: 1px solid var(--primary); }
+.gb-recycle-badge {
+  display: inline-block; min-width: 16px; padding: 0 5px; margin-left: 4px;
+  background: var(--danger); color: #fff; border-radius: 8px; font-size: 10px; line-height: 16px;
+}
+.gb-recycle-card { width: 440px; max-width: 92vw; text-align: left; }
+.gb-recycle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 0; border-bottom: 1px solid var(--border); gap: 8px;
+}
+.gb-recycle-row:last-of-type { border-bottom: none; }
+.gb-recycle-name { font-size: 13px; color: var(--text); word-break: break-all; min-width: 0; }
+.gb-recycle-ops { display: flex; gap: 6px; flex-shrink: 0; }
 
 /* 工具栏：统计 + 筛选 + 批量切换 */
 .grok-toolbar {

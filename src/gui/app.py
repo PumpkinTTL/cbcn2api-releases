@@ -1303,15 +1303,20 @@ class GuiApi:
     # ========== Grok Build（grok.html iframe 经 postMessage 桥调用，走 pywebview.api） ==========
 
     def grok_extra(self, ids_json: str) -> str:
-        """批量取 Grok 特有展示字段（models/billing/订阅），供前端合并到
-        通用 list_accounts('grok') 的结果上。账号管理操作走通用方法（platform='grok'）。"""
+        """批量取 Grok 特有展示字段 + 当前调度号。
+
+        返回 {current, items}：current 是 grok_pool 当前锁定号（前端标「当前」徽章），
+        items 是各账号的 models/billing/订阅 展示字段。账号管理操作走通用方法（platform='grok'）。"""
         import json as _json
-        from src.grok import service
+        from src.grok import service, provider
         try:
             ids = _json.loads(ids_json) if ids_json else []
         except (ValueError, TypeError):
             ids = []
-        return _json.dumps(service.extra_for(ids), ensure_ascii=False)
+        return _json.dumps({
+            "current": provider.grok_pool.status().get("current"),
+            "items": service.extra_for(ids),
+        }, ensure_ascii=False)
 
     def grok_oauth_start(self) -> str:
         from src.grok import service
