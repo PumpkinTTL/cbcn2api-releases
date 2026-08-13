@@ -122,9 +122,10 @@ class TokenRotator:
                 if not cur or not self._is_usable(cur):
                     self._current_id = None
 
-            # 恢复持久化的优先账号
+            # 恢复持久化的优先账号（key 按 platform 隔离，避免多平台互相污染；
+            # 兼容老 key priority_account）
             if not self._current_id:
-                saved = store.get_setting("priority_account", "")
+                saved = store.get_setting(f"priority_account_{self._platform}", "") or store.get_setting("priority_account", "")
                 if saved:
                     acc = next((a for a in self._accounts if a.id == saved), None)
                     if acc and self._is_usable(acc):

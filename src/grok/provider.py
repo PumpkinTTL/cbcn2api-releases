@@ -221,7 +221,9 @@ class GrokPool:
             if not self._accounts:
                 self.reload()
 
-    def reload(self):
+    def reload(self, platform: str = None):
+        """重载池。platform 参数为兼容通用调用（get_pool 路由后 pool.reload(platform)），
+        Grok 忽略具体值（始终从 platform='grok' 加载）。"""
         with self._lock:
             self._accounts = [a for a in store.list_accounts(config.PLATFORM_KEY) if a.access_token]
             self._loaded = True
@@ -278,6 +280,57 @@ class GrokPool:
             if self._current_id == account_id:
                 self._current_id = None
             logger.info("[grok] 账号 %s 冷却 %s (%ss)", account_id, reason, cd)
+
+    # ===== 对齐 token_rotator 的池操作接口（让通用账号管理方法多态调用）=====
+    def on_disable(self, account_id: str) -> bool:
+        """手动禁用联动：若是当前号则切下一个；无可用备选返回 False（保护最后号）。
+        只改内存状态，落库由调用方（通用 set_account_status → store.upsert_account）负责。"""
+        with self._lock:
+            if not self._accounts:
+                self.reload()  # GUI 操作可能在转发前（池未加载），自动加载避免误判无备选
+            usable_without = [a for a in self._accounts if a.id != account_id and self._is_usable(a)]
+            if not usable_without:
+                return False
+            for a in self._accounts:
+                if a.id == account_id:
+                    a.status = "disabled"
+            if account_id == self._current_id:
+                self._current_id = None
+            return True
+
+    def has_usable_besides(self, account_ids) -> bool:
+        """删除/禁用前置检查：除了给定账号外，池中是否还有可用账号。"""
+        if not self._accounts:
+            self.reload()  # 自动加载（同 on_disable）
+        if not self._accounts:
+            return False
+        bad = set(account_ids) if not isinstance(account_ids, str) else {account_ids}
+        with self._lock:
+            return any(a.id not in bad and self._is_usable(a) for a in self._accounts)
+
+    def clear_disabled(self, account_id: str):
+        """启用时清除运行时冷却。"""
+        with self._lock:
+            self._disabled.pop(account_id, None)
+
+    def set_priority(self, account_id: str):
+        """手动设置优先调度账号（设为粘性当前号，下次 get_next 优先用它）。"""
+        with self._lock:
+            self._current_id = account_id
+
+    def status(self) -> dict:
+        with self._lock:
+            now = time.time()
+            return {
+                "total": len(self._accounts),
+                "usable": sum(1 for a in self._accounts if self._is_usable(a)),
+                "current": self._current_id,
+                "disabled": [
+                    {"id": aid, "reason": s.get("reason"), "until": s.get("until")}
+                    for aid, s in self._disabled.items()
+                    if s.get("until", 0) > now
+                ],
+            }
 
 
 grok_pool = GrokPool()

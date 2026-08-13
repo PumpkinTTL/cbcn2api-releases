@@ -182,9 +182,10 @@ class GuiApi:
         # 与 set_account_status 的禁用保护同一套判定（has_usable_besides）。
         is_soft = str(soft).lower() not in ("0", "false", "no")
         try:
-            from src.proxy.token_rotator import token_rotator
-            token_rotator.ensure_loaded(platform)
-            if not token_rotator.has_usable_besides(account_id):
+            from src.proxy.pool import get_pool
+            pool = get_pool(platform)
+            pool.ensure_loaded(platform)
+            if not pool.has_usable_besides(account_id):
                 return json.dumps({"success": False, "error": "这是最后一个可用账号，删除后网关将无法工作，已拒绝操作"})
         except Exception:
             pass
@@ -200,8 +201,8 @@ class GuiApi:
         # 和 _current_id 里，get_next 仍会返回它发请求（幽灵调度）。
         # reload 会清掉无效 _current_id 并自动选下一个可用号。
         try:
-            from src.proxy.token_rotator import token_rotator
-            token_rotator.reload(platform)
+            from src.proxy.pool import get_pool
+            get_pool(platform).reload(platform)
         except Exception:
             pass
         return json.dumps({"success": True})
@@ -213,9 +214,10 @@ class GuiApi:
         # 多个号时，只要删完还剩至少一个可用号就放行。
         if ids:
             try:
-                from src.proxy.token_rotator import token_rotator
-                token_rotator.ensure_loaded(platform)
-                if not token_rotator.has_usable_besides(ids):
+                from src.proxy.pool import get_pool
+                pool = get_pool(platform)
+                pool.ensure_loaded(platform)
+                if not pool.has_usable_besides(ids):
                     return json.dumps({"success": False, "error": "这是最后一个可用账号，删除后网关将无法工作，已拒绝操作"})
             except Exception:
                 pass
@@ -231,8 +233,8 @@ class GuiApi:
         # 循环外只 reload 一次：每删一个都 reload 会反复重建内存池并竞争锁，
         # 没必要；删完一次性同步即可。
         try:
-            from src.proxy.token_rotator import token_rotator
-            token_rotator.reload(platform)
+            from src.proxy.pool import get_pool
+            get_pool(platform).reload(platform)
         except Exception:
             pass
         return json.dumps({"success": True})
@@ -1300,9 +1302,16 @@ class GuiApi:
 
     # ========== Grok Build（grok.html iframe 经 postMessage 桥调用，走 pywebview.api） ==========
 
-    def grok_accounts(self) -> str:
+    def grok_extra(self, ids_json: str) -> str:
+        """批量取 Grok 特有展示字段（models/billing/订阅），供前端合并到
+        通用 list_accounts('grok') 的结果上。账号管理操作走通用方法（platform='grok'）。"""
+        import json as _json
         from src.grok import service
-        return json.dumps({"accounts": service.list_accounts()}, ensure_ascii=False)
+        try:
+            ids = _json.loads(ids_json) if ids_json else []
+        except (ValueError, TypeError):
+            ids = []
+        return _json.dumps(service.extra_for(ids), ensure_ascii=False)
 
     def grok_oauth_start(self) -> str:
         from src.grok import service
@@ -1341,11 +1350,6 @@ class GuiApi:
             return json.dumps({"ok": True, **service.refresh(account_id)}, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
-
-    def grok_delete(self, account_id: str) -> str:
-        from src.grok import service
-        service.delete(account_id)
-        return json.dumps({"ok": True}, ensure_ascii=False)
 
     def grok_chat_test(self, message: str) -> str:
         """对话测试：直接调 provider.handle_request（不经网关 HTTP），验证转发链路。
@@ -1568,15 +1572,16 @@ class GuiApi:
         if not acc:
             return _json.dumps({"ok": False, "error": "账号不存在"})
         try:
-            from src.proxy.token_rotator import token_rotator
+            from src.proxy.pool import get_pool
+            pool = get_pool(platform)
             if status == "disabled":
-                if not token_rotator.on_disable(account_id):
+                if not pool.on_disable(account_id):
                     return _json.dumps({"ok": False, "error": "至少保留一个可用账号"})
             acc.status = status
             store.upsert_account(platform, acc)
             if status == "normal":
-                token_rotator.clear_disabled(account_id)
-            token_rotator.reload(platform)
+                pool.clear_disabled(account_id)
+            pool.reload(platform)
         except Exception as e:
             return _json.dumps({"ok": False, "error": str(e)})
         return _json.dumps({"ok": True})
@@ -1591,11 +1596,12 @@ class GuiApi:
             return _json.dumps({"error": "无效的账号列表"})
         if not ids:
             return _json.dumps({"error": "没有选中账号"})
-        from src.proxy.token_rotator import token_rotator
+        from src.proxy.pool import get_pool
+        pool = get_pool(platform)
         if status == "disabled":
             try:
-                token_rotator.ensure_loaded(platform)
-                if not token_rotator.has_usable_besides(ids):
+                pool.ensure_loaded(platform)
+                if not pool.has_usable_besides(ids):
                     return _json.dumps({"error": "不能禁用全部可用账号（至少保留一个可用账号）"})
             except Exception:
                 pass
@@ -1614,16 +1620,16 @@ class GuiApi:
                 if status == "disabled":
                     # 走 on_disable：若禁用的是当前调度号，会立即切换并写切号日志（有原因），
                     # 否则 reload 时 current 失效才被动切号，日志缺原因。
-                    token_rotator.on_disable(aid)
+                    pool.on_disable(aid)
                 acc.status = status
                 store.upsert_account(platform, acc)
                 if status == "normal":
-                    token_rotator.clear_disabled(aid)
+                    pool.clear_disabled(aid)
                 done += 1
             except Exception:
                 failed += 1
         try:
-            token_rotator.reload(platform)
+            pool.reload(platform)
         except Exception:
             pass
         return _json.dumps({"ok": True, "done": done, "failed": failed, "total": len(ids)})
@@ -1689,9 +1695,9 @@ class GuiApi:
         """手动设置优先调度账号，持久化到 DB。"""
         import json as _json
         try:
-            from src.proxy.token_rotator import token_rotator
-            token_rotator.set_priority(account_id)
-            store.save_setting("priority_account", account_id)
+            from src.proxy.pool import get_pool
+            get_pool(platform).set_priority(account_id)
+            store.save_setting(f"priority_account_{platform}", account_id)
             return _json.dumps({"ok": True})
         except Exception as e:
             return _json.dumps({"ok": False, "error": str(e)})

@@ -6,7 +6,6 @@
 <title>Grok Build</title>
 <script>
 // 主题引导：iframe 内独立设置 data-theme，避免继承主 frame 的闪烁。
-// 读 localStorage（与主界面同源共享），fallback 取 parent。
 (function(){
   try {
     var t = localStorage.getItem('theme');
@@ -24,27 +23,36 @@
 </head>
 <body>
 <div id="grok-app">
-  <!-- 页头：与主界面同款按钮（图标 + 文字） -->
+  <!-- 页头 -->
   <header class="grok-header">
     <div class="grok-title">
       <svg class="grok-logo" viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M9.27 15.29l7.978-5.897c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 00-1.829-1A8.975 8.975 0 005.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815"/></svg>
       <h2>Grok Build</h2>
-      <span class="grok-count" v-if="accounts.length">{{ accounts.length }} 个账号</span>
+      <span class="grok-count" v-if="accounts.length">{{ accounts.length }} 个账号 · {{ normalCount }} 正常</span>
     </div>
     <div class="grok-actions">
-      <button class="btn btn-ghost" @click="loadAccounts" :disabled="loading">
+      <button class="btn btn-ghost btn-sm" @click="refreshAll" :disabled="refreshingAll" title="批量刷新所有账号 OAuth token">
+        <span v-if="refreshingAll" class="spinner-sm"></span>
+        <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>
+        刷新全部
+      </button>
+      <button class="btn btn-ghost btn-sm" @click="exportAccounts" title="导出所有 Grok 账号凭证 JSON">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        导出
+      </button>
+      <button class="btn btn-ghost btn-sm" @click="loadAccounts" :disabled="loading">
         <span v-if="loading" class="spinner-sm"></span>
-        <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>
+        <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>
         刷新列表
       </button>
-      <button class="btn btn-primary" @click="startLogin" :disabled="login.busy">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-        添加 Grok 账号
+      <button class="btn btn-primary btn-sm" @click="startLogin" :disabled="login.busy">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        添加账号
       </button>
     </div>
   </header>
 
-  <!-- 对话测试：验证 Grok 转发链路（走 pywebview，不依赖网关） -->
+  <!-- 对话测试 -->
   <div class="grok-test">
     <div class="grok-test-head">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
@@ -56,57 +64,90 @@
     <div class="grok-test-input">
       <input v-model="testInput" @keyup.enter="sendTest" :disabled="testing" placeholder="输入消息测试 Grok 对话…">
       <button class="btn btn-primary btn-sm" @click="sendTest" :disabled="testing || !testInput.trim()">
-        <span v-if="testing" class="spinner-sm"></span>
-        <template v-else>发送</template>
+        <span v-if="testing" class="spinner-sm"></span><template v-else>发送</template>
       </button>
     </div>
   </div>
 
-  <!-- 桥接异常提示（主 frame 无响应 / 未提供方法） -->
+  <!-- 桥接异常 -->
   <div class="grok-conn-error" v-if="bridgeError">
     <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
     <span>无法连接主界面桥接——请确认在主界面中打开本页面</span>
     <button class="btn btn-sm" @click="loadAccounts" :disabled="loading">重试</button>
   </div>
 
-  <!-- 账号卡片：复用主界面 .account-grid/.card 布局 -->
-  <div class="account-grid" v-if="accounts.length">
-    <div class="card" v-for="a in accounts" :key="a.id">
+  <!-- 统计 + 筛选 + 批量切换 -->
+  <div class="grok-toolbar" v-if="accounts.length">
+    <div class="grok-stats">
+      <span class="gs-item" :class="{active: statusFilter==='all'}" @click="statusFilter='all'">全部 {{ accounts.length }}</span>
+      <span class="gs-item gs-normal" :class="{active: statusFilter==='normal'}" @click="statusFilter='normal'">正常 {{ normalCount }}</span>
+      <span class="gs-item gs-disabled" :class="{active: statusFilter==='disabled'}" @click="statusFilter='disabled'">禁用 {{ disabledCount }}</span>
+    </div>
+    <div class="grok-filter-right">
+      <select v-if="allModels.length" v-model="modelFilter" class="grok-select">
+        <option value="all">全部模型</option>
+        <option v-for="m in allModels" :key="m" :value="m">{{ m }}</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" :class="{ 'btn-primary': selectMode }" @click="toggleSelectMode">
+        {{ selectMode ? '退出批量' : '批量操作' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- 批量操作栏 -->
+  <div class="grok-batch-bar" v-if="selectMode && accounts.length">
+    <span>已选 {{ selectedCount }} 个</span>
+    <button class="btn btn-ghost btn-sm" @click="batchSetStatus('normal')" :disabled="!selectedCount">批量启用</button>
+    <button class="btn btn-ghost btn-sm" @click="batchSetStatus('disabled')" :disabled="!selectedCount">批量禁用</button>
+    <button class="btn btn-ghost btn-sm btn-danger" @click="batchDelete" :disabled="!selectedCount">批量删除</button>
+    <button class="btn btn-ghost btn-sm" @click="selectAll">全选/取消</button>
+  </div>
+
+  <!-- 账号卡片 -->
+  <div class="account-grid" v-if="filteredAccounts.length">
+    <div class="card" v-for="a in filteredAccounts" :key="a.id">
+      <label class="gb-check" v-if="selectMode">
+        <input type="checkbox" :checked="!!selectedIds[a.id]" @change="toggleSelect(a.id)">
+      </label>
       <div class="card-header">
         <div style="display:flex;align-items:center;flex:1;min-width:0">
           <div class="card-info">
-            <div class="card-name">{{ a.email || a.nickname || a.id }}</div>
+            <div class="card-name">{{ a.nickname || a.email || a.id }}</div>
+            <div class="card-email" v-if="a.email && a.email !== (a.nickname || a.email)">{{ a.email }}</div>
             <div class="card-meta">
               <span v-if="a.subscription_tier" class="badge badge-pro">{{ a.subscription_tier }}</span>
               <span v-if="a.has_grok_code_access" class="badge badge-trial">Grok Code</span>
               <span class="badge" :class="statusBadgeClass(a.status)">{{ statusText(a.status) }}</span>
-              <span v-if="a.expires_at" class="grok-expire">
-                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                到期 {{ formatExpire(a.expires_at) }}
-              </span>
               <span v-if="a.available_models && a.available_models.length" class="grok-models">
-                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
                 {{ a.available_models.join('、') }}
               </span>
               <span v-if="a.billing && (a.billing.on_demand_cap !== undefined || a.billing.prepaid)"
                     class="grok-quota" :class="{ empty: quotaEmpty(a) }"
-                    :title="'billing 周期截止: ' + (a.billing.period_end || '未知')">
-                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><circle cx="12" cy="12" r="10"/><path d="M12 6v12M16 10l-4-4-4 4"/></svg>
-                {{ quotaText(a) }}
-              </span>
-              <span v-for="t in (a.tags || [])" :key="t" class="tag-pill">{{ t }}</span>
+                    :title="'周期截止: ' + (a.billing.period_end || '未知')">{{ quotaText(a) }}</span>
+              <span v-if="a.expires_at" class="grok-expire">到期 {{ formatExpire(a.expires_at) }}</span>
             </div>
           </div>
         </div>
       </div>
       <div class="card-footer">
         <div class="card-actions">
-          <button class="btn btn-ghost btn-sm" @click="refreshAccount(a.id)" :disabled="a._refreshing">
-            <span v-if="a._refreshing" class="spinner-sm"></span>
-            <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg>
-            刷新凭证
+          <button class="btn btn-ghost btn-sm" @click="setPriority(a.id)" title="设为优先调度号">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+            优先
           </button>
-          <button class="btn btn-ghost btn-sm btn-danger" @click="deleteAccount(a)" :disabled="a._deleting">
+          <button class="btn btn-ghost btn-sm" @click="toggleStatus(a)" :title="a.status==='disabled' ? '启用' : '禁用'">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 11-12.73 0M12 2v10"/></svg>
+            {{ a.status==='disabled' ? '启用' : '禁用' }}
+          </button>
+          <button class="btn btn-ghost btn-sm" @click="refreshOne(a.id, a)" :disabled="a._refreshing" title="刷新 OAuth token">
+            <span v-if="a._refreshing" class="spinner-sm"></span>
+            <template v-else>刷新凭证</template>
+          </button>
+          <button class="btn btn-ghost btn-sm" @click="viewCredential(a)" title="查看完整凭证（access_token / refresh_token）">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            凭证
+          </button>
+          <button class="btn btn-ghost btn-sm btn-danger" @click="deleteAccount(a)" :disabled="a._deleting" title="删除">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
             删除
           </button>
@@ -115,11 +156,34 @@
     </div>
   </div>
 
-  <!-- 空状态（网关可达但无账号） -->
+  <!-- 空状态 -->
   <div class="empty-state" v-else-if="!loading && !bridgeError">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
-    <h3>还没有 Grok 账号</h3>
-    <p>点击右上角「添加 Grok 账号」，用 xAI 账号设备码授权登录</p>
+    <h3>{{ accounts.length ? '无匹配账号' : '还没有 Grok 账号' }}</h3>
+    <p>{{ accounts.length ? '调整筛选条件' : '点击右上角「添加账号」，用 xAI 账号设备码授权登录' }}</p>
+  </div>
+
+  <!-- 凭证查看弹窗 -->
+  <div class="gb-modal" v-if="credModal" @click.self="credModal=false">
+    <div class="gb-modal-card gb-cred-card">
+      <h3>账号凭证</h3>
+      <p style="font-size:13px;color:var(--text-secondary);margin:0 0 14px">{{ credential && (credential.nickname || credential.email || credential.id) }}</p>
+      <div class="gb-cred-row" v-if="credential">
+        <label>access_token</label>
+        <div class="gb-cred-val">{{ credential.access_token }}</div>
+        <button class="btn btn-ghost btn-sm" @click="copyText(credential.access_token)">复制</button>
+      </div>
+      <div class="gb-cred-row" v-if="credential && credential.refresh_token">
+        <label>refresh_token</label>
+        <div class="gb-cred-val">{{ credential.refresh_token }}</div>
+        <button class="btn btn-ghost btn-sm" @click="copyText(credential.refresh_token)">复制</button>
+      </div>
+      <div class="gb-cred-row" v-if="credential">
+        <label>machine / uid</label>
+        <div class="gb-cred-val">{{ credential.uid }}</div>
+      </div>
+      <button class="btn gb-cancel" @click="credModal=false">关闭</button>
+    </div>
   </div>
 
   <!-- device code 登录面板 -->
@@ -136,14 +200,9 @@
       <template v-else-if="login.userCode">
         <p class="gb-step">1. 在打开的验证页输入下方代码：</p>
         <div class="gb-usercode" @click="copyCode" title="点击复制">{{ login.userCode }}</div>
-        <a class="btn btn-primary gb-verify-link" :href="login.verifyUrl" target="_blank" rel="noopener">
-          打开验证页面
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M8 7h9v9"/></svg>
-        </a>
+        <a class="btn btn-primary gb-verify-link" :href="login.verifyUrl" target="_blank" rel="noopener">打开验证页面</a>
         <p class="gb-step gb-step-2">2. 授权完成后这里会自动继续…</p>
-        <p class="gb-pending" v-if="login.pending">
-          <span class="spinner-sm"></span> 等待授权中
-        </p>
+        <p class="gb-pending" v-if="login.pending"><span class="spinner-sm"></span> 等待授权中</p>
       </template>
       <template v-else>
         <p class="gb-pending"><span class="spinner-sm"></span> 正在请求设备码…</p>
@@ -154,22 +213,33 @@
 </div>
 
 <script>
-const { createApp, ref, onMounted } = Vue;
+const { createApp, ref, computed, onMounted } = Vue;
 
 createApp({
   setup() {
     const accounts = ref([]);
     const loading = ref(false);
-    const bridgeError = ref(false);  // postMessage 桥接不可用（主 frame 无响应/未提供方法）
-    // 对话测试状态
+    const refreshingAll = ref(false);
+    const bridgeError = ref(false);
+
+    // 对话测试
     const testInput = ref('');
     const testReply = ref('');
     const testError = ref('');
     const testing = ref(false);
     const login = ref({ shown: false, busy: false, loginId: '', userCode: '', verifyUrl: '', pending: false, error: '', timer: null });
 
-    // ── postMessage RPC：请求主 frame 转发到 pywebview.api（与 CodeBuddy 同款链路）──
-    // 不直连网关 HTTP（那要求网关已启动）；postMessage 跨 frame 保证可用。
+    // 筛选 / 批量
+    const statusFilter = ref('all');
+    const modelFilter = ref('all');
+    const selectMode = ref(false);
+    const selectedIds = ref({});
+
+    // 凭证弹窗
+    const credential = ref(null);
+    const credModal = ref(false);
+
+    // ── postMessage RPC：请求主 frame 转发到 pywebview.api（与 CodeBuddy 同款链路） ──
     let rpcId = 0;
     const pending = new Map();
     window.addEventListener('message', (e) => {
@@ -177,15 +247,12 @@ createApp({
       if (!d || d.__grokRpc !== true || !pending.has(d.id)) return;
       const { resolve, reject } = pending.get(d.id);
       pending.delete(d.id);
-      // 能收到回复说明桥是通的（哪怕 Python 侧业务报错）
       bridgeError.value = false;
       if (d.payload && d.payload.error) reject(new Error(d.payload.error));
       else resolve(d.payload);
     });
 
     function rpc(method, ...args) {
-      // 重试机制：覆盖启动期 pywebview.api 注入竞态 + 上游慢查询。
-      // 单次 15s 超时，失败重试最多 2 次（间隔 600ms），都失败才判桥接断。
       return new Promise((resolve, reject) => {
         let attempts = 0;
         const MAX = 2;
@@ -214,11 +281,27 @@ createApp({
       });
     }
 
+    // ── 账号列表：通用 list_accounts('grok') + grok_extra(展示字段) 合并 ──
     async function loadAccounts() {
       loading.value = true;
       try {
-        const data = await rpc('grok_accounts');
-        accounts.value = (data.accounts || []).map(a => ({ ...a, _refreshing: false, _deleting: false }));
+        const list = await rpc('list_accounts', 'grok');  // [account.to_dict()]
+        const arr = Array.isArray(list) ? list : [];
+        let extra = {};
+        if (arr.length) {
+          try { extra = await rpc('grok_extra', JSON.stringify(arr.map(a => a.id))) || {}; } catch(e) {}
+        }
+        accounts.value = arr.map(a => {
+          const e = extra[a.id] || {};
+          return {
+            ...a,
+            _refreshing: false, _deleting: false,
+            available_models: e.available_models || [],
+            billing: e.billing || {},
+            subscription_tier: e.subscription_tier,
+            has_grok_code_access: e.has_grok_code_access,
+          };
+        });
       } catch(e) {
         console.error('loadAccounts', e);
       } finally {
@@ -226,36 +309,141 @@ createApp({
       }
     }
 
-    function statusText(s) {
-      if (s === 'disabled') return '已禁用';
-      if (s === 'banned') return '封禁';
-      return '正常';
+    // ── 统计 / 筛选（computed） ──
+    const normalCount = computed(() => accounts.value.filter(a => a.status === 'normal').length);
+    const disabledCount = computed(() => accounts.value.filter(a => a.status === 'disabled').length);
+    const allModels = computed(() => {
+      const s = new Set();
+      accounts.value.forEach(a => (a.available_models || []).forEach(m => s.add(m)));
+      return [...s];
+    });
+    const filteredAccounts = computed(() => accounts.value.filter(a => {
+      if (statusFilter.value !== 'all' && a.status !== statusFilter.value) return false;
+      if (modelFilter.value !== 'all' && !(a.available_models || []).includes(modelFilter.value)) return false;
+      return true;
+    }));
+
+    // ── 批量选择 ──
+    const selectedCount = computed(() => Object.values(selectedIds.value).filter(Boolean).length);
+    function toggleSelectMode() {
+      selectMode.value = !selectMode.value;
+      if (!selectMode.value) selectedIds.value = {};
     }
-    function statusBadgeClass(s) {
-      return (!s || s === 'normal') ? 'gb-badge-normal' : 'gb-badge-danger';
+    function toggleSelect(id) { selectedIds.value = { ...selectedIds.value, [id]: !selectedIds.value[id] }; }
+    function selectAll() {
+      const allSel = filteredAccounts.value.every(a => selectedIds.value[a.id]);
+      const next = { ...selectedIds.value };
+      filteredAccounts.value.forEach(a => { next[a.id] = !allSel; });
+      selectedIds.value = next;
     }
 
-    // 额度展示：按量 已用/上限 · 预付。
-    // Grok Code 账号的额度不走 billing onDemand（cap=0 但能聊），显示「Grok Code 额度」；
-    // 仅当 cap=0 且无预付且非 Code 账号时才判耗尽（红色）。
-    function quotaText(a) {
-      const b = a.billing || {};
-      const cap = b.on_demand_cap, used = b.on_demand_used, prepaid = b.prepaid;
-      const parts = [];
-      if (cap !== undefined && cap !== null && cap > 0) parts.push(`按量 ${used ?? 0}/${cap}`);
-      if (prepaid) parts.push(`预付 ${prepaid}`);
-      if (!parts.length) {
-        if (a.has_grok_code_access) return 'Grok Code 额度';
-        return (cap === 0) ? '按量 0/0' : '额度未知';
+    // ── 单个操作（走通用 platform 参数化方法） ──
+    async function setPriority(id) {
+      try {
+        const r = await rpc('set_priority_account', 'grok', id);
+        if (r && r.error) { showToast(r.error); return; }
+        showToast('已设为优先调度号', 'success');
+      } catch(e) { showToast('设置失败: ' + e.message); }
+    }
+    async function toggleStatus(a) {
+      const target = a.status === 'disabled' ? 'normal' : 'disabled';
+      try {
+        const r = await rpc('set_account_status', 'grok', a.id, target);
+        if (r && r.error) { showToast(r.error); return; }
+        a.status = target;
+        showToast(target === 'disabled' ? '已禁用' : '已启用', 'success');
+      } catch(e) { showToast('操作失败: ' + e.message); }
+    }
+    async function refreshOne(id, a) {
+      if (a) a._refreshing = true;
+      try {
+        const r = await rpc('grok_refresh', id);
+        if (r && r.error) { showToast(r.error); return; }
+        showToast('凭证已刷新', 'success');
+        await loadAccounts();
+      } catch(e) { showToast('刷新失败: ' + e.message); }
+      finally { if (a) a._refreshing = false; }
+    }
+    async function refreshAll() {
+      refreshingAll.value = true;
+      let ok = 0, fail = 0;
+      for (const a of accounts.value) {
+        try { await rpc('grok_refresh', a.id); ok++; } catch(e) { fail++; }
       }
-      return parts.join(' · ');
+      refreshingAll.value = false;
+      await loadAccounts();
+      showToast(`刷新完成: ${ok} 成功${fail ? ' / ' + fail + ' 失败' : ''}`, ok && !fail ? 'success' : 'info');
     }
-    function quotaEmpty(a) {
-      const b = a.billing || {};
-      const cap = b.on_demand_cap, prepaid = b.prepaid;
-      return (cap !== undefined && cap !== null && cap === 0) && !prepaid && !a.has_grok_code_access;
+    async function deleteAccount(a) {
+      if (!confirm(`确定删除账号 ${a.nickname || a.email || a.id}?(软删除可恢复)`)) return;
+      a._deleting = true;
+      try {
+        const r = await rpc('delete_account', 'grok', a.id, '1');
+        if (r && r.success === false) { showToast(r.error || '删除失败'); return; }
+        showToast('已删除', 'success');
+        await loadAccounts();
+      } catch(e) { showToast('删除失败: ' + e.message); }
+      finally { a._deleting = false; }
+    }
+    async function viewCredential(a) {
+      try {
+        const r = await rpc('get_account', 'grok', a.id);
+        if (r && r.error) { showToast(r.error); return; }
+        credential.value = r;
+        credModal.value = true;
+      } catch(e) { showToast('读取凭证失败: ' + e.message); }
+    }
+    async function exportAccounts() {
+      try {
+        const r = await rpc('export_accounts', 'grok');
+        const text = typeof r === 'string' ? r : JSON.stringify(r, null, 2);
+        const blob = new Blob([text], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url; link.download = 'grok_accounts.json'; link.click();
+        URL.revokeObjectURL(url);
+        showToast('已导出 grok_accounts.json', 'success');
+      } catch(e) { showToast('导出失败: ' + e.message); }
     }
 
+    // ── 批量操作 ──
+    async function batchSetStatus(status) {
+      const ids = Object.keys(selectedIds.value).filter(k => selectedIds.value[k]);
+      if (!ids.length) return;
+      try {
+        const r = await rpc('set_account_statuses', 'grok', JSON.stringify(ids), status);
+        if (r && r.error) { showToast(r.error); return; }
+        showToast(`已批量${status === 'disabled' ? '禁用' : '启用'}`, 'success');
+        await loadAccounts();
+      } catch(e) { showToast('批量操作失败: ' + e.message); }
+    }
+    async function batchDelete() {
+      const ids = Object.keys(selectedIds.value).filter(k => selectedIds.value[k]);
+      if (!ids.length) return;
+      if (!confirm(`确定批量删除 ${ids.length} 个账号?(软删除可恢复)`)) return;
+      try {
+        const r = await rpc('delete_accounts', 'grok', JSON.stringify(ids), '1');
+        if (r && r.success === false) { showToast(r.error || '批量删除失败'); return; }
+        showToast('已批量删除', 'success');
+        selectedIds.value = {};
+        await loadAccounts();
+      } catch(e) { showToast('批量删除失败: ' + e.message); }
+    }
+
+    // ── 对话测试（走 pywebview，直接调 provider） ──
+    async function sendTest() {
+      const msg = testInput.value.trim();
+      if (!msg) return;
+      testing.value = true; testError.value = ''; testReply.value = '';
+      try {
+        const r = await rpc('grok_chat_test', msg);
+        if (r && r.error) testError.value = r.error;
+        else testReply.value = (r && r.text) || '(空回复)';
+      } catch(e) { testError.value = e.message; }
+      finally { testing.value = false; }
+    }
+
+    // ── OAuth device code 登录（Grok 特有） ──
     async function startLogin() {
       login.value = { shown: true, busy: true, loginId:'', userCode:'', verifyUrl:'', pending:false, error:'', timer:null };
       try {
@@ -271,7 +459,6 @@ createApp({
         login.value.busy = false;
       }
     }
-
     function pollLogin() {
       clearInterval(login.value.timer);
       login.value.timer = setInterval(async () => {
@@ -279,7 +466,6 @@ createApp({
           const r = await rpc('grok_oauth_poll', login.value.loginId);
           if (r.status === 'ok') {
             clearInterval(login.value.timer);
-            // 保存账号
             await rpc('grok_oauth_complete', JSON.stringify(r.credentials));
             login.value.shown = false;
             loadAccounts();
@@ -291,7 +477,6 @@ createApp({
         }
       }, 2000);
     }
-
     function cancelLogin() {
       if (login.value.timer) clearInterval(login.value.timer);
       if (login.value.loginId) {
@@ -299,62 +484,67 @@ createApp({
       }
       login.value.shown = false;
     }
-
     function copyCode() {
       if (navigator.clipboard && login.value.userCode) {
         navigator.clipboard.writeText(login.value.userCode).catch(()=>{});
       }
     }
 
-    async function refreshAccount(id) {
-      const a = accounts.value.find(x => x.id === id);
-      if (a) a._refreshing = true;
-      try {
-        await rpc('grok_refresh', id);
-        await loadAccounts();
-      } catch(e) {
-        alert('刷新失败：' + e.message);
-      } finally {
-        if (a) a._refreshing = false;
-      }
+    // ── 辅助 ──
+    function statusText(s) { return s === 'disabled' ? '已禁用' : s === 'banned' ? '封禁' : '正常'; }
+    function statusBadgeClass(s) { return (!s || s === 'normal') ? 'gb-badge-normal' : 'gb-badge-danger'; }
+    function quotaText(a) {
+      const b = a.billing || {};
+      const cap = b.on_demand_cap, used = b.on_demand_used, prepaid = b.prepaid;
+      const parts = [];
+      if (cap !== undefined && cap !== null && cap > 0) parts.push(`按量 ${used ?? 0}/${cap}`);
+      if (prepaid) parts.push(`预付 ${prepaid}`);
+      if (!parts.length) return a.has_grok_code_access ? 'Grok Code 额度' : (cap === 0 ? '按量 0/0' : '额度未知');
+      return parts.join(' · ');
     }
-
-    async function deleteAccount(a) {
-      if (!confirm(`确定删除账号 ${a.email || a.id}？`)) return;
-      a._deleting = true;
-      try {
-        await rpc('grok_delete', a.id);
-        await loadAccounts();
-      } catch(e) {
-        alert('删除失败：' + e.message);
-      } finally {
-        a._deleting = false;
-      }
+    function quotaEmpty(a) {
+      const b = a.billing || {};
+      const cap = b.on_demand_cap, prepaid = b.prepaid;
+      return (cap !== undefined && cap !== null && cap === 0) && !prepaid && !a.has_grok_code_access;
     }
-
     function formatExpire(ts) {
       if (!ts) return '';
       const d = new Date(ts * 1000);
       return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
     }
-
-    async function sendTest() {
-      const msg = testInput.value.trim();
-      if (!msg) return;
-      testing.value = true; testError.value = ''; testReply.value = '';
-      try {
-        const r = await rpc('grok_chat_test', msg);
-        if (r && r.error) testError.value = r.error;
-        else testReply.value = (r && r.text) || '(空回复)';
-      } catch(e) { testError.value = e.message; }
-      finally { testing.value = false; }
+    function copyText(t) {
+      if (navigator.clipboard && t) {
+        navigator.clipboard.writeText(t).then(()=>showToast('已复制', 'success')).catch(()=>{});
+      }
+    }
+    // 简易 toast（iframe 内无主界面 toast，用 console + 可选 alert 兜底）
+    let toastTimer = null;
+    function showToast(msg, type) {
+      const el = document.getElementById('gb-toast');
+      if (!el) { console.log('[grok]', msg); return; }
+      el.textContent = msg;
+      el.className = 'gb-toast show' + (type === 'success' ? ' success' : type === 'error' ? ' error' : '');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { el.className = 'gb-toast'; }, 2200);
     }
 
     onMounted(loadAccounts);
 
-    return { accounts, loading, bridgeError, testInput, testReply, testError, testing, sendTest, login, loadAccounts, startLogin, cancelLogin, copyCode, refreshAccount, deleteAccount, formatExpire, statusText, statusBadgeClass, quotaText, quotaEmpty };
+    return {
+      accounts, loading, refreshingAll, bridgeError,
+      testInput, testReply, testError, testing, sendTest,
+      login, startLogin, cancelLogin, copyCode,
+      statusFilter, modelFilter, allModels, filteredAccounts,
+      selectMode, selectedIds, selectedCount, toggleSelectMode, toggleSelect, selectAll,
+      normalCount, disabledCount,
+      loadAccounts, setPriority, toggleStatus, refreshOne, refreshAll, deleteAccount, viewCredential, exportAccounts,
+      batchSetStatus, batchDelete,
+      credential, credModal, copyText,
+      statusText, statusBadgeClass, quotaText, quotaEmpty, formatExpire,
+    };
   }
 }).mount('#grok-app');
 </script>
+<div id="gb-toast" class="gb-toast"></div>
 </body>
 </html>

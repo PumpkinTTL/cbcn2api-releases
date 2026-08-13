@@ -157,3 +157,29 @@ def refresh(account_id: str) -> dict:
 def delete(account_id: str):
     store.soft_delete_account(config.PLATFORM_KEY, account_id)
     grok_pool.reload()
+
+
+def extra_for(account_ids: list) -> dict:
+    """批量取 Grok 特有展示字段（models/billing/订阅），供 grok.html 合并到
+    通用 list_accounts('grok') 的结果上。账号管理走通用方法，Grok 只附加展示。"""
+    out = {}
+    for aid in account_ids or []:
+        acc = store.load_account(config.PLATFORM_KEY, aid)
+        if not acc:
+            continue
+        models, billing, user = _cached_info(acc)
+        auth_raw = acc.auth_raw or {}
+        has_code = auth_raw.get("hasGrokCodeAccess")
+        tier = auth_raw.get("subscriptionTier")
+        if user:
+            if has_code is None:
+                has_code = user.get("hasGrokCodeAccess")
+            if tier is None:
+                tier = user.get("subscriptionTier")
+        out[aid] = {
+            "available_models": models,
+            "billing": billing,
+            "subscription_tier": tier,
+            "has_grok_code_access": has_code,
+        }
+    return out
