@@ -34,8 +34,13 @@ async def _require_auth(x_grok_token: Optional[str] = Header(None, alias="x-grok
 
 @router.get("/models")
 async def list_models():
-    """模型列表（无需鉴权，供客户端枚举）。"""
-    return {"models": config.MODELS}
+    """模型列表（无需鉴权，供客户端枚举）。
+
+    动态合并池内账号实际可用模型（账号权限不同：grok-build / grok-4.6 等），
+    写死列表会让客户端选到没权限的模型而 402。池空时回退写死列表。
+    """
+    models = service.list_available_models()
+    return {"models": models or config.MODELS}
 
 
 @router.get("/accounts")

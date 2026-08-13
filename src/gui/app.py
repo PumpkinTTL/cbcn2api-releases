@@ -1347,6 +1347,69 @@ class GuiApi:
         service.delete(account_id)
         return json.dumps({"ok": True}, ensure_ascii=False)
 
+    def grok_chat_test(self, message: str) -> str:
+        """对话测试：直接调 provider.handle_request（不经网关 HTTP），验证转发链路。
+
+        模型动态取：账号可用模型以上游 /v1/models 为准（不同账号权限不同，
+        grok-build / grok-4.6 等，写死会 402 spending-limit）。聚合 SSE 提取
+        output_text.delta 拼成回复文本返回；池空/上游错误以 {ok:false,error} 回传。"""
+        import asyncio
+        import json as _json
+        from src.grok import provider, oauth, config
+
+        provider.grok_pool.ensure_loaded()
+        acc = provider.grok_pool.get_next()
+        if not acc or not acc.access_token:
+            return _json.dumps({"ok": False, "error": "无可用 Grok 账号"}, ensure_ascii=False)
+
+        # 动态取账号可用模型（取第一个），查不到兜底 grok-build
+        model = config.GROK_BUILD_MODEL
+        try:
+            models = oauth.fetch_models(acc.access_token)
+            if models:
+                model = models[0]
+        except Exception:
+            pass
+
+        payload = {
+            "model": model,
+            "input": [{"role": "user", "type": "message", "content": message or "hi"}],
+        }
+
+        async def _run():
+            out = []
+            async for chunk in provider.handle_request(payload):
+                out.append(chunk)
+            return "".join(out)
+
+        try:
+            raw = asyncio.run(_run())
+        except Exception as e:
+            return _json.dumps({"ok": False, "error": f"转发异常: {e}"}, ensure_ascii=False)
+
+        # 从 SSE 提取回复文本
+        text_parts = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]" or not data:
+                continue
+            try:
+                obj = _json.loads(data)
+            except Exception:
+                continue
+            if obj.get("type") == "response.output_text.delta":
+                text_parts.append(obj.get("delta", ""))
+            elif obj.get("type") == "error" or (isinstance(obj, dict) and obj.get("error")):
+                err = obj.get("error", {})
+                if isinstance(err, dict):
+                    err = err.get("message") or str(err)
+                return _json.dumps({"ok": False, "error": str(err)}, ensure_ascii=False)
+        return _json.dumps({"ok": True, "model": model, "text": "".join(text_parts), "raw": raw[:2000]},
+                           ensure_ascii=False)
+
     # ========== Proxy Gateway ==========
 
     def proxy_start(self, port: str, password: str) -> str:

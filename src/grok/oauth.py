@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 
 # device code 流程相对中转 state 更慢（用户要开浏览器输 user_code），放宽超时
 _TIMEOUT = 30
+# 查询类请求（user/models/billing）超时短一些：避免 list_accounts 串行查询拖垮 RPC；
+# device code / refresh 仍用 30s（用户在等登录/刷新）
+_QUERY_TIMEOUT = 8
 # login_id → {device_code, user_code, verification_uri, expires_at, cancelled, interval}
 _pending: dict[str, dict] = {}
 
@@ -135,12 +138,13 @@ def reset_pending():
 
 
 def fetch_user(access_token: str) -> Optional[dict]:
-    """GET /v1/user 拉账号信息（userId / email / 订阅 tier）。
+    """GET /v1/user?include=subscription 拉账号信息（userId / email / 订阅 tier）。
 
-    带自定义认证头 x-xai-token-auth: xai-grok-cli（cli-chat-proxy 的鉴权约定）。
+    带 ?include=subscription 才返回 subscriptionTier 等订阅字段（对齐 9router）。
+    自定义认证头 x-xai-token-auth: xai-grok-cli（cli-chat-proxy 的鉴权约定）。
     """
     resp = requests.get(
-        f"{config.BASE_URL}/user",
+        f"{config.BASE_URL}/user?include=subscription",
         headers={
             "Authorization": f"Bearer {access_token}",
             "Accept": "application/json",
@@ -148,11 +152,87 @@ def fetch_user(access_token: str) -> Optional[dict]:
             "x-xai-token-auth": config.TOKEN_AUTH_HEADER_VALUE,
             "x-grok-client-version": config.CLIENT_VERSION,
         },
-        timeout=_TIMEOUT,
+        timeout=_QUERY_TIMEOUT,
     )
     if resp.status_code != 200:
         return None
     return resp.json()
+
+
+def fetch_models(access_token: str) -> list:
+    """GET /v1/models 拉账号可用模型列表。
+
+    关键：不同账号权限不同（有的 grok-build 订阅，有的只有 grok-4.6），
+    写死 model 会 402。账号实际能用的模型以上游 /v1/models 为准。
+    """
+    try:
+        resp = requests.get(
+            f"{config.BASE_URL}/models",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+                "User-Agent": config.USER_AGENT,
+                "x-xai-token-auth": config.TOKEN_AUTH_HEADER_VALUE,
+                "x-grok-client-version": config.CLIENT_VERSION,
+            },
+            timeout=_QUERY_TIMEOUT,
+        )
+    except Exception:
+        return []
+    if resp.status_code != 200:
+        return []
+    data = resp.json()
+    items = data.get("data", data) if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        return []
+    return [m.get("id") if isinstance(m, dict) else str(m) for m in items]
+
+
+def fetch_billing(access_token: str) -> dict:
+    """GET /v1/billing?format=credits 拉账号额度（对齐 9router usage）。
+
+    返回规范化字段（失败返回 {}）：
+        on_demand_cap / on_demand_used / prepaid / monthly_limit /
+        included_used / is_unified / period_end
+    """
+    try:
+        resp = requests.get(
+            f"{config.BASE_URL}/billing?format=credits",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+                "User-Agent": config.USER_AGENT,
+                "x-xai-token-auth": config.TOKEN_AUTH_HEADER_VALUE,
+                "x-grok-client-identifier": config.CLIENT_IDENTIFIER,
+                "x-grok-client-version": config.CLIENT_VERSION,
+                "x-grok-client-mode": "headless",
+            },
+            timeout=_QUERY_TIMEOUT,
+        )
+    except Exception:
+        return {}
+    if resp.status_code != 200:
+        return {}
+    data = resp.json() or {}
+    cfg = data.get("config", data) if isinstance(data, dict) else {}
+
+    def v(key, fallback=None):
+        """解 protobuf-json 风格的 {val: n} 包裹。"""
+        val = cfg.get(key)
+        if isinstance(val, dict) and "val" in val:
+            return val.get("val", fallback)
+        return val
+
+    return {
+        "on_demand_cap": v("onDemandCap"),
+        "on_demand_used": v("onDemandUsed"),
+        "prepaid": v("prepaidBalance"),
+        "monthly_limit": v("monthlyLimit"),
+        "included_used": v("includedUsed"),
+        "is_unified": cfg.get("isUnifiedBillingUser"),
+        "period_end": cfg.get("billingPeriodEnd")
+        or (cfg.get("currentPeriod") or {}).get("end"),
+    }
 
 
 def refresh_credentials(refresh_token: str) -> dict:
