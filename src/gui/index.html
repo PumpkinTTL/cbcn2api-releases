@@ -140,7 +140,7 @@
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> 切换主题
       </button>
       <div style="text-align:center;font-size:11px;margin-top:8px">
-        <span class="version-link" @click="openModal('changelog')">v1.0.9</span>
+        <span class="version-link" @click="openModal('changelog')">v1.1.0</span>
         <span style="margin:0 4px;color:var(--text-muted)">|</span>
         <span class="version-link" @click="checkForUpdate">检查更新
           <span v-if="hasUpdate" id="updateBadge" style="margin-left:4px;color:var(--accent,#2563eb);vertical-align:-1px">
@@ -208,11 +208,7 @@
               </label>
               <label class="proxy-field" title="客户端请求需携带的 Bearer Key，留空则不校验">
                 <span>Key</span>
-                <input type="password" v-model="proxyKey" placeholder="可选" @focus="openKeyTip">
-                <input v-if="keyFocused" type="text" v-model="proxyKey" class="key-tip-input"
-                       placeholder="输入 Bearer Key（留空则不校验，回车或点别处收起）"
-                       @blur="keyFocused = false" @keyup.enter="keyFocused = false"
-                       ref="keyTipInput">
+                <input type="password" v-model="proxyKey" placeholder="可选">
               </label>
               <label class="proxy-field" title="剩余积分低于此值自动禁用当前账号并切换下一个（0=关闭）">
                 <span>切号阈值</span>
@@ -841,7 +837,7 @@
         <img src="icons/workbuddy-logo.svg" class="about-logo" alt="">
         <div class="about-header-text">
           <h2 class="about-title">AI Gateway</h2>
-          <p class="about-version">v1.0.9</p>
+          <p class="about-version">v1.1.0</p>
         </div>
       </div>
 
@@ -956,7 +952,7 @@
               <span class="settings-item-desc">更新日志与检查更新</span>
             </div>
             <div class="settings-item-control">
-              <span class="version-link" @click="openModal('changelog')">v1.0.9</span>
+              <span class="version-link" @click="openModal('changelog')">v1.1.0</span>
               <button class="btn btn-ghost btn-sm" @click="checkForUpdate">检查更新</button>
             </div>
           </div>
@@ -1424,7 +1420,29 @@
         </button>
       </div>
       <div class="modal-body">
-        <div class="changelog-version">v1.0.9</div>
+        <div class="changelog-version">v1.1.0</div>
+        <div class="changelog-date">2026-08-13</div>
+
+        <div class="changelog-section-title">功能新增</div>
+        <ul class="changelog-list">
+          <li>局域网访问：网关支持局域网连接，同一网络下的手机、其他电脑等设备可直接访问使用</li>
+          <li>网关状态栏新增局域网访问地址展示，复制后即可在其他设备填写</li>
+          <li>运行日志增强：点击任意一条日志可展开查看详细信息，便于排查问题</li>
+        </ul>
+
+        <div class="changelog-section-title">问题修复</div>
+        <ul class="changelog-list">
+          <li>修复刷新账号时部分正常账号被误判为「已封禁」的问题（账号实际可用，验活可恢复）</li>
+          <li>修复网关访问密码重启应用后需要重新输入的问题，现已自动记住</li>
+          <li>修复切换主题时界面短暂卡顿的问题</li>
+        </ul>
+
+        <div class="changelog-section-title">体验优化</div>
+        <ul class="changelog-list">
+          <li>优化网关与上游通信的稳定性</li>
+        </ul>
+
+        <div class="changelog-version" style="margin-top:24px">v1.0.9</div>
         <div class="changelog-date">2026-08-12</div>
 
         <div class="changelog-section-title">问题修复</div>
@@ -2093,8 +2111,6 @@ const vApp = createApp({
     const proxyActive = ref(false);
     const proxyPort = ref(8001);
     const proxyKey = ref('');
-    const keyFocused = ref(false);
-    const keyTipInput = ref(null);
     const lanIps = ref([]);
     const quotaThreshold = ref(0);
     const enableThreshold = ref(0);
@@ -3674,12 +3690,6 @@ const vApp = createApp({
     // ─── Proxy ───
     function getProxyBaseUrl() { return `http://127.0.0.1:${proxyPort.value}`; }
 
-    // Key 输入：点窄框 → 展开下方宽框并自动聚焦（焦点始终落在宽框，编辑后 blur/回车收起）
-    function openKeyTip() {
-      keyFocused.value = true;
-      setTimeout(() => { if (keyTipInput.value) keyTipInput.value.focus(); }, 30);
-    }
-
     async function toggleProxy() {
       proxyToggling.value = true;
       try {
@@ -4054,7 +4064,7 @@ const vApp = createApp({
       tagFilter, tagFilterOpen, allTags, tagEditAccount, tagEditInput, tagEditAccountName,
       fingerprintAccount, fingerprintAccountName, DEFAULT_FINGERPRINT, fpForm, fpRandomStyle, fpConfigured, fpSaving,
       batchFpAccounts, batchFpCount, batchFpStyle,
-      proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, keyFocused, keyTipInput, quotaThreshold, proxyToggling, lanIps,
+      proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, quotaThreshold, proxyToggling, lanIps,
       enableThreshold, detecting, detectProgress, detectThresholdTemp, detectTargetCount,
       exporting, exportDiagnostics,
       chatCardCollapsed, chatMessages, chatInput, chatSending, modelList, currentModel, modelDropdownOpen,
@@ -4101,7 +4111,7 @@ const vApp = createApp({
       showQuotaDetail, refreshQuota,
       showOAuthModal, cancelOAuth,
       showImportModal, doImport, handleFileImport,
-      toggleProxy, copyEndpoint, copyLanEndpoint, openKeyTip,
+      toggleProxy, copyEndpoint, copyLanEndpoint,
       selectModel, syncModels, exportToIDE, exportToWorkBuddy, exportToCodeBuddy, sendTestChat,
       refreshLogs, toggleLogEnabled, clearLogs,
       checkForUpdate, doUpdate,

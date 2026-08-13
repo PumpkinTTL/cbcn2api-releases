@@ -907,7 +907,7 @@ body {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  overflow: visible;
+  overflow: hidden;
   transition: var(--transition);
   flex-shrink: 1;
 }
@@ -923,7 +923,6 @@ body {
   white-space: nowrap;
   cursor: text;
   transition: background var(--transition);
-  position: relative;
 }
 .proxy-field + .proxy-field { border-left: 1px solid var(--border); }
 .proxy-field:focus-within { background: var(--primary-light); }
@@ -947,27 +946,7 @@ body {
   width: 56px;
   min-width: 0;
 }
-.proxy-field input[type="password"] {
-  width: 80px;
-}
-/* Key 聚焦时下方弹出可编辑的宽输入框（定位 tips），不挤压右侧字段 */
-.key-tip-input {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  width: 300px;
-  height: 32px;
-  background: var(--surface);
-  border: 1px solid var(--primary);
-  border-radius: var(--radius-sm);
-  padding: 0 10px;
-  font-size: 12px;
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  color: var(--text);
-  outline: none;
-  z-index: 30;
-  box-shadow: 0 4px 12px rgba(0,0,0,.15);
-}
+.proxy-field input[type="password"] { width: 100px; }
 .proxy-field + .proxy-field { border-left: 1px solid var(--border); }
 /* 高亮落在真正被聚焦的那一格，比整组描边更能说明「现在改的是哪个」 */
 .proxy-field:focus-within { background: var(--primary-light); }
