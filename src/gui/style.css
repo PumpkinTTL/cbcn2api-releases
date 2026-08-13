@@ -445,6 +445,15 @@ body {
 .log-badge.log-error { background: var(--danger-light); color: var(--danger); }
 .log-badge.log-request { background: var(--bg-tertiary); color: var(--text-secondary); }
 .log-badge.log-switch { background: var(--primary-light); color: var(--primary); }
+.log-badge.log-upstream { background: var(--warning-light, #fff4e6); color: var(--warning, #e8830f); }
+.log-expand-hint { color: var(--text-secondary); font-size: 9px; transition: transform .15s; flex-shrink: 0; }
+.log-expand-hint.open { transform: rotate(90deg); }
+.log-details {
+  flex-basis: 100%; margin: 4px 0 2px; padding: 6px 10px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text-secondary); font-size: 11px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow-y: auto;
+}
 .log-acct { color: var(--accent); min-width: 80px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-model { color: var(--text-secondary); min-width: 60px; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-msg { color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

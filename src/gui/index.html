@@ -768,6 +768,7 @@
           </label>
           <select id="logEventFilter" v-model="logEventFilter" class="select-styled" @change="refreshLogs">
             <option value="">全部类型</option>
+            <option value="upstream">上游</option>
             <option value="request">请求</option>
             <option value="success">成功</option>
             <option value="warning">警告</option>
@@ -783,14 +784,18 @@
       <div class="logs-list" id="logsList">
         <template v-if="logs.length">
           <div v-for="(l, i) in logs" :key="i" class="log-row"
-            :class="l.event === 'success' ? 'log-success' : l.event === 'error' ? 'log-error' : l.event === 'switch' ? 'log-switch' : 'log-request'">
+            :class="l.event === 'success' ? 'log-success' : l.event === 'error' ? 'log-error' : l.event === 'switch' ? 'log-switch' : l.event === 'upstream' ? 'log-upstream' : 'log-request'"
+            :style="{ cursor: l.details ? 'pointer' : 'default' }"
+            @click="l.details && (l.expanded = !l.expanded)">
             <span class="log-time">{{ l._time }}</span>
-            <span class="log-badge" :class="l.event === 'success' ? 'log-success' : l.event === 'error' ? 'log-error' : l.event === 'switch' ? 'log-switch' : 'log-request'">
-              {{ l.event === 'success' ? '成功' : l.event === 'error' ? '错误' : l.event === 'switch' ? '切号' : '请求' }}
+            <span class="log-badge" :class="l.event === 'success' ? 'log-success' : l.event === 'error' ? 'log-error' : l.event === 'switch' ? 'log-switch' : l.event === 'upstream' ? 'log-upstream' : 'log-request'">
+              {{ l.event === 'success' ? '成功' : l.event === 'error' ? '错误' : l.event === 'switch' ? '切号' : l.event === 'upstream' ? '上游' : '请求' }}
             </span>
             <span class="log-acct">{{ l.account_name || l.account_id || '-' }}</span>
             <span class="log-model">{{ l.model || '' }}</span>
             <span class="log-msg">{{ l.message || '' }}</span>
+            <span v-if="l.details" class="log-expand-hint" :class="{ open: l.expanded }">▶</span>
+            <div v-if="l.expanded && l.details" class="log-details" @click.stop>{{ l.details }}</div>
           </div>
         </template>
         <div v-else class="logs-empty">暂无日志，启动代理后请求会产生日志</div>
@@ -3896,7 +3901,7 @@ const vApp = createApp({
     async function refreshLogs() {
       try {
         const r = JSON.parse(await pywebview.api.get_logs('workbuddy', 200, 0, logEventFilter.value));
-        logs.value = r.logs||[];
+        logs.value = (r.logs||[]).map(l => ({ ...l, expanded: false }));
       } catch {}
     }
     async function toggleLogEnabled() {
