@@ -1406,6 +1406,11 @@ class GuiApi:
             except Exception:
                 pass
             self._start_cdp_inject_loop(port_num)
+            # key 持久化：下次启动自动回填，避免每次重输
+            try:
+                store.save_setting("proxy_key", password)
+            except Exception:
+                pass
             return json.dumps({"success": True, "port": port_num, "lan_ips": _lan_ips()})
         except Exception as e:
             return json.dumps({"error": f"网关启动失败: {str(e)[:200]}"})
@@ -1465,6 +1470,7 @@ class GuiApi:
             "running": running,
             "port": getattr(self, "_proxy_port", 8001),
             "lan_ips": _lan_ips(),
+            "proxy_key": store.get_setting("proxy_key", ""),
         })
 
     def cleanup(self):

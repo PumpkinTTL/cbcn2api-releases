@@ -943,16 +943,10 @@ body {
   color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   padding: 0;
-  width: 44px;
+  width: 56px;
+  min-width: 0;
 }
-.proxy-field input[type="password"] { width: 46px; }入框在这条 30px 的轴上共同居中 */
-  height: 100%;
-  gap: 6px;
-  padding: 0 10px;
-  white-space: nowrap;
-  cursor: text;
-  transition: background var(--transition);
-}
+.proxy-field input[type="password"] { width: 110px; }
 .proxy-field + .proxy-field { border-left: 1px solid var(--border); }
 /* 高亮落在真正被聚焦的那一格，比整组描边更能说明「现在改的是哪个」 */
 .proxy-field:focus-within { background: var(--primary-light); }

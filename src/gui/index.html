@@ -3710,6 +3710,8 @@ const vApp = createApp({
           lanIps.value = [];
           stopProxyInfoPolling();
         }
+        // key 持久化回填（后端 proxy_status 带回，仅当当前为空时填，避免覆盖用户正在输入的值）
+        if (!proxyKey.value && r.proxy_key) proxyKey.value = r.proxy_key;
       } catch {}
     }
 
