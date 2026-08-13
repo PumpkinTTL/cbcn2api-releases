@@ -1209,13 +1209,6 @@
           指纹是发给上游服务器的客户端标识。为每个账号配置一套独立指纹，
           可避免多个账号被上游识别为同一客户端。未配置时使用全局默认（WorkBuddy 5.2.6）。
         </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
-          <span style="font-size:12px;color:var(--text-secondary)">随机风格</span>
-          <button class="btn btn-ghost btn-sm" :style="fpRandomStyle==='workbuddy' ? 'background:var(--primary);color:#fff;border-color:var(--primary)' : ''"
-                  @click="fpRandomStyle='workbuddy'" title="随机 WorkBuddy 成套指纹">WorkBuddy</button>
-          <button class="btn btn-ghost btn-sm" :style="fpRandomStyle==='cli' ? 'background:var(--primary);color:#fff;border-color:var(--primary)' : ''"
-                  @click="fpRandomStyle='cli'" title="随机 CLI 成套指纹">CLI</button>
-        </div>
         <div class="form-group">
           <label>X-IDE-Type（客户端类型：WorkBuddy / CLI —— 与 UA 成套生效）</label>
           <input v-model="fpForm['X-IDE-Type']" type="text" class="fp-input">
@@ -1240,19 +1233,24 @@
           <label>x-stainless-runtime-version（node 版本）</label>
           <input v-model="fpForm['x-stainless-runtime-version']" type="text" class="fp-input fp-mono">
         </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px">
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-ghost btn-sm" @click="randomFingerprint" :disabled="fpSaving" title="随机 WorkBuddy 版本一套">随机生成</button>
-            <button class="btn btn-ghost btn-sm" @click="setCliFingerprint" :disabled="fpSaving" title="UA + X-IDE-Type/Name/Version 一键填成 CLI 成套">CLI 预设</button>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--text-secondary)">随机风格</span>
+          <div class="fp-style-seg">
+            <button :class="{ active: fpRandomStyle==='workbuddy' }" @click="fpRandomStyle='workbuddy'" title="随机 WorkBuddy 成套指纹">WorkBuddy</button>
+            <button :class="{ active: fpRandomStyle==='cli' }" @click="fpRandomStyle='cli'" title="随机 CLI 成套指纹">CLI</button>
           </div>
-          <span v-if="!fpConfigured" style="font-size:12px;color:var(--text-muted)">未配置：使用全局默认（WorkBuddy 5.2.6）</span>
-          <span v-else style="font-size:12px;color:var(--success)">已配置独立指纹</span>
+          <span style="flex:1"></span>
+          <button class="btn btn-ghost btn-sm" @click="randomFingerprint" :disabled="fpSaving" title="按所选风格随机生成一套成套指纹">随机生成</button>
         </div>
       </div>
-      <div class="modal-actions">
-        <button v-if="fpConfigured" class="btn btn-ghost" @click="resetFingerprint" :disabled="fpSaving" title="清除指纹，回退全局默认">恢复默认</button>
-        <button class="btn btn-ghost" @click="activeModal = null">取消</button>
-        <button class="btn btn-primary" @click="saveFingerprint" :disabled="fpSaving">保存</button>
+      <div class="modal-actions" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span v-if="!fpConfigured" style="font-size:12px;color:var(--text-muted);align-self:center">未配置：使用全局默认（WorkBuddy 5.2.6）</span>
+        <span v-else style="font-size:12px;color:var(--success);align-self:center">已配置独立指纹</span>
+        <div style="display:flex;gap:8px">
+          <button v-if="fpConfigured" class="btn btn-ghost" @click="resetFingerprint" :disabled="fpSaving" title="清除指纹，回退全局默认">恢复默认</button>
+          <button class="btn btn-ghost" @click="activeModal = null">取消</button>
+          <button class="btn btn-primary" @click="saveFingerprint" :disabled="fpSaving">保存</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1268,15 +1266,6 @@
         <div class="fp-desc">
           为每个账号配置独立客户端指纹（X-IDE 版本 / User-Agent / stainless 版本），
           避免多个账号被上游识别为同一客户端。
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-          <span style="font-size:12px;color:var(--text-secondary)">批量风格</span>
-          <button class="btn btn-ghost btn-sm" :style="batchFpStyle==='workbuddy' ? 'background:var(--primary);color:#fff;border-color:var(--primary)' : ''"
-                  @click="batchFpStyle='workbuddy'" title="全部生成 WorkBuddy 成套（推荐，后台记录一致）">WorkBuddy（建议）</button>
-          <button class="btn btn-ghost btn-sm" :style="batchFpStyle==='cli' ? 'background:var(--primary);color:#fff;border-color:var(--primary)' : ''"
-                  @click="batchFpStyle='cli'" title="全部生成 CLI 成套">全部 CLI</button>
-          <button class="btn btn-ghost btn-sm" :style="batchFpStyle==='mixed' ? 'background:var(--primary);color:#fff;border-color:var(--primary)' : ''"
-                  @click="batchFpStyle='mixed'" title="每个账号随机 WorkBuddy 或 CLI">随机混合</button>
         </div>
         <div class="fp-acc-list">
           <div v-for="acc in batchFpAccounts" :key="acc.id" class="fp-acc-row">
@@ -1322,13 +1311,23 @@
           <div v-if="!batchFpAccounts.length" class="fp-acc-empty">没有可配置的账号</div>
         </div>
       </div>
-      <div class="modal-actions">
-        <button class="btn btn-ghost" @click="activeModal = null">取消</button>
-        <button class="btn btn-ghost" @click="batchRandomFingerprint" :disabled="batchFingerprintLoading" title="按所选风格为每个账号生成一套随机指纹（不落库，展开可预览/修改）">
-          <span v-if="batchFingerprintLoading" class="spinner-sm"></span>
-          <template v-else>生成预览</template>
-        </button>
-        <button class="btn btn-primary" @click="batchSaveFingerprints" :disabled="batchFingerprintLoading" title="把每个账号表单里的指纹保存（覆盖现有配置）">保存全部</button>
+      <div class="modal-actions" style="flex-direction:column;align-items:stretch;gap:12px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span style="font-size:12px;color:var(--text-secondary)">批量风格</span>
+          <div class="fp-style-seg">
+            <button :class="{ active: batchFpStyle==='workbuddy' }" @click="batchFpStyle='workbuddy'" title="全部生成 WorkBuddy 成套（推荐）">WorkBuddy（建议）</button>
+            <button :class="{ active: batchFpStyle==='cli' }" @click="batchFpStyle='cli'" title="全部生成 CLI 成套">CLI</button>
+            <button :class="{ active: batchFpStyle==='mixed' }" @click="batchFpStyle='mixed'" title="每个账号随机 WorkBuddy 或 CLI">混合</button>
+          </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px">
+          <button class="btn btn-ghost" @click="activeModal = null">取消</button>
+          <button class="btn btn-ghost" @click="batchRandomFingerprint" :disabled="batchFingerprintLoading" title="按所选风格为每个账号生成一套随机指纹（不落库，展开可预览/修改）">
+            <span v-if="batchFingerprintLoading" class="spinner-sm"></span>
+            <template v-else>生成预览</template>
+          </button>
+          <button class="btn btn-primary" @click="batchSaveFingerprints" :disabled="batchFingerprintLoading" title="把每个账号表单里的指纹保存（覆盖现有配置）">保存全部</button>
+        </div>
       </div>
     </div>
   </div>
@@ -2941,19 +2940,6 @@ const vApp = createApp({
       activeModal.value = 'fingerprint';
     }
 
-    function setCliFingerprint() {
-      // CLI 三件套预设（与社区指纹规范一致）：UA + X-IDE-Type/Name/Version 成套
-      fpForm.value = {
-        'X-IDE-Type': 'CLI',
-        'X-IDE-Name': 'CLI',
-        'X-IDE-Version': '2.108.1',
-        'User-Agent': 'CLI/2.108.1 CodeBuddy/2.108.1',
-        'x-stainless-package-version': '6.24.0',
-        'x-stainless-runtime-version': 'v22.20.0',
-      };
-      fpConfigured.value = true;
-    }
-
     async function randomFingerprint() {
       try {
         const r = JSON.parse(await pywebview.api.generate_fingerprint(fpRandomStyle.value));
@@ -4030,7 +4016,7 @@ const vApp = createApp({
       dateFilterOpen, dateFilterLabel, toggleDateFilter, setDatePreset, setLastDays, pickCustomDate,
       calOpen, calTitle, calWeeks, calPrevMonth, calNextMonth, calPrevYear, calNextYear, calPickDay, calIsToday, calIsSelected,
       tagFilter, tagFilterOpen, allTags, tagEditAccount, tagEditInput, tagEditAccountName,
-      fingerprintAccount, fingerprintAccountName, fpForm, fpRandomStyle, fpConfigured, fpSaving,
+      fingerprintAccount, fingerprintAccountName, DEFAULT_FINGERPRINT, fpForm, fpRandomStyle, fpConfigured, fpSaving,
       batchFpAccounts, batchFpCount, batchFpStyle,
       proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, quotaThreshold, proxyToggling, grokFrameUrl,
       enableThreshold, detecting, detectProgress, detectThresholdTemp, detectTargetCount,
@@ -4072,7 +4058,7 @@ const vApp = createApp({
       openBatchFingerprint, batchRandomFingerprint, batchSaveFingerprints, randomOneFingerprint, saveOneFingerprint,
       editTags, saveTags, removeTagChip,
       batchTagMode, batchTagLoading, openBatchTags,
-      openFingerprint, randomFingerprint, setCliFingerprint, saveFingerprint, resetFingerprint,
+      openFingerprint, randomFingerprint, saveFingerprint, resetFingerprint,
       openRecycle, restoreDeleted, restoreAllDeleted, restoreSelected, destroyDeleted, destroySelected,
       restoreBatch, destroyBatch, editBatchNote,
       toggleDeletedSelect, selectAllDeleted,

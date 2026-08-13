@@ -2035,6 +2035,28 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
 .fp-acc-arrow.open { transform: rotate(180deg); }
 .fp-acc-body { border-top: 1px solid var(--border); padding: 12px; background: var(--bg-tertiary); }
 .fp-acc-empty { padding: 16px; text-align: center; font-size: 13px; color: var(--text-muted); }
+/* 指纹随机风格分段切换（segmented control）：选中项主色填充 */
+.fp-style-seg {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-tertiary);
+  flex-shrink: 0;
+}
+.fp-style-seg button {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.fp-style-seg button + button { border-left: 1px solid var(--border); }
+.fp-style-seg button:hover { color: var(--text); }
+.fp-style-seg button.active { background: var(--primary); color: #fff; }
 .fp-input { box-sizing: border-box; }
 .fp-mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 
