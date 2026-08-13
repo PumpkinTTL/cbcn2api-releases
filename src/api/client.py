@@ -1,4 +1,9 @@
+import json
+import logging
+
 import requests
+
+logger = logging.getLogger(__name__)
 
 BASE_URL = "https://www.codebuddy.cn"
 
@@ -12,6 +17,83 @@ PLATFORM_CONFIG = {
         "login_prefix": "wb_",
     },
 }
+
+# 上游响应里值得落日志的关键字段白名单（其余不记录，避免刷屏/漏关键）
+_UPSTREAM_LOG_KEYS = (
+    "code", "msg", "message", "requestId", "state", "uid",
+    "TotalCount", "TotalDosage", "dosageNotifyCode", "paymentType",
+    "accessToken", "refreshToken",
+)
+
+
+def _log_upstream(op: str, account, url: str, resp: requests.Response):
+    """记录一次上游交互（受统一日志开关 log_enabled 控制，add_log 内部检查）。
+
+    只截取关键信息：HTTP 状态码 + 响应里的白名单字段（code/msg/额度数字等），
+    不落完整 JSON —— 方便排查「刷新/额度/登录」类问题又不会刷屏。
+    """
+    # 账号标识：email 或 nickname 截断（不落完整 id，缩短日志行）
+    name = ""
+    account_id = ""
+    try:
+        if account is not None:
+            name = (account.nickname or account.email or "")[:16]
+            account_id = account.id
+    except Exception:
+        pass
+
+    summary = {}
+    body_text = ""
+    raw_json = None
+    try:
+        data = resp.json()
+        if isinstance(data, dict):
+            raw_json = data
+            for k in _UPSTREAM_LOG_KEYS:
+                if k in data:
+                    summary[k] = data[k]
+            d = data.get("data")
+            if isinstance(d, dict):
+                for k in _UPSTREAM_LOG_KEYS:
+                    if k in d:
+                        summary[k] = d[k]
+    except Exception:
+        body_text = (resp.text or "")[:120]
+
+    path = url.replace(BASE_URL, "")
+    code = summary.get("code", summary.get("msg", ""))
+    msg = summary.get("msg") or summary.get("message") or ""
+    ok = "OK" if resp.status_code == 200 and (summary.get("code", 0) in (0, 200, None)) else "FAIL"
+    message = f"{op} → HTTP {resp.status_code} {ok}"
+    if msg and msg not in (ok, ""):
+        message += f" | {msg}"
+    details = {"url": path, "http": resp.status_code, **summary}
+    # 附加上游返回的 JSON 关键内容（紧凑单行，超长截断 —— 排查时要看原始返回）
+    if raw_json is not None:
+        try:
+            compact = json.dumps(raw_json, ensure_ascii=False, separators=(",", ":"))
+            details["resp"] = compact[:600] + ("..." if len(compact) > 600 else "")
+        except Exception:
+            pass
+    details = json.dumps(details, ensure_ascii=False)
+    if body_text:
+        details += f" | body: {body_text}"
+    try:
+        from src.storage.store import add_log
+        add_log("upstream", "workbuddy", account_id, name, "", message, details[:1000])
+    except Exception as e:
+        logger.warning("[上游日志] 写入失败: %r", e)
+
+
+def api_request(session: requests.Session, method: str, url: str, op: str = "",
+                account=None, **kwargs) -> requests.Response:
+    """带日志的上游请求：与 session.request 同签名，请求后自动记录上游交互日志。"""
+    resp = session.request(method, url, **kwargs)
+    try:
+        _log_upstream(op or method, account, url, resp)
+    except Exception:
+        pass
+    return resp
 
 
 def build_headers(access_token: str = None, uid: str = None,

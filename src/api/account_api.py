@@ -1,6 +1,6 @@
 from typing import Optional
 
-from src.api.client import BASE_URL, build_headers, get_session
+from src.api.client import BASE_URL, api_request, build_headers, get_session
 from src.api.quota import _fetch_dosage_notify, _fetch_payment_type, _fetch_user_resource
 from src.models.account import Account
 
@@ -10,7 +10,7 @@ def build_payload_from_token(access_token: str, domain: Optional[str] = None) ->
     url = f"{BASE_URL}/v2/plugin/accounts"
 
     headers = build_headers(access_token, domain=domain)
-    resp = session.get(url, headers=headers, timeout=15)
+    resp = api_request(session, "GET", url, "拉账号信息", headers=headers, timeout=15)
 
     if resp.status_code != 200:
         return {
@@ -103,7 +103,7 @@ def refresh_token(access_token: str, refresh_token: str,
     headers = build_headers(access_token, domain=domain)
     headers["X-Refresh-Token"] = refresh_token
 
-    resp = session.post(url, headers=headers, json={}, timeout=15)
+    resp = api_request(session, "POST", url, "刷新token", headers=headers, json={}, timeout=15)
 
     if resp.status_code != 200:
         raise ValueError(f"刷新 token 失败 (HTTP {resp.status_code}): {resp.text[:200]}")

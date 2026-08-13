@@ -925,6 +925,18 @@ class GuiApi:
         except Exception as e:
             return {"id": account.id, "name": name, "status": "unknown", "reason": f"探测异常: {e}"}
 
+        # 验活结果留痕（受统一日志开关控制）：ok/banned/unknown + 判定依据
+        try:
+            from src.storage.store import add_log
+            detail = {
+                "banned": "真实 chat 请求 3 次均被拒(11140)",
+                "ok": "真实 chat 请求成功",
+                "unknown": "网络/接口异常，不算封号证据",
+            }.get(result, "")
+            add_log("upstream", platform, account.id, name, "", f"验活 → {result}", detail)
+        except Exception:
+            pass
+
         if result == "banned":
             account.status = "banned"
             store.upsert_account(platform, account)

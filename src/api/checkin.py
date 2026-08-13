@@ -1,6 +1,6 @@
 from typing import Optional
 
-from src.api.client import BASE_URL, build_headers, get_session
+from src.api.client import BASE_URL, api_request, build_headers, get_session
 
 
 def get_checkin_status(access_token: str, uid: Optional[str] = None,
@@ -33,7 +33,7 @@ def _fetch_checkin_status(path: str, access_token: str,
     url = f"{BASE_URL}{path}"
     headers = build_headers(access_token, uid, enterprise_id, domain)
 
-    resp = session.post(url, headers=headers, json={}, timeout=15)
+    resp = api_request(session, "POST", url, "查签到状态", headers=headers, json={}, timeout=15)
 
     if resp.status_code != 200:
         raise ValueError(f"HTTP {resp.status_code}: {resp.text[:200]}")
@@ -97,7 +97,7 @@ def perform_checkin(access_token: str, uid: Optional[str] = None,
     headers = build_headers(access_token, uid, enterprise_id, domain)
     headers["Accept"] = "application/json"
 
-    resp = session.post(url, headers=headers, json={}, timeout=15)
+    resp = api_request(session, "POST", url, "签到", headers=headers, json={}, timeout=15)
 
     if resp.status_code != 200:
         return {

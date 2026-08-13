@@ -1,6 +1,6 @@
 from typing import Optional
 
-from src.api.client import BASE_URL, build_headers, get_session
+from src.api.client import BASE_URL, api_request, build_headers, get_session
 
 PKG_FREE = "TCACA_code_001_PqouKr6QWV"
 PKG_PRO_MON = "TCACA_code_002_AkiJS3ZHF5"
@@ -183,7 +183,7 @@ def _fetch_dosage_notify(access_token: str, uid: Optional[str],
         session = get_session()
         url = f"{BASE_URL}/v2/billing/meter/get-dosage-notify"
         headers = build_headers(access_token, uid, enterprise_id, domain)
-        resp = session.post(url, headers=headers, timeout=15)
+        resp = api_request(session, "POST", url, "拉用量", headers=headers, timeout=15)
         resp.raise_for_status()
         return resp.json()
     except Exception:
@@ -197,7 +197,7 @@ def _fetch_payment_type(access_token: str, uid: Optional[str],
         session = get_session()
         url = f"{BASE_URL}/v2/billing/meter/get-payment-type"
         headers = build_headers(access_token, uid, enterprise_id, domain)
-        resp = session.post(url, headers=headers, timeout=15)
+        resp = api_request(session, "POST", url, "拉套餐", headers=headers, timeout=15)
         resp.raise_for_status()
         return resp.json()
     except Exception:
@@ -235,7 +235,7 @@ def _fetch_user_resource(access_token: str, uid: Optional[str],
             "PackageEndTimeRangeEnd": end,
         }
         try:
-            resp = session.post(url, headers=headers, json=body, timeout=30)
+            resp = api_request(session, "POST", url, "拉资源包", headers=headers, json=body, timeout=30)
         except Exception:
             return template if template else None
         if resp.status_code in (401, 403):

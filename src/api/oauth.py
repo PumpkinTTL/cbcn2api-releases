@@ -4,7 +4,7 @@ from typing import Optional
 
 import requests
 
-from src.api.client import BASE_URL, PLATFORM_CONFIG, build_headers, get_session
+from src.api.client import BASE_URL, PLATFORM_CONFIG, api_request, build_headers, get_session
 
 OAUTH_TIMEOUT = 600
 OAUTH_POLL_INTERVAL = 1.5
@@ -22,7 +22,7 @@ def start_login(platform_key: str) -> dict:
 
     # 必须带完整客户端身份头：上游对无 UA 请求有风控（如 user_resource 的 10085），
     # 登录接口同样不能裸奔。build_headers() 无 token 时只带身份头。
-    resp = session.post(url, headers=build_headers(), json={}, timeout=30)
+    resp = api_request(session, "POST", url, "登录-发起", headers=build_headers(), json={}, timeout=30)
     resp.raise_for_status()
     body = resp.json()
 
@@ -69,7 +69,7 @@ def poll_token(login_id: str) -> Optional[dict]:
     url = f"{BASE_URL}/v2/plugin/auth/token?state={pending['state']}"
 
     try:
-        resp = session.get(url, headers=build_headers(), timeout=15)
+        resp = api_request(session, "GET", url, "登录-轮询", headers=build_headers(), timeout=15)
         body = resp.json()
     except Exception as e:
         return None
@@ -124,7 +124,7 @@ def fetch_account_info(access_token: str, state: str,
 
     headers = build_headers(access_token, domain=domain)
 
-    resp = session.get(url, headers=headers, timeout=15)
+    resp = api_request(session, "GET", url, "登录-账号信息", headers=headers, timeout=15)
     resp.raise_for_status()
     body = resp.json()
 
