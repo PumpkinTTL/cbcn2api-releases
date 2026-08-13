@@ -907,7 +907,7 @@ body {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  overflow: hidden;
+  overflow: visible;
   transition: var(--transition);
   flex-shrink: 1;
 }
@@ -923,6 +923,7 @@ body {
   white-space: nowrap;
   cursor: text;
   transition: background var(--transition);
+  position: relative;
 }
 .proxy-field + .proxy-field { border-left: 1px solid var(--border); }
 .proxy-field:focus-within { background: var(--primary-light); }
@@ -946,7 +947,22 @@ body {
   width: 56px;
   min-width: 0;
 }
-.proxy-field input[type="password"] { width: 110px; }
+.proxy-field input[type="password"] {
+  width: 80px;
+  transition: width .18s ease, padding .18s ease;
+}
+/* Key 输入框聚焦时浮层展开：平时紧凑不挤布局，点进去能看全输入内容 */
+.proxy-field input[type="password"]:focus {
+  width: 280px;
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: var(--surface);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  z-index: 20;
+  padding: 0 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.12);
+}
 .proxy-field + .proxy-field { border-left: 1px solid var(--border); }
 /* 高亮落在真正被聚焦的那一格，比整组描边更能说明「现在改的是哪个」 */
 .proxy-field:focus-within { background: var(--primary-light); }
