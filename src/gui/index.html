@@ -115,10 +115,6 @@
         <img src="icons/workbuddy-logo.svg" class="nav-brand-icon" alt="WorkBuddy">
         WorkBuddy
       </button>
-      <button class="nav-item" :class="{ active: currentView === 'grok' }" @click="showGrok">
-        <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor"><path d="M9.27 15.29l7.978-5.897c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 00-1.829-1A8.975 8.975 0 005.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815"/></svg>
-        Grok Build
-      </button>
       <button class="nav-item" :class="{ active: currentView === 'logs' }" @click="showLogs">
         <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
         运行日志
@@ -997,11 +993,6 @@
         </button>
       </div>
       <iframe id="shopFrame" class="shop-frame" :src="shopUrl"></iframe>
-    </div>
-
-    <!-- ── Grok Build iframe（独立子系统；经 postMessage 桥 → pywebview.api 调 Python）── -->
-    <div class="grok-view" id="grokView" v-show="currentView === 'grok'" v-if="grokFrameUrl">
-      <iframe id="grokFrame" :src="grokFrameUrl" class="grok-frame" frameborder="0"></iframe>
     </div>
 
   </div><!-- end .content -->
@@ -2094,7 +2085,6 @@ const vApp = createApp({
     const proxyPort = ref(8001);
     const proxyKey = ref('');
     const lanIps = ref([]);
-    const grokFrameUrl = ref('');
     const quotaThreshold = ref(0);
     const enableThreshold = ref(0);
     const detecting = ref(false);
@@ -2467,12 +2457,6 @@ const vApp = createApp({
       currentView.value = 'settings';
       closeActionPref.value = localStorage.getItem('gw_closeAction') || '';
       themePref.value = localStorage.getItem('theme') || window.__THEME__ || 'light';
-    }
-    function showGrok() {
-      currentView.value = 'grok';
-      // 纯本地页面，无需透传任何参数：grok.html 经 postMessage 桥走 pywebview.api，
-      // 与 CodeBuddy/WorkBuddy 同款调用链，不依赖网关是否启动。
-      if (!grokFrameUrl.value) grokFrameUrl.value = 'grok.html';
     }
     window.__goSettings = showSettings;  // 标题栏齿轮跳转入口
 
@@ -4051,7 +4035,7 @@ const vApp = createApp({
       tagFilter, tagFilterOpen, allTags, tagEditAccount, tagEditInput, tagEditAccountName,
       fingerprintAccount, fingerprintAccountName, DEFAULT_FINGERPRINT, fpForm, fpRandomStyle, fpConfigured, fpSaving,
       batchFpAccounts, batchFpCount, batchFpStyle,
-      proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, quotaThreshold, proxyToggling, grokFrameUrl, lanIps,
+      proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, quotaThreshold, proxyToggling, lanIps,
       enableThreshold, detecting, detectProgress, detectThresholdTemp, detectTargetCount,
       exporting, exportDiagnostics,
       chatCardCollapsed, chatMessages, chatInput, chatSending, modelList, currentModel, modelDropdownOpen,
@@ -4080,7 +4064,7 @@ const vApp = createApp({
       getStatusBadgeClass, getStatusText, getPlanBadgeClass, getPlanText,
       parseCheckin, getCardQuota,
       selectStatusFilter, getStatusDotClass, getStatusFilterLabel,
-      showConsole, showLogs, showShopCards, showAbout, showSettings, showGrok, closeActionPref, closeActionOpen, saveCloseAction, setCloseAction, themePref, themeOpen, setThemePref, licenseExpiry, licenseAuthorized, openShop, openShopExternal, openModal,
+      showConsole, showLogs, showShopCards, showAbout, showSettings, closeActionPref, closeActionOpen, saveCloseAction, setCloseAction, themePref, themeOpen, setThemePref, licenseExpiry, licenseAuthorized, openShop, openShopExternal, openModal,
       toggleTheme,
       setFilterDate, saveQuotaThreshold, saveEnableThreshold, detectAndEnable, openDetectModal, confirmDetect,
       exportAccounts, checkinAll, refreshAll, refreshAccounts, loadAccounts,
@@ -4123,32 +4107,6 @@ window._vueApp = vApp.mount('#app');
   } catch(e) {}
 })();
 
-</script>
-<script>
-// ── Grok iframe RPC 桥 ─────────────────────────────────────────────────
-// grok.html（iframe）经 window.parent.postMessage 请求 Python 方法，这里在
-// 主 frame 转发到 pywebview.api（与主界面其他调用同一链路），再回传结果。
-// 用 postMessage 而非直接访问 window.parent.pywebview：postMessage 跨 frame
-// 保证可用（不依赖 file:// 同源判定），pywebview 的 js_api 只在主 frame 注入。
-window.addEventListener('message', async (e) => {
-  const d = e.data;
-  if (!d || d.__grokRpc !== true) return;
-  // 只响应 grok iframe 的消息
-  const frame = document.getElementById('grokFrame');
-  if (!frame || e.source !== frame.contentWindow) return;
-  const { id, method, args } = d;
-  const reply = (payload) => { try { e.source.postMessage({ __grokRpc: true, id, payload }, '*'); } catch(_){} };
-  try {
-    const fn = window.pywebview && window.pywebview.api && window.pywebview.api[method];
-    if (typeof fn !== 'function') { reply({ error: '主界面未提供方法: ' + method }); return; }
-    const raw = await fn.apply(window.pywebview.api, args || []);
-    let data = raw;
-    if (typeof raw === 'string') { try { data = JSON.parse(raw); } catch(_){} }
-    reply(data);
-  } catch (err) {
-    reply({ error: String((err && err.message) || err) });
-  }
-});
 </script>
 </body>
 </html>

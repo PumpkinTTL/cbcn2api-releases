@@ -209,10 +209,9 @@ class GuiApi:
         # 与 set_account_status 的禁用保护同一套判定（has_usable_besides）。
         is_soft = str(soft).lower() not in ("0", "false", "no")
         try:
-            from src.proxy.pool import get_pool
-            pool = get_pool(platform)
-            pool.ensure_loaded(platform)
-            if not pool.has_usable_besides(account_id):
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.ensure_loaded(platform)
+            if not token_rotator.has_usable_besides(account_id):
                 return json.dumps({"success": False, "error": "这是最后一个可用账号，删除后网关将无法工作，已拒绝操作"})
         except Exception:
             pass
@@ -228,8 +227,8 @@ class GuiApi:
         # 和 _current_id 里，get_next 仍会返回它发请求（幽灵调度）。
         # reload 会清掉无效 _current_id 并自动选下一个可用号。
         try:
-            from src.proxy.pool import get_pool
-            get_pool(platform).reload(platform)
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.reload(platform)
         except Exception:
             pass
         return json.dumps({"success": True})
@@ -241,10 +240,9 @@ class GuiApi:
         # 多个号时，只要删完还剩至少一个可用号就放行。
         if ids:
             try:
-                from src.proxy.pool import get_pool
-                pool = get_pool(platform)
-                pool.ensure_loaded(platform)
-                if not pool.has_usable_besides(ids):
+                from src.proxy.token_rotator import token_rotator
+                token_rotator.ensure_loaded(platform)
+                if not token_rotator.has_usable_besides(ids):
                     return json.dumps({"success": False, "error": "这是最后一个可用账号，删除后网关将无法工作，已拒绝操作"})
             except Exception:
                 pass
@@ -260,8 +258,8 @@ class GuiApi:
         # 循环外只 reload 一次：每删一个都 reload 会反复重建内存池并竞争锁，
         # 没必要；删完一次性同步即可。
         try:
-            from src.proxy.pool import get_pool
-            get_pool(platform).reload(platform)
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.reload(platform)
         except Exception:
             pass
         return json.dumps({"success": True})
@@ -1327,125 +1325,6 @@ class GuiApi:
         store.save_theme(theme)
         return json.dumps({"ok": True})
 
-    # ========== Grok Build（grok.html iframe 经 postMessage 桥调用，走 pywebview.api） ==========
-
-    def grok_extra(self, ids_json: str) -> str:
-        """批量取 Grok 特有展示字段 + 当前调度号。
-
-        返回 {current, items}：current 是 grok_pool 当前锁定号（前端标「当前」徽章），
-        items 是各账号的 models/billing/订阅 展示字段。账号管理操作走通用方法（platform='grok'）。"""
-        import json as _json
-        from src.grok import service, provider
-        try:
-            ids = _json.loads(ids_json) if ids_json else []
-        except (ValueError, TypeError):
-            ids = []
-        return _json.dumps({
-            "current": provider.grok_pool.status().get("current"),
-            "items": service.extra_for(ids),
-        }, ensure_ascii=False)
-
-    def grok_oauth_start(self) -> str:
-        from src.grok import service
-        try:
-            return json.dumps(service.oauth_start(), ensure_ascii=False)
-        except Exception as e:
-            return json.dumps({"error": str(e)}, ensure_ascii=False)
-
-    def grok_oauth_poll(self, login_id: str) -> str:
-        from src.grok import service
-        try:
-            result = service.oauth_poll(login_id)
-        except ValueError as e:
-            return json.dumps({"status": "error", "message": str(e)}, ensure_ascii=False)
-        if result is None:
-            return json.dumps({"status": "pending"}, ensure_ascii=False)
-        return json.dumps({"status": "ok", "credentials": result}, ensure_ascii=False)
-
-    def grok_oauth_cancel(self, login_id: str) -> str:
-        from src.grok import service
-        service.oauth_cancel(login_id)
-        return json.dumps({"ok": True}, ensure_ascii=False)
-
-    def grok_oauth_complete(self, credentials_json: str) -> str:
-        from src.grok import service
-        try:
-            import json as _json
-            cred = _json.loads(credentials_json or "{}")
-            return json.dumps({"ok": True, "account": service.complete_login(cred)}, ensure_ascii=False)
-        except Exception as e:
-            return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
-
-    def grok_refresh(self, account_id: str) -> str:
-        from src.grok import service
-        try:
-            return json.dumps({"ok": True, **service.refresh(account_id)}, ensure_ascii=False)
-        except Exception as e:
-            return json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False)
-
-    def grok_chat_test(self, message: str) -> str:
-        """对话测试：直接调 provider.handle_request（不经网关 HTTP），验证转发链路。
-
-        模型动态取：账号可用模型以上游 /v1/models 为准（不同账号权限不同，
-        grok-build / grok-4.6 等，写死会 402 spending-limit）。聚合 SSE 提取
-        output_text.delta 拼成回复文本返回；池空/上游错误以 {ok:false,error} 回传。"""
-        import asyncio
-        import json as _json
-        from src.grok import provider, oauth, config
-
-        provider.grok_pool.ensure_loaded()
-        acc = provider.grok_pool.get_next()
-        if not acc or not acc.access_token:
-            return _json.dumps({"ok": False, "error": "无可用 Grok 账号"}, ensure_ascii=False)
-
-        # 动态取账号可用模型（取第一个），查不到兜底 grok-build
-        model = config.GROK_BUILD_MODEL
-        try:
-            models = oauth.fetch_models(acc.access_token)
-            if models:
-                model = models[0]
-        except Exception:
-            pass
-
-        payload = {
-            "model": model,
-            "input": [{"role": "user", "type": "message", "content": message or "hi"}],
-        }
-
-        async def _run():
-            out = []
-            async for chunk in provider.handle_request(payload):
-                out.append(chunk)
-            return "".join(out)
-
-        try:
-            raw = asyncio.run(_run())
-        except Exception as e:
-            return _json.dumps({"ok": False, "error": f"转发异常: {e}"}, ensure_ascii=False)
-
-        # 从 SSE 提取回复文本
-        text_parts = []
-        for line in raw.splitlines():
-            line = line.strip()
-            if not line.startswith("data:"):
-                continue
-            data = line[5:].strip()
-            if data == "[DONE]" or not data:
-                continue
-            try:
-                obj = _json.loads(data)
-            except Exception:
-                continue
-            if obj.get("type") == "response.output_text.delta":
-                text_parts.append(obj.get("delta", ""))
-            elif obj.get("type") == "error" or (isinstance(obj, dict) and obj.get("error")):
-                err = obj.get("error", {})
-                if isinstance(err, dict):
-                    err = err.get("message") or str(err)
-                return _json.dumps({"ok": False, "error": str(err)}, ensure_ascii=False)
-        return _json.dumps({"ok": True, "model": model, "text": "".join(text_parts), "raw": raw[:2000]},
-                           ensure_ascii=False)
-
     # ========== Proxy Gateway ==========
 
     def proxy_start(self, port: str, password: str) -> str:
@@ -1607,16 +1486,15 @@ class GuiApi:
         if not acc:
             return _json.dumps({"ok": False, "error": "账号不存在"})
         try:
-            from src.proxy.pool import get_pool
-            pool = get_pool(platform)
+            from src.proxy.token_rotator import token_rotator
             if status == "disabled":
-                if not pool.on_disable(account_id):
+                if not token_rotator.on_disable(account_id):
                     return _json.dumps({"ok": False, "error": "至少保留一个可用账号"})
             acc.status = status
             store.upsert_account(platform, acc)
             if status == "normal":
-                pool.clear_disabled(account_id)
-            pool.reload(platform)
+                token_rotator.clear_disabled(account_id)
+            token_rotator.reload(platform)
         except Exception as e:
             return _json.dumps({"ok": False, "error": str(e)})
         return _json.dumps({"ok": True})
@@ -1631,12 +1509,11 @@ class GuiApi:
             return _json.dumps({"error": "无效的账号列表"})
         if not ids:
             return _json.dumps({"error": "没有选中账号"})
-        from src.proxy.pool import get_pool
-        pool = get_pool(platform)
+        from src.proxy.token_rotator import token_rotator
         if status == "disabled":
             try:
-                pool.ensure_loaded(platform)
-                if not pool.has_usable_besides(ids):
+                token_rotator.ensure_loaded(platform)
+                if not token_rotator.has_usable_besides(ids):
                     return _json.dumps({"error": "不能禁用全部可用账号（至少保留一个可用账号）"})
             except Exception:
                 pass
@@ -1655,16 +1532,16 @@ class GuiApi:
                 if status == "disabled":
                     # 走 on_disable：若禁用的是当前调度号，会立即切换并写切号日志（有原因），
                     # 否则 reload 时 current 失效才被动切号，日志缺原因。
-                    pool.on_disable(aid)
+                    token_rotator.on_disable(aid)
                 acc.status = status
                 store.upsert_account(platform, acc)
                 if status == "normal":
-                    pool.clear_disabled(aid)
+                    token_rotator.clear_disabled(aid)
                 done += 1
             except Exception:
                 failed += 1
         try:
-            pool.reload(platform)
+            token_rotator.reload(platform)
         except Exception:
             pass
         return _json.dumps({"ok": True, "done": done, "failed": failed, "total": len(ids)})
@@ -1730,9 +1607,9 @@ class GuiApi:
         """手动设置优先调度账号，持久化到 DB。"""
         import json as _json
         try:
-            from src.proxy.pool import get_pool
-            get_pool(platform).set_priority(account_id)
-            store.save_setting(f"priority_account_{platform}", account_id)
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.set_priority(account_id)
+            store.save_setting("priority_account", account_id)
             return _json.dumps({"ok": True})
         except Exception as e:
             return _json.dumps({"ok": False, "error": str(e)})
