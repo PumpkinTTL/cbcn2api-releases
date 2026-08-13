@@ -51,6 +51,11 @@
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
   --transition: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+
+/* 主题切换动画期间：禁用全页元素颜色过渡，避免与圆形扩散动画叠加导致卡顿 */
+html.theme-animating, html.theme-animating *, html.theme-animating *::before, html.theme-animating *::after {
+  transition: none !important;
+}
   --modal-overlay: rgba(0, 0, 0, 0.65);
 }
 
@@ -881,6 +886,12 @@ body {
 }
 .copy-btn:hover { color: var(--text); background: var(--surface-hover); border-color: var(--border-hover); }
 .copy-btn svg { width: 12px; height: 12px; }
+
+.lan-tag {
+  font-size: 10px; color: var(--text-muted); white-space: nowrap;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 2px 6px;
+}
 
 .proxy-input-group { display: flex; gap: 8px; align-items: center; flex-shrink: 0; margin-left: auto; }
 

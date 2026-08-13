@@ -254,6 +254,14 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
             </button>
           </span>
+          <span v-if="lanIps.length" class="proxy-endpoint">
+            <span style="color:var(--text-muted);margin:0 6px;">|</span>
+            <span class="lan-tag">局域网</span>
+            <code :title="lanIps.length > 1 ? '全部地址: ' + lanIps.join(', ') : '局域网地址（其他设备用）'">http://{{ lanIps[0] }}:{{ proxyPort }}/v1</code>
+            <button class="copy-btn" @click="copyLanEndpoint" title="复制局域网地址（其他设备用）">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            </button>
+          </span>
         </div>
         <div class="chat-header-actions">
           <button class="sync-btn" id="syncModelsBtn" :disabled="syncLoading" @click="syncModels">
@@ -2085,6 +2093,7 @@ const vApp = createApp({
     const proxyActive = ref(false);
     const proxyPort = ref(8001);
     const proxyKey = ref('');
+    const lanIps = ref([]);
     const grokFrameUrl = ref('');
     const quotaThreshold = ref(0);
     const enableThreshold = ref(0);
@@ -2505,11 +2514,15 @@ const vApp = createApp({
       const endR = Math.hypot(Math.max(x, innerWidth-x), Math.max(y, innerHeight-y));
       const apply = () => setThemeUI(theme);
       if (document.startViewTransition) {
+        // 动画期间禁用全页元素自身的颜色过渡（style.css 有几十处 transition），
+        // 否则与圆形扩散动画叠加渲染，切主题会明显卡顿；动画结束再恢复。
+        html.classList.add('theme-animating');
         const t = document.startViewTransition(apply);
         t.ready.then(() => html.animate(
           { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${endR}px at ${x}px ${y}px)`] },
-          { duration:420, easing:'ease-in-out', pseudoElement:'::view-transition-new(root)' }
+          { duration:280, easing:'ease-in-out', pseudoElement:'::view-transition-new(root)' }
         )).catch(()=>{});
+        t.finished.finally(() => html.classList.remove('theme-animating'));
       } else { apply(); }
       // 同步 window.__THEME__ + localStorage：
       // - localStorage 是刷新页面时 theme.js 读取的来源（刷新不重启 Python，main.py
@@ -2519,7 +2532,6 @@ const vApp = createApp({
       window.__THEME__ = theme;
       try { localStorage.setItem('theme', theme); } catch(_) {}
       try { await pywebview.api.set_theme(theme); } catch(e) {}
-      setTimeout(() => { if (usageChart) usageChart.dispose(); usageChart = null; renderUsageChart(); }, 50);
     }
 
     // ─── Accounts ───
@@ -3674,6 +3686,7 @@ const vApp = createApp({
           const r = JSON.parse(await pywebview.api.proxy_stop());
           if (r.success) {
             proxyRunning.value = false;
+            lanIps.value = [];
             chatCardCollapsed.value = true;
             stopProxyInfoPolling();
             showToast('网关已停止', 'info');
@@ -3683,6 +3696,7 @@ const vApp = createApp({
           if (r.success) {
             proxyRunning.value = true;
             proxyPort.value = r.port;
+            lanIps.value = r.lan_ips || [];
             renderModelSelect(PRESET_MODELS);
             startProxyInfoPolling();
             showToast('网关启动成功', 'success');
@@ -3700,9 +3714,11 @@ const vApp = createApp({
         proxyRunning.value = r.running;
         if (r.running) {
           proxyPort.value = r.port||proxyPort.value;
+          lanIps.value = r.lan_ips || [];
           renderModelSelect(PRESET_MODELS);
           startProxyInfoPolling();
         } else {
+          lanIps.value = [];
           stopProxyInfoPolling();
         }
       } catch {}
@@ -3756,6 +3772,23 @@ const vApp = createApp({
     function copyEndpoint() {
       const text = `http://127.0.0.1:${proxyPort.value}/v1`;
       const doSuccess = () => showToast('已复制: '+text, 'success');
+      const fallback = () => {
+        try {
+          const ta=document.createElement('textarea'); ta.value=text;
+          ta.style.cssText='position:fixed;left:-9999px;top:-9999px';
+          document.body.appendChild(ta); ta.focus(); ta.select();
+          if(document.execCommand('copy')) doSuccess(); else showToast('复制失败','error');
+          document.body.removeChild(ta);
+        } catch(e){showToast('复制失败: '+e,'error');}
+      };
+      if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(doSuccess).catch(fallback);
+      else fallback();
+    }
+
+    function copyLanEndpoint() {
+      if (!lanIps.value.length) return;
+      const text = `http://${lanIps.value[0]}:${proxyPort.value}/v1`;
+      const doSuccess = () => showToast('已复制局域网地址: '+text, 'success');
       const fallback = () => {
         try {
           const ta=document.createElement('textarea'); ta.value=text;
@@ -4018,7 +4051,7 @@ const vApp = createApp({
       tagFilter, tagFilterOpen, allTags, tagEditAccount, tagEditInput, tagEditAccountName,
       fingerprintAccount, fingerprintAccountName, DEFAULT_FINGERPRINT, fpForm, fpRandomStyle, fpConfigured, fpSaving,
       batchFpAccounts, batchFpCount, batchFpStyle,
-      proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, quotaThreshold, proxyToggling, grokFrameUrl,
+      proxyRunning, proxyCurrentAccount, proxyActive, proxyPort, proxyKey, quotaThreshold, proxyToggling, grokFrameUrl, lanIps,
       enableThreshold, detecting, detectProgress, detectThresholdTemp, detectTargetCount,
       exporting, exportDiagnostics,
       chatCardCollapsed, chatMessages, chatInput, chatSending, modelList, currentModel, modelDropdownOpen,
@@ -4065,7 +4098,7 @@ const vApp = createApp({
       showQuotaDetail, refreshQuota,
       showOAuthModal, cancelOAuth,
       showImportModal, doImport, handleFileImport,
-      toggleProxy, copyEndpoint,
+      toggleProxy, copyEndpoint, copyLanEndpoint,
       selectModel, syncModels, exportToIDE, exportToWorkBuddy, exportToCodeBuddy, sendTestChat,
       refreshLogs, toggleLogEnabled, clearLogs,
       checkForUpdate, doUpdate,

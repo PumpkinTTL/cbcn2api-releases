@@ -31,6 +31,33 @@ def _resolve_license_enabled():
     return _LICENSE_ENABLED
 
 
+def _lan_ips() -> list:
+    """获取本机局域网 IPv4 地址（默认出口网卡 IP 优先，其余网卡去重补充）。
+
+    UDP connect 不实际发包，仅走路由表取出口 IP——无外网环境同样可用；
+    适合给局域网其他设备填网关地址用。
+    """
+    import socket as _socket
+
+    ips = []
+    try:
+        s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ips.append(s.getsockname()[0])
+        s.close()
+    except Exception:
+        pass
+    try:
+        for info in _socket.getaddrinfo(_socket.gethostname(), None, _socket.AF_INET):
+            ip = info[4][0]
+            # 过滤回环与 APIPA（网卡未拿到 DHCP 的自动配置地址，跨设备不可达）
+            if ip.startswith("127.") or ip.startswith("169.254.") or ip in ips:
+                continue
+            ips.append(ip)
+    except Exception:
+        pass
+    return ips
+
 
 class GuiApi:
     _APP_TITLE = "AI Gateway"
@@ -1437,11 +1464,13 @@ class GuiApi:
             return json.dumps({"error": "网关已在运行"})
 
         port_num = int(port) if port.strip() else 8001
+        # 监听地址：默认 0.0.0.0（局域网可访问）；可用 CBCN_PROXY_HOST 覆盖为指定 IP
+        bind_host = (os.environ.get("CBCN_PROXY_HOST") or "0.0.0.0").strip() or "0.0.0.0"
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             try:
-                sock.bind(("127.0.0.1", port_num))
+                sock.bind((bind_host, port_num))
             except OSError:
                 return json.dumps({"error": f"端口 {port_num} 已被占用，请换一个端口"})
         finally:
@@ -1461,7 +1490,7 @@ class GuiApi:
 
             config = uvicorn.Config(
                 app=proxy_app,
-                host="127.0.0.1",
+                host=bind_host,
                 port=port_num,
                 log_level="error",
                 log_config=None,
@@ -1486,7 +1515,7 @@ class GuiApi:
             except Exception:
                 pass
             self._start_cdp_inject_loop(port_num)
-            return json.dumps({"success": True, "port": port_num})
+            return json.dumps({"success": True, "port": port_num, "lan_ips": _lan_ips()})
         except Exception as e:
             return json.dumps({"error": f"网关启动失败: {str(e)[:200]}"})
 
@@ -1544,6 +1573,7 @@ class GuiApi:
         return json.dumps({
             "running": running,
             "port": getattr(self, "_proxy_port", 8001),
+            "lan_ips": _lan_ips(),
         })
 
     def cleanup(self):
