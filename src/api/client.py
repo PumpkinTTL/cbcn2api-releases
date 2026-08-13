@@ -20,6 +20,10 @@ def build_headers(access_token: str, uid: str = None,
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json, text/plain, */*",
         "Content-Type": "application/json",
+        # 必须带 UA：上游 get-user-resource 等额度接口校验 User-Agent，
+        # 缺失直接返回 10085「请求不合法」→ 被旧代码误判为封号（一刷就封一个）。
+        # 用官方 WorkBuddy 客户端 UA，与网关转发链（src/proxy/api_client.py）保持一致。
+        "User-Agent": "WorkBuddy/5.2.6 WorkBuddy/5.2.6 CLI/2.106.4",
     }
     if uid:
         headers["X-User-Id"] = uid

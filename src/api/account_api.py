@@ -85,7 +85,11 @@ def build_payload_from_token(access_token: str, domain: Optional[str] = None) ->
         "quota_raw": quota_raw if quota_raw else None,
         "profile_raw": account_data,
         "usage_raw": user_resource,
-        "status": "banned" if is_forbidden else "normal",
+        # user_resource 403 不代表封号：实测刷新 token/dosage/payment 都正常、
+        # 验活 chat 也能通时账号其实是活的（上游仅对额度套餐接口风控/调整）。
+        # 封号判定只交给验活（probe 真实 chat 全 11140），这里一律 normal，
+        # 避免「一刷就封一个」的误判。
+        "status": "normal",
     }
 
 
@@ -149,7 +153,11 @@ def refresh_full_payload(account: Account) -> tuple:
 
     quota_error = None
     if user_resource is None:
-        quota_error = "账号已被封禁 (401/403)" if is_forbidden else "获取配额资源失败"
+        # user_resource 401/403 不等于封号：实测刷新 token / dosage / payment 均
+        # 正常、验活 chat 也能通时账号其实是活的（上游仅对额度套餐接口风控/调整）。
+        # 这里只记额度拉取失败，封号判定交给验活（probe 真实 chat 全 11140 才 banned），
+        # 避免「一刷就封一个」的误判。
+        quota_error = "获取配额资源失败 (401/403)" if is_forbidden else "获取配额资源失败"
     if refresh_error:
         # token 刷新失败优先展示（额度失败可能是 token 失效的连锁反应）
         quota_error = (refresh_error + ("；" + quota_error if quota_error else ""))
@@ -176,7 +184,9 @@ def refresh_full_payload(account: Account) -> tuple:
         "payment_type": payment_data if isinstance(payment_data, str) else (payment_data.get("paymentType") if payment_data else account.payment_type),
         "quota_raw": quota_raw if quota_raw else account.quota_raw,
         "usage_raw": user_resource or account.usage_raw,
-        "status": "banned" if is_forbidden else "normal",
+        # 同 build_payload_from_token：user_resource 403 不判封号，保持 normal，
+        # 封号由验活（probe chat 11140）判定，避免刷新误标 banned。
+        "status": "normal",
     }
 
     return payload, quota_error
