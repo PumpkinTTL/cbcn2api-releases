@@ -20,10 +20,14 @@ _LICENSE_ENABLED = None  # 运行时确定（True=需授权，False=免授权）
 
 
 def _resolve_license_enabled():
-    """查询远端授权开关。返回 True（需授权）/ False（免授权）。结果缓存。"""
+    """查询远端授权开关。返回 True（需授权）/ False（免授权）。结果缓存。
+    免授权版分支：FREE_UNTIL 前直接免授权。"""
     global _LICENSE_ENABLED
     try:
         from src import license as lic
+        if lic.is_free_period():
+            _LICENSE_ENABLED = False
+            return False
         _LICENSE_ENABLED = lic.remote_license_enabled()
     except Exception:
         # 远端不可达：无法确认开关，保守走授权，靠离线 license_core 验签兜底

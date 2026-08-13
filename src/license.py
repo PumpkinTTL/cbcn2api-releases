@@ -17,6 +17,17 @@ import urllib.error
 import urllib.request
 import uuid
 
+# ── 免授权版（free-trial 分支专用）─────────────────────────────────
+# 部分用户网络环境无法访问授权服务器，此分支在到期前免授权可用。
+# 到期后恢复授权流程（引导用户联系获取正式版）。
+# 主分支（master）不含此逻辑，保持授权版。
+FREE_UNTIL = 1789257600  # 2026-09-13 00:00:00 UTC+8（约一个月后到期）
+
+
+def is_free_period() -> bool:
+    """是否处于免授权期内（当前时间 < FREE_UNTIL）。"""
+    return time.time() < FREE_UNTIL
+
 from .license_core import generate as _generate, verify as _verify
 
 # 产品标识 = lic-admin 后台的产品 ID（硬编码，查授权开关用，数字）
@@ -280,7 +291,13 @@ def load_code() -> str:
 
 def status() -> dict:
     """当前授权状态。
-    离线码仅当前会话有效（内存），关闭即作废；在线码持久化（license.dat）。"""
+    离线码仅当前会话有效（内存），关闭即作废；在线码持久化（license.dat）。
+    免授权版分支：FREE_UNTIL 前直接返回已授权。"""
+    if is_free_period():
+        import datetime
+        expiry_str = datetime.datetime.fromtimestamp(FREE_UNTIL).strftime("%Y-%m-%d")
+        return {"licensed": True, "expiry": FREE_UNTIL,
+                "message": f"免授权版（{expiry_str} 到期）"}
     code = _session_offline_code or load_code()
     if not code:
         return {"licensed": False, "expiry": None, "message": "未激活"}
