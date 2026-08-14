@@ -6,7 +6,7 @@ from typing import Optional
 
 import requests
 
-APP_VERSION = "v1.1.0"
+APP_VERSION = "v1.1.1"
 REPO = "PumpkinTTL/cbcn2api-releases"
 GITHUB_API = f"https://api.github.com/repos/{REPO}/releases/latest"
 

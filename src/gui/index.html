@@ -140,7 +140,7 @@
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> 切换主题
       </button>
       <div style="text-align:center;font-size:11px;margin-top:8px">
-        <span class="version-link" @click="openModal('changelog')">v1.1.0</span>
+        <span class="version-link" @click="openModal('changelog')">v1.1.1</span>
         <span style="margin:0 4px;color:var(--text-muted)">|</span>
         <span class="version-link" @click="checkForUpdate">检查更新
           <span v-if="hasUpdate" id="updateBadge" style="margin-left:4px;color:var(--accent,#2563eb);vertical-align:-1px">
@@ -840,7 +840,7 @@
         <img src="icons/workbuddy-logo.svg" class="about-logo" alt="">
         <div class="about-header-text">
           <h2 class="about-title">AI Gateway</h2>
-          <p class="about-version">v1.1.0</p>
+          <p class="about-version">v1.1.1</p>
         </div>
       </div>
 
@@ -955,7 +955,7 @@
               <span class="settings-item-desc">更新日志与检查更新</span>
             </div>
             <div class="settings-item-control">
-              <span class="version-link" @click="openModal('changelog')">v1.1.0</span>
+              <span class="version-link" @click="openModal('changelog')">v1.1.1</span>
               <button class="btn btn-ghost btn-sm" @click="checkForUpdate">检查更新</button>
             </div>
           </div>
@@ -1423,7 +1423,24 @@
         </button>
       </div>
       <div class="modal-body">
-        <div class="changelog-version">v1.1.0</div>
+        <div class="changelog-version">v1.1.1</div>
+        <div class="changelog-date">2026-08-14</div>
+
+        <div class="changelog-section-title">功能新增</div>
+        <ul class="changelog-list">
+          <li>账号导入兼容 Antigravity Tools 导出的账号：粘贴「手机号----密钥」或纯密钥（每行一个，支持批量）即可导入，无需登录，与登录账号一样参与轮换调度、额度统计和验活</li>
+          <li>API Key 账号以手机号为账号标识，同一手机号换新密钥自动更新，不产生重复账号；纯密钥导入自动识别账号身份</li>
+          <li>API Key 账号卡片显示「API Key」标识，与登录账号一眼区分</li>
+        </ul>
+
+        <div class="changelog-section-title">体验优化</div>
+        <ul class="changelog-list">
+          <li>额度条显示优化：剩余额度加粗突出，额度耗尽时进度条变红，一眼看清用量</li>
+          <li>网关栏端口 / Key 输入聚焦时高亮更清晰，工具栏与账号卡片的细节视觉打磨</li>
+          <li>新增运行状态记录：程序若意外退出，可协助快速定位原因（配合诊断导出）</li>
+        </ul>
+
+        <div class="changelog-version" style="margin-top:24px">v1.1.0</div>
         <div class="changelog-date">2026-08-13</div>
 
         <div class="changelog-section-title">功能新增</div>
