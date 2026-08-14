@@ -31,6 +31,36 @@ def _resolve_license_enabled():
     return _LICENSE_ENABLED
 
 
+def _parse_apikey_lines(content: str) -> tuple:
+    """从粘贴文本里解析 API Key 账号行。支持两种格式（每行一个）：
+
+    - 手机号----ck_xxx：手机号作显示名
+    - ck_xxx（纯 key）：显示名留空，导入后从额度接口反查腾讯账号 Uin 自动补
+
+    只认 ck_ 开头的 key（实测的长期凭证格式）；分隔符宽松匹配 2 个及以上连字符。
+    返回 (entries, skipped)：entries = [(phone_or_empty, key), ...]，
+    skipped = 未命中的非空行数。全文无命中时 entries 为空，调用方走原有
+    JSON/裸 token 逻辑——老路径零影响（裸 token 是 JWT，不以 ck_ 开头，不误入）。
+    """
+    import re
+
+    entries = []
+    skipped = 0
+    pattern = re.compile(r"^\s*(.*?)\s*-{2,}\s*(ck_\S+?)\s*$")
+    for line in (content or "").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        m = pattern.match(line)
+        if m:
+            entries.append((m.group(1), m.group(2)))
+        elif line.startswith("ck_"):
+            entries.append(("", line))
+        else:
+            skipped += 1
+    return entries, skipped
+
+
 def _lan_ips() -> list:
     """获取本机局域网 IPv4 地址（默认出口网卡 IP 优先，其余网卡去重补充）。
 
@@ -159,7 +189,7 @@ class GuiApi:
     def win_close(self) -> str:
         # 销毁窗口前先停 uvicorn 并清理调度器状态，避免后台线程残留、端口占用。
         # cleanup 会做 should_exit=True + _active_count 归零，和 proxy_stop 对齐。
-        self.cleanup()
+        self.cleanup(reason="win_close")
         try:
             from src.gui import tray
             tray.remove()
@@ -378,6 +408,15 @@ class GuiApi:
 
     def import_from_json(self, platform: str, json_content: str) -> str:
         content = (json_content or "").strip()
+
+        # API Key 格式导入：手机号----ck_xxx（每行一个）。任一行命中即走本分支，
+        # 不命中的行跳过。key 是长期凭证（可直接当 Bearer 请求/查额度，无刷新），
+        # 存 access_token + refresh_token=None：刷新流程对无 refresh_token 的账号
+        # 自动跳过换 token，只拉额度，转发/验活/调度与 OAuth 账号完全一致。
+        key_entries, skipped_lines = _parse_apikey_lines(content)
+        if key_entries:
+            return self._import_apikey_accounts(platform, key_entries, skipped_lines)
+
         raw = None
         try:
             raw = json.loads(content)
@@ -436,6 +475,93 @@ class GuiApi:
         except Exception:
             pass
         return json.dumps({"success": True, "accounts": results})
+
+    def _import_apikey_accounts(self, platform: str, entries: list, skipped: int) -> str:
+        """API Key 账号导入：手机号优先做账号身份，key 是凭证。
+
+        去重三级（任一命中即复用已有账号，不建新号）：
+        1. key 命中   —— 同一把 key 无论行首什么手机号，都是同一账号；
+        2. 手机号命中 —— 同一手机号换新 key = 更新凭证（仅 key 账号范围，
+           不吞并同手机号的 OAuth 登录号）；
+        3. 新账号     —— 唯一 id：有手机号用手机号生成（好对账），纯 key
+           用 key 生成，显示名从额度接口反查腾讯 Uin 补。
+        与 OAuth 导入共用导入后动作（revive → upsert → 刷额度 → reload 池）；
+        refresh_token=None 使刷新流程自动跳过换 token、只拉额度。
+        """
+        results = []
+        for phone, key in entries:
+            try:
+                account_id = (
+                    store.find_account_by_token(platform, key)
+                    or (store.find_apikey_by_phone(platform, phone) if phone else None)
+                )
+                new_account = account_id is None
+                if new_account:
+                    account_id = Account.generate_id(phone or key)
+                account = Account(
+                    id=account_id,
+                    email=phone,
+                    nickname=phone,
+                    access_token=key,
+                    refresh_token=None,
+                    auth_type="apikey",
+                    status="normal",
+                    created_at=Account.now_ts(),
+                )
+                try:
+                    if store.revive_account(platform, account.id):
+                        from src.proxy.token_rotator import token_rotator
+                        token_rotator.clear_disabled(account.id)
+                except Exception:
+                    pass
+                saved = store.upsert_account(platform, account)
+                try:
+                    refreshed = json.loads(self.refresh_token(platform, saved.id))
+                    if isinstance(refreshed, dict) and "error" not in refreshed:
+                        # 纯 key 无手机号：用额度接口返回的腾讯账号 Uin 补显示名
+                        # （uid/email 空值不会覆盖已有值，upsert COALESCE 保护）
+                        if not phone:
+                            uin = self._apikey_uin(refreshed)
+                            if uin:
+                                saved.nickname = uin
+                                saved.email = uin
+                                saved = store.upsert_account(platform, saved)
+                        results.append(refreshed)
+                    else:
+                        results.append(saved.to_dict())
+                except Exception:
+                    results.append(saved.to_dict())
+            except Exception as e:
+                return json.dumps({"error": f"账号 {phone or key[:12]} 导入失败: {e}"})
+
+        try:
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.reload(platform, calibrate=True)
+        except Exception:
+            pass
+        resp = {"success": True, "accounts": results}
+        if skipped:
+            resp["skipped"] = skipped
+        return json.dumps(resp)
+
+    @staticmethod
+    def _apikey_uin(account_dict: dict) -> Optional[str]:
+        """从刷完额度的账号数据里提取腾讯账号唯一标识 Uin 当显示名。
+
+        user_resource 的 Accounts[] 每项带 Uin（腾讯账号数字 ID，全账号唯一、
+        永不变），取第一个非空值。身份接口（手机号）对 key 不开放，这是纯 key
+        导入唯一能反查到的账号唯一信息。
+        """
+        try:
+            accounts = (account_dict.get("quota_raw") or {}).get("userResource") \
+                .get("data", {}).get("Response", {}).get("Data", {}).get("Accounts") or []
+            for item in accounts:
+                uin = str(item.get("Uin") or "").strip()
+                if uin:
+                    return uin
+        except Exception:
+            pass
+        return None
 
     def _payload_to_account(self, data: dict, platform: str) -> Account:
         access_token = (
@@ -1473,7 +1599,15 @@ class GuiApi:
             "proxy_key": store.get_setting("proxy_key", ""),
         })
 
-    def cleanup(self):
+    def cleanup(self, reason="atexit"):
+        # 退出标记：写进 runtime.log。下次"网关自动关闭"时靠它区分退出方式——
+        # win_close=用户点了退出/托盘退出/更新重启；atexit=系统关闭路径(Alt+F4、
+        # 任务栏关闭、Windows 注销)；两条都没有=进程被强杀或 native 崩溃(看 crash.log)。
+        try:
+            from src.gui.log_setup import write_runtime_log
+            write_runtime_log(f"进程退出（{reason}）", "INFO")
+        except Exception:
+            pass
         # 兜底还原 WorkBuddy 快捷方式 CDP 参数（异常退出也还原）
         try:
             from src.gui.wb_shortcut import restore as _wb_shortcut_restore

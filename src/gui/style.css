@@ -520,26 +520,26 @@ body {
 .header-toolbar-container {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
   height: 32px;
-  padding: 0 4px;
+  padding: 0 5px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
   flex-shrink: 0;
 }
 
 .btn-toolbar-item {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   height: 26px;
-  padding: 0 8px;
+  padding: 0 9px;
   border-radius: 4px;
-  border: none;
+  border: 1px solid transparent;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--text);
   font-size: 12px;
   font-weight: 500;
   font-family: inherit;
@@ -547,6 +547,15 @@ body {
   transition: var(--transition);
   outline: none;
   white-space: nowrap;
+}
+
+.btn-toolbar-item svg {
+  opacity: 0.8;
+  transition: opacity 0.15s ease;
+}
+
+.btn-toolbar-item:hover svg {
+  opacity: 1;
 }
 
 .toolbar-text {
@@ -558,29 +567,34 @@ body {
 .btn-toolbar-item:hover {
   color: var(--text);
   background: var(--surface-hover);
+  border-color: var(--border-light);
 }
 
 .btn-toolbar-item.accent {
   color: var(--accent);
+  font-weight: 600;
 }
 .btn-toolbar-item.accent:hover {
   background: var(--accent-light);
   color: var(--accent);
+  border-color: transparent;
 }
 
 .btn-toolbar-item.primary {
   color: var(--primary);
+  font-weight: 600;
 }
 .btn-toolbar-item.primary:hover {
   background: var(--primary-light);
   color: var(--primary);
+  border-color: transparent;
 }
 
 .toolbar-v-divider {
   width: 1px;
   height: 14px;
   background: var(--border);
-  margin: 0 2px;
+  margin: 0 3px;
 }
 
 /* Buttons */
@@ -912,14 +926,14 @@ body {
   flex-shrink: 1;
 }
 .proxy-fields:hover { border-color: var(--border-hover); }
-.proxy-fields:focus-within { border-color: var(--primary); }
+.proxy-fields:focus-within { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary-light); }
 
 .proxy-field {
   display: flex;
   align-items: center;
   height: 100%;
-  gap: 4px;
-  padding: 0 6px;
+  gap: 5px;
+  padding: 0 8px;
   white-space: nowrap;
   cursor: text;
   transition: background var(--transition);
@@ -928,39 +942,15 @@ body {
 .proxy-field:focus-within { background: var(--primary-light); }
 .proxy-field:focus-within span { color: var(--primary); }
 .proxy-field span {
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-.proxy-field input {
-  height: 100%;
-  background: transparent;
-  border: none;
-  outline: none;
-  font-size: 11px;
-  color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  padding: 0;
-  width: 56px;
-  min-width: 0;
-}
-.proxy-field input[type="password"] { width: 100px; }
-.proxy-field + .proxy-field { border-left: 1px solid var(--border); }
-/* 高亮落在真正被聚焦的那一格，比整组描边更能说明「现在改的是哪个」 */
-.proxy-field:focus-within { background: var(--primary-light); }
-.proxy-field:focus-within span { color: var(--primary); }
-.proxy-field span {
   font-size: 10.5px;
   font-weight: 600;
   line-height: 1;
   color: var(--text-muted);
-  text-transform: uppercase;   /* 只对 Key 这类拉丁标签生效，中文不受影响 */
+  text-transform: uppercase;
   letter-spacing: 0.3px;
   user-select: none;
 }
-.proxy-fields input {
+.proxy-field input {
   height: 100%;
   padding: 0;
   margin: 0;
@@ -968,27 +958,24 @@ body {
   border: none;
   color: var(--text);
   font-size: 12px;
+  font-weight: 500;
   line-height: 1;
-  font-family: inherit;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-variant-numeric: tabular-nums;
   outline: none;
-  width: 52px;
+  width: 48px;
+  min-width: 0;
 }
-/* 逐个按内容定宽，把「切号阈值」这个 4 字标签多占的横向空间省回来。
-   端口最多 5 位（65535），tabular-nums 下 42px 够用。 */
-#proxyPortInput { width: 42px; }
-.proxy-fields input[type="password"] { width: 62px; }
-#quotaThresholdInput { width: 50px; }   /* 容得下 placeholder「0=关闭」 */
-/* WebView2 会给聚焦的 input 补一圈自己的 focus ring，必须显式压掉，
-   否则和容器描边叠成双层边框 */
-.proxy-fields input:focus,
-.proxy-fields input:focus-visible {
+.proxy-field input[type="password"] { width: 68px; }
+.proxy-field input:focus,
+.proxy-field input:focus-visible {
   outline: none;
   border: none;
   box-shadow: none;
 }
-/* 去掉 number 输入的上下箭头 —— 它们在这个尺寸下只会挤占字符宽度 */
-.proxy-fields input[type="number"] { -moz-appearance: textfield; }
+.proxy-field input[type="number"] { -moz-appearance: textfield; }
+.proxy-field input[type="number"]::-webkit-outer-spin-button,
+.proxy-field input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .proxy-fields input[type="number"]::-webkit-outer-spin-button,
 .proxy-fields input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
@@ -1371,16 +1358,24 @@ input[type="number"] { -moz-appearance: textfield; }
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 18px;
-  transition: var(--transition);
-  display: flex; flex-direction: column;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
   box-shadow: var(--shadow);
+  position: relative;
+  transition: border-color 0.15s ease, padding-left 0.18s ease;
 }
-.card:hover { border-color: var(--border-hover); box-shadow: var(--shadow-lg); transform: translateY(-1px); }
-.card.current { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light), var(--shadow); }
-/* 更多菜单打开时整卡抬高，避免被相邻卡片（尤其 hover transform 形成的层叠上下文）盖住 */
-.card.more-open { z-index: 50; position: relative; }
-.card.more-open:hover { transform: none; }
+.card:hover {
+  border-color: var(--border-hover);
+}
+.card.current {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-light), var(--shadow);
+}
+.card.more-open {
+  z-index: 50;
+  position: relative;
+}
 
 /* ── 勾选态 ── */
 /* 复选框常驻显示（不再有「多选模式」开关），随时可勾选。
@@ -1443,10 +1438,7 @@ input[type="number"] { -moz-appearance: textfield; }
   border-color: var(--primary);
   color: #fff;
 }
-/* 多选模式下复选框出现，给卡片内容腾出左侧空间（非常驻，不影响正常布局）。
-   padding-left 加进 .card 的 transition（不覆盖原有的 border/shadow/transform 过渡），
-   跟复选框缩放同步，内容平移不突兀。 */
-.card { transition: var(--transition), padding-left 0.18s ease; }
+/* 多选模式下复选框出现，给卡片内容腾出左侧空间（非常驻，不影响正常布局）。 */
 .card.select-mode { padding-left: 42px; }
 
 /* 激光环：完全向内贴边（inset:0 + border-box），不向外溢出 1px。
@@ -1919,20 +1911,20 @@ input[type="number"] { -moz-appearance: textfield; }
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 /* 头像已移除 —— 首字母方块不携带信息，却占掉 40px 宽和一圈边距 */
 .card-info { flex: 1; min-width: 0; }
-.card-name { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.3; }
-.card-email { font-size: 12px; color: var(--text-secondary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.card-meta { display: flex; gap: 6px; align-items: center; margin-top: 6px; flex-wrap: wrap; min-height: 18px; line-height: 18px; }
+.card-name { font-size: 14.5px; font-weight: 600; color: var(--text); line-height: 1.3; letter-spacing: -0.1px; }
+.card-email { font-size: 11.5px; color: var(--text-secondary); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.card-meta { display: flex; gap: 5px; align-items: center; margin-top: 6px; flex-wrap: wrap; min-height: 18px; line-height: 18px; }
 .badge {
   display: inline-flex;
   align-items: center;
   height: 18px;
-  padding: 0 7px;
+  padding: 0 6px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
   line-height: 1;
   box-sizing: border-box;
@@ -1941,37 +1933,42 @@ input[type="number"] { -moz-appearance: textfield; }
 .badge-free { background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--border); }
 .badge-enterprise { background: var(--warning-light); color: var(--warning); border: 1px solid rgba(217,119,6,0.3); }
 .badge-trial { background: var(--success-light); color: var(--success); border: 1px solid rgba(56,142,60,0.3); }
+/* API Key 账号（手机号----ck_xxx 导入的长期密钥凭证）：紫色系与登录 token 账号区分 */
+.badge-apikey { background: rgba(124,58,237,.1); color: rgb(124,58,237); border: 1px solid rgba(124,58,237,.25); }
 
 /* Quota Section：min-height 固定占位，有无额度数据卡片高度都不变 */
-.quota-section { margin-top: 8px; margin-bottom: 12px; min-height: 28px; }
-.quota-header { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 5px; }
-.quota-header span:last-child { font-weight: 600; color: var(--text); }
-.quota-bar { height: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
-.quota-fill { height: 100%; border-radius: 3px; transition: width 0.4s ease; background: var(--primary); }
+.quota-section { margin-top: 8px; margin-bottom: 10px; min-height: 28px; }
+.quota-header { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--text-secondary); margin-bottom: 5px; font-variant-numeric: tabular-nums; }
+.quota-used-remain { color: var(--text-secondary); font-size: 11.5px; }
+.quota-remain-val { font-weight: 700; color: var(--text); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.quota-total-val { font-weight: 600; color: var(--text-secondary); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11.5px; opacity: 0.9; }
+.quota-bar { height: 5px; background: var(--bg-tertiary); border: none; border-radius: 9999px; overflow: hidden; }
+.quota-fill { height: 100%; border-radius: 9999px; transition: width 0.35s ease; background: var(--primary); }
 .quota-fill.warning { background: var(--warning); }
+.quota-fill.danger { background: var(--danger); }
 /* Card Stats Pills：min-height 固定占位，有无统计数据卡片高度都不变 */
 .card-stats-row {
   display: flex;
-  gap: 6px;
+  gap: 5px;
   align-items: center;
   flex-wrap: wrap;
-  min-height: 34px;        /* pill(约22) + 上下 margin(12) 等高预留，避免 v-if 切换撑高 */
-  margin-top: 8px;
+  min-height: 30px;
+  margin-top: 6px;
   margin-bottom: 6px;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .stat-pill {
   display: inline-flex;
   align-items: center;
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 2px 7px;
+  border-radius: 4px;
   background: var(--bg-tertiary);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 500;
   border: 1px solid var(--border-light);
   font-variant-numeric: tabular-nums;
-  line-height: 1.2;
+  line-height: 1.3;
 }
 
 /* Footer & Checkin */

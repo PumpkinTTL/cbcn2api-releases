@@ -20,6 +20,9 @@ class Account:
     token_type: str = "Bearer"
     expires_at: Optional[int] = None
     domain: Optional[str] = None
+    # 凭证类型：oauth = 登录获取的 access/refresh token 对；apikey = 长期 API key
+    # （ck_ 开头，直接当 Bearer 用，无刷新，导入格式 手机号----ck_xxx）
+    auth_type: Optional[str] = "oauth"
 
     plan_type: Optional[str] = None
     dosage_notify_code: Optional[str] = None
@@ -63,6 +66,7 @@ class Account:
             token_type=data.get("token_type", "Bearer"),
             expires_at=data.get("expires_at"),
             domain=data.get("domain"),
+            auth_type=data.get("auth_type") or "oauth",
             plan_type=data.get("plan_type"),
             dosage_notify_code=data.get("dosage_notify_code"),
             dosage_notify_zh=data.get("dosage_notify_zh"),

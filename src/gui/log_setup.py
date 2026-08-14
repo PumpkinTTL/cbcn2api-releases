@@ -8,7 +8,12 @@ runtime.log 末尾内容，形成「用户报错 → 一键导出 → 开发者�
 
 runtime.log 与数据库事件日志（proxy_logs 表）不同——这里只记 Python/JS
 崩溃栈与致命错误，不记业务事件，体量小（RotatingFileHandler 1MB × 1 备份）。
+
+crash.log 由 faulthandler 写入：native 崩溃（访问违例 c0000005 等）不经过
+Python 异常钩子，excepthook 抓不到；faulthandler 在崩溃瞬间把所有线程的
+Python 栈直接写文件，是这类「无声退出」唯一的进程内记录手段。
 """
+import faulthandler
 import logging
 import sys
 import threading
@@ -16,13 +21,24 @@ import traceback
 from pathlib import Path
 
 LOG_PATH = Path.home() / ".cbcn2api" / "runtime.log"
+CRASH_LOG_PATH = Path.home() / ".cbcn2api" / "crash.log"
 _LOGGER_NAME = "cbcn2api.runtime"
+
+_crash_fh = None  # 模块级持有，文件对象被 GC 关闭后 faulthandler 就写不进去了
 
 
 def setup_logging():
-    """配置运行日志文件（RotatingFileHandler，1MB × 1 备份）。幂等。"""
+    """配置运行日志文件（RotatingFileHandler，1MB × 1 备份）+ native 崩溃捕获。幂等。"""
     try:
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    global _crash_fh
+    try:
+        _crash_fh = open(CRASH_LOG_PATH, "a", encoding="utf-8", buffering=1)
+        # CLR(pythonnet) 起来后可能覆盖异常过滤器，crash.log 没内容不代表没崩，
+        # 那种情况看 WER（事件查看器 .NET Runtime 1026 / CrashDumps 目录）。
+        faulthandler.enable(file=_crash_fh, all_threads=True)
     except Exception:
         pass
     logger = logging.getLogger(_LOGGER_NAME)

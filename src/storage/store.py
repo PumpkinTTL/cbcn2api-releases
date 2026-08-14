@@ -76,6 +76,12 @@ def _run_migrations(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE accounts ADD COLUMN auth_raw TEXT")
     except sqlite3.OperationalError:
         pass
+    # auth_type：凭证类型（oauth=登录 token 对 / apikey=长期 ck_ key）。
+    # 老数据 NULL，读回时 account.py from_dict 归一为 oauth。
+    try:
+        conn.execute("ALTER TABLE accounts ADD COLUMN auth_type TEXT")
+    except sqlite3.OperationalError:
+        pass
     # 新表无条件建（老库 user_version 已 1，_ensure_schema 不再跑）
     try:
         conn.execute("""
@@ -185,11 +191,11 @@ def upsert_account(platform: str, account: Account) -> Account:
             INSERT INTO accounts (
                 id, platform, email, uid, nickname,
                 enterprise_id, enterprise_name,
-                access_token, refresh_token, token_type, expires_at, domain,
+                access_token, refresh_token, token_type, expires_at, domain, auth_type,
                 status, tags,
                 last_checkin_time, checkin_streak, quota_raw, auth_raw,
                 created_at, last_used
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(id) DO UPDATE SET
                 email=COALESCE(NULLIF(excluded.email, ''), accounts.email),
                 uid=COALESCE(NULLIF(excluded.uid, ''), accounts.uid),
@@ -201,6 +207,7 @@ def upsert_account(platform: str, account: Account) -> Account:
                 token_type=excluded.token_type,
                 expires_at=excluded.expires_at,
                 domain=COALESCE(NULLIF(excluded.domain, ''), accounts.domain),
+                auth_type=excluded.auth_type,
                 status=excluded.status,
                 tags=COALESCE(excluded.tags, accounts.tags),
                 last_checkin_time=COALESCE(excluded.last_checkin_time, accounts.last_checkin_time),
@@ -214,6 +221,7 @@ def upsert_account(platform: str, account: Account) -> Account:
             account.nickname, account.enterprise_id, account.enterprise_name,
             account.access_token or "", account.refresh_token,
             account.token_type or "Bearer", account.expires_at, account.domain,
+            account.auth_type or "oauth",
             account.status or "normal",
             json.dumps(account.tags, ensure_ascii=False) if account.tags else None,
             account.last_checkin_time, account.checkin_streak or 0,
@@ -275,6 +283,7 @@ def _row_to_account(row: sqlite3.Row) -> Account:
         refresh_token=row["refresh_token"],
         token_type=row["token_type"] or "Bearer",
         expires_at=row["expires_at"], domain=row["domain"],
+        auth_type=row["auth_type"] or "oauth",
         status=row["status"] or "normal",
         last_checkin_time=row["last_checkin_time"],
         checkin_streak=row["checkin_streak"] or 0,
@@ -519,6 +528,48 @@ def remove_account(platform: str, account_id: str):
                 (_DELETED_TOMBSTONE_KEY, json.dumps(raw)),
             )
             conn.commit()
+    finally:
+        conn.close()
+
+
+def find_account_by_token(platform: str, token: str) -> Optional[str]:
+    """按 access_token 精确找已有账号 id（API Key 账号用）。
+
+    key 是长期凭证：同一把 key 无论配什么手机号前缀导入，都应命中同一个
+    账号。限定 auth_type='apikey'：OAuth 号的 access_token 是会过期的 JWT，
+    与 key 属不同凭证体系，不参与匹配。
+    """
+    if not token:
+        return None
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT id FROM accounts WHERE platform=? AND access_token=? "
+            "AND auth_type='apikey' AND status != 'deleted' LIMIT 1",
+            (platform, token)
+        ).fetchone()
+        return row["id"] if row else None
+    finally:
+        conn.close()
+
+
+def find_apikey_by_phone(platform: str, phone: str) -> Optional[str]:
+    """按手机号找已有 API Key 账号 id。
+
+    手机号是账号身份：同一手机号换新 key 导入 = 同一账号更新凭证，不另建号。
+    只在 auth_type='apikey' 范围内匹配，不吞并同手机号的 OAuth 登录号
+    （两套凭证体系并存，避免 upsert 覆盖掉登录号的 token）。
+    """
+    if not phone:
+        return None
+    conn = _get_conn()
+    try:
+        row = conn.execute(
+            "SELECT id FROM accounts WHERE platform=? AND LOWER(email)=? "
+            "AND auth_type='apikey' AND status != 'deleted' LIMIT 1",
+            (platform, phone.strip().lower())
+        ).fetchone()
+        return row["id"] if row else None
     finally:
         conn.close()
 

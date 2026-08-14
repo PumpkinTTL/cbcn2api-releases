@@ -178,9 +178,14 @@ def main():
     # 运行日志 + 全局异常捕获（主线程/子线程未捕获异常落 runtime.log，
     # 配合「导出诊断信息」形成报错-排错闭环）。初始化失败不阻断启动。
     try:
-        from src.gui.log_setup import setup_logging, install_excepthooks
+        from src.gui.log_setup import setup_logging, install_excepthooks, write_runtime_log
         setup_logging()
         install_excepthooks()
+        try:
+            from src.updater import APP_VERSION
+            write_runtime_log(f"===== 启动 {APP_VERSION} pid={os.getpid()} =====", "INFO")
+        except Exception:
+            pass
     except Exception:
         pass
 

@@ -644,6 +644,9 @@
                   </span>
                   <span :class="getStatusBadgeClass(a)">{{ getStatusText(a) }}</span>
                   <span class="badge" :class="getPlanBadgeClass(a)">{{ getPlanText(a) }}</span>
+                  <span v-if="a.auth_type === 'apikey'" class="badge badge-apikey" title="API Key 账号：长期密钥凭证，无刷新">
+                    <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" style="vertical-align:-1px;margin-right:2px"><circle cx="7.5" cy="15.5" r="4"/><path d="M10.5 12.5L21 2M15 7l3 3M18 4l3 3"/></svg>API Key
+                  </span>
                   <span v-if="a.fingerprint" class="fp-pill" title="已配置独立客户端指纹">
                     <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5.625 12.5c0-3.5 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5"/><path d="M9.625 12.5c0-1.5 1.2-2.75 2.875-2.75s2.875 1.25 2.875 2.75c0 2.5-1.1 4.75-2.875 6.25"/><path d="M5.625 12.5c0 3 1.6 5.5 4 7"/><path d="M8.625 9.5c-1.6 1.2-2.75 3-2.75 4.75 0 1.5.4 2.75 1 4"/></svg> 指纹
                   </span>
@@ -682,8 +685,8 @@
           <div class="quota-section" :class="{ empty: !getCardQuota(a) }">
             <template v-if="getCardQuota(a)">
               <div class="quota-header">
-                <span>已用 {{ fmt(getCardQuota(a).adjUsed) }} / 剩余 {{ fmt(getCardQuota(a).adjRemain) }}</span>
-                <span>{{ fmt(getCardQuota(a).total) }}</span>
+                <span class="quota-used-remain">已用 {{ fmt(getCardQuota(a).adjUsed) }} · 剩余 <strong class="quota-remain-val">{{ fmt(getCardQuota(a).adjRemain) }}</strong></span>
+                <span class="quota-total-val" title="总额度">{{ fmt(getCardQuota(a).total) }}</span>
               </div>
               <div class="quota-bar">
                 <div class="quota-fill" :class="getCardQuota(a).cls" :style="{ width: getCardQuota(a).pct + '%' }"></div>
@@ -1024,13 +1027,13 @@
   <div class="modal-overlay" id="importModal" :class="{ show: activeModal === 'import' }">
     <div class="modal">
       <div class="modal-header">
-        <h2>粘贴 Token / JSON 导入</h2>
-        <p>支持粘贴 access_token 或完整账号 JSON 数据</p>
+        <h2>粘贴 Token / Key / JSON 导入</h2>
+        <p>支持粘贴 access_token、API Key（手机号----ck_密钥）或完整账号 JSON 数据</p>
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label>Token / JSON 数据</label>
-          <textarea id="importJson" v-model="importJsonText" placeholder="支持粘贴 access_token，每行一个&#10;123456+eyJhbGciOi...&#10;&#10;或完整JSON：&#10;{ &quot;access_token&quot;: &quot;...&quot; }"></textarea>
+          <label>Token / Key / JSON 数据</label>
+          <textarea id="importJson" v-model="importJsonText" placeholder="支持以下格式，每行一个：&#10;123456+eyJhbGciOi...（Token）&#10;46073710----ck_xxxx.xxxx（API Key）&#10;ck_xxxx.xxxx（纯 Key，自动识别账号）&#10;&#10;或完整JSON：&#10;{ &quot;access_token&quot;: &quot;...&quot; }"></textarea>
         </div>
       </div>
       <div class="modal-actions">
@@ -3662,12 +3665,12 @@ const vApp = createApp({
     function showImportModal() { importJsonText.value = ''; activeModal.value = 'import'; }
     async function doImport() {
       const json = importJsonText.value.trim();
-      if (!json) { showToast('请粘贴 Token 或 JSON', 'error'); return; }
+      if (!json) { showToast('请粘贴 Token、API Key 或 JSON', 'error'); return; }
       importLoading.value = true;
       try {
         const r = JSON.parse(await pywebview.api.import_from_json(currentPlatform.value, json));
         if (r.error) { showToast(r.error, 'error'); return; }
-        showToast('导入成功: '+(r.accounts?r.accounts.length:0)+' 个账号', 'success');
+        showToast('导入成功: '+(r.accounts?r.accounts.length:0)+' 个账号'+(r.skipped?`（${r.skipped} 行无法识别已跳过）`:''), 'success');
         activeModal.value = null;
         await loadAccounts();
       } catch(e) { showToast('导入失败: '+e, 'error'); }
