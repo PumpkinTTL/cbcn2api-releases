@@ -423,11 +423,15 @@ class GuiApi:
         try:
             raw = json.loads(content)
         except json.JSONDecodeError:
-            # 不是合法 JSON — 当作裸 access_token 处理
-            if content and content[0] not in "{[":
+            # 不是合法 JSON — 当作裸 access_token 处理。判定收紧：只认单行、
+            # 仅含凭证字符集（JWT 的 ._-= / ck_ 密钥 / 手机号+token 的 +）的紧凑
+            # 字符串。多行文本、含空格/中文的内容（拖错的诊断日志、说明文件等）
+            # 不再被当成超长 token 建垃圾账号，直接报格式错误。
+            import re
+            if content and re.fullmatch(r"[A-Za-z0-9_\-+\.=]{8,}", content):
                 raw = {"access_token": content}
             else:
-                return json.dumps({"error": "无法解析：请粘贴有效的 Token 或 JSON"})
+                return json.dumps({"error": "无法解析：不是有效的账号数据（支持 JSON、手机号----密钥、纯密钥、Token，每行一个）"})
 
         items = []
         if isinstance(raw, dict):

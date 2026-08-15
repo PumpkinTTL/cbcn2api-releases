@@ -3716,6 +3716,7 @@ const vApp = createApp({
       const tag = await showBatchNoteModal();
       if (tag === null) return;   // 用户取消
       importLoading.value = true;
+      showToast('正在读取并导入账号..', 'loading', '', true);
       try {
         const r = JSON.parse(await pywebview.api.import_from_json(currentPlatform.value, text, tag||''));
         if (r.error) { showToast(r.error, 'error'); return; }
