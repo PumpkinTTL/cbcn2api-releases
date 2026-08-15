@@ -1071,6 +1071,23 @@
     </div>
   </div>
 
+  <!-- Checkin Waiting Modal：签到执行期间的等待弹窗，完成自动关闭（可点后台运行先关掉） -->
+  <div class="modal-overlay" id="checkinModal" :class="{ show: activeModal === 'checkin' }">
+    <div class="modal" style="max-width:360px">
+      <div class="modal-header">
+        <h2>正在签到</h2>
+        <p>共 {{ checkinTargetCount }} 个账号，正在逐个签到，请稍候…</p>
+      </div>
+      <div class="modal-body" style="display:flex;align-items:center;gap:12px;justify-content:center;padding:22px 0">
+        <span class="spinner-sm" style="width:22px;height:22px;border-width:3px"></span>
+        <span style="font-size:13px;color:var(--text-secondary)">完成后自动关闭</span>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" @click="activeModal = null">后台运行</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Recycle Modal -->
   <div class="modal-overlay" id="recycleModal" :class="{ show: activeModal === 'recycle' }">
     <div class="modal" style="max-width:540px">
@@ -2255,6 +2272,7 @@ const vApp = createApp({
     // ── 工具栏加载态 ──
     const exportLoading = ref(false);
     const checkinAllLoading = ref(false);
+    const checkinTargetCount = ref(0);
     const refreshAllLoading = ref(false);
     const accountsRefreshLoading = ref(false);
 
@@ -2850,14 +2868,23 @@ const vApp = createApp({
     }
 
     // ─── Checkin All ───
+    // 签到是后端同步完成的批量操作：执行期间弹等待窗（完成自动关闭，可后台运行），
+    // 不让「弹出层关了、后台默默跑」——验活同理有等待反馈。
     async function checkinAll() {
-      checkinAllLoading.value = true;
+      checkinTargetCount.value = accounts.value.length || 0;
+      await _checkinWithModal(() => pywebview.api.checkin_all(currentPlatform.value));
+    }
+
+    async function _checkinWithModal(rpc) {
+      activeModal.value = 'checkin';
       try {
-        const r = JSON.parse(await pywebview.api.checkin_all(currentPlatform.value));
-        showToast(`签到完成: ${r.success}成功 / ${r.already}已签 / ${r.failed}失败`, r.failed>0?'warning':'success');
+        const r = JSON.parse(await rpc());
+        if (r.error) { showToast(r.error, 'error'); return; }
+        const failed = r.failed || 0;
+        showToast(`签到完成：成功 ${r.success}，已签到 ${r.already}，失败 ${failed}`, failed ? 'warning' : 'success');
         await loadAccounts();
-      } catch(e) { showToast('批量签到失败: '+e, 'error'); }
-      finally { checkinAllLoading.value = false; }
+      } catch(e) { showToast('签到失败: '+e, 'error'); }
+      finally { if (activeModal.value === 'checkin') activeModal.value = null; }
     }
 
     // ─── Refresh All ───
@@ -3264,13 +3291,10 @@ const vApp = createApp({
       const ids = Object.keys(selectedIds);
       if (!ids.length) return;
       batchCheckinLoading.value = true;
+      checkinTargetCount.value = ids.length;
       try {
-        const r = JSON.parse(await pywebview.api.checkin_accounts(currentPlatform.value, JSON.stringify(ids)));
-        if (r.error) { showToast(r.error, 'error'); return; }
-        showToast(`签到完成：成功 ${r.success}，已签到 ${r.already}，失败 ${r.failed}`, r.failed ? 'warning' : 'success');
-        await loadAccountsLight();
-      } catch(e) { showToast('批量签到失败: '+e, 'error'); }
-      finally { batchCheckinLoading.value = false; }
+        await _checkinWithModal(() => pywebview.api.checkin_accounts(currentPlatform.value, JSON.stringify(ids)));
+      } finally { batchCheckinLoading.value = false; }
     }
 
     // ─── 回收站（软删除恢复/多选/彻底删除）───
@@ -4212,7 +4236,7 @@ const vApp = createApp({
       exporting, exportDiagnostics,
       chatCardCollapsed, chatMessages, chatInput, chatSending, modelList, currentModel, modelDropdownOpen,
       syncLoading, syncLabel, wbExportLoading, wbExportLabel, cbExportLoading, cbExportLabel, exportDdOpen, chatMessagesRef,
-      exportLoading, checkinAllLoading, refreshAllLoading, accountsRefreshLoading, cardLoading, moreOpenId,
+      exportLoading, checkinAllLoading, checkinTargetCount, refreshAllLoading, accountsRefreshLoading, cardLoading, moreOpenId,
       selectMode, selectedIds, batchDeleteLoading, batchExportLoading, batchDetectLoading,
       batchStatusLoading, batchRefreshLoading, batchCheckinLoading, batchFingerprintLoading,
       deletedAccounts, recycleBusy, deletedSelected, deletedSelectedCount, allDeletedSelected,
