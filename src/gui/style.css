@@ -1936,6 +1936,28 @@ input[type="number"] { -moz-appearance: textfield; }
 /* API Key 账号（手机号----ck_xxx 导入的长期密钥凭证）：紫色系与登录 token 账号区分 */
 .badge-apikey { background: rgba(124,58,237,.1); color: rgb(124,58,237); border: 1px solid rgba(124,58,237,.25); }
 
+/* 拖拽文件导入全屏遮罩：拖入文件时出现，松手/拖出消失 */
+#dropImportOverlay {
+  position: fixed; inset: 0; z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(15, 23, 42, .45);
+  backdrop-filter: blur(2px);
+  opacity: 0; pointer-events: none;
+  transition: opacity .15s ease;
+}
+#dropImportOverlay.show { opacity: 1; pointer-events: auto; }
+.drop-import-box {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 36px 52px;
+  border: 2px dashed var(--primary);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 15px; font-weight: 600;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+}
+.drop-import-box svg { color: var(--primary); }
+
 /* Quota Section：min-height 固定占位，有无额度数据卡片高度都不变 */
 .quota-section { margin-top: 8px; margin-bottom: 10px; min-height: 28px; }
 .quota-header { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; color: var(--text-secondary); margin-bottom: 5px; font-variant-numeric: tabular-nums; }

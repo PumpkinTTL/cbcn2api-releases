@@ -169,7 +169,7 @@
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/></svg>
           <span class="toolbar-text">导入</span>
         </button>
-        <input type="file" ref="fileInput" accept=".json" style="display:none" @change="handleFileImport">
+        <input type="file" ref="fileInput" accept=".json,.txt" style="display:none" @change="handleFileImport">
         <button class="btn-toolbar-item" :disabled="!licenseAuthorized || exportLoading" @click="exportAccounts" title="导出账号 JSON 配置">
           <span v-if="exportLoading" class="spinner-sm"></span>
           <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/></svg>
@@ -3701,19 +3701,103 @@ const vApp = createApp({
       } catch(e) { showToast('导入失败: '+e, 'error'); }
       finally { importLoading.value = false; }
     }
-    function handleFileImport(e) {
+    async function handleFileImport(e) {
       const file = e.target.files && e.target.files[0]; if (!file) return;
-      showToast('正在读取文件并导入..', 'loading', '', true);
-      file.text().then(text => {
-        return pywebview.api.import_from_json(currentPlatform.value, text).then(raw => {
-          const r = JSON.parse(raw);
-          if (r.error) { showToast(r.error, 'error'); return; }
-          showToast('文件导入成功: '+(r.accounts?r.accounts.length:0)+' 个账号', 'success');
-          loadAccounts();
-        });
-      }).catch(e => showToast('文件导入失败: '+e, 'error'));
       e.target.value = '';
+      try {
+        const text = await file.text();
+        await importTextWithBatchNote(text);
+      } catch(e) { showToast('文件导入失败: '+e, 'error'); }
     }
+
+    // 文件导入（按钮/拖拽）共用：先弹批次备注弹窗（可留空），确认后导入。
+    // 粘贴导入不弹（textarea 本身就是主动操作），保持原 doImport 流程。
+    async function importTextWithBatchNote(text) {
+      const tag = await showBatchNoteModal();
+      if (tag === null) return;   // 用户取消
+      importLoading.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.import_from_json(currentPlatform.value, text, tag||''));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        showToast('导入成功: '+(r.accounts?r.accounts.length:0)+' 个账号'+(tag?`（批次标签：${tag}）`:'')+(r.skipped?`，${r.skipped} 行无法识别已跳过`:''), 'success');
+        await loadAccounts();
+      } catch(e) { showToast('导入失败: '+e, 'error'); }
+      finally { importLoading.value = false; }
+    }
+
+    // 批次备注弹窗：输入框（可空）+ 导入/取消。返回备注字符串，取消返回 null。
+    // 样式复用 confirm-overlay（与关闭行为选择框同款）。
+    function showBatchNoteModal(){
+      return new Promise(resolve => {
+        const ov = document.createElement('div');
+        ov.className = 'confirm-overlay';
+        ov.innerHTML =
+          '<div class="confirm-box" role="dialog" aria-modal="true" style="max-width:400px">' +
+            '<div class="confirm-title"></div>' +
+            '<div class="confirm-msg"></div>' +
+            '<input type="text" class="batch-note-input" maxlength="30" placeholder="例如：8月16日购入（可留空）" style="width:100%;box-sizing:border-box;margin:4px 0 14px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;color:var(--text);background:var(--surface);outline:none;font-family:inherit">' +
+            '<div class="confirm-actions">' +
+              '<button class="btn btn-ghost btn-sm bn-no">取消</button>' +
+              '<button class="btn btn-sm btn-primary bn-ok">导入</button>' +
+            '</div></div>';
+        ov.querySelector('.confirm-title').textContent = '导入账号';
+        ov.querySelector('.confirm-msg').textContent = '可为这批账号写一个批次备注（标签），导入后按标签即可筛出这批号。';
+        document.body.appendChild(ov);
+        requestAnimationFrame(() => ov.classList.add('show'));
+        const input = ov.querySelector('.batch-note-input');
+        let settled = false;
+        function done(v){ if(settled) return; settled=true; ov.classList.remove('show'); setTimeout(()=>ov.remove(),160); resolve(v); }
+        ov.querySelector('.bn-ok').onclick = () => done(input.value.trim());
+        ov.querySelector('.bn-no').onclick = () => done(null);
+        ov.onclick = e => { if(e.target===ov) done(null); };
+        const onKey = e => {
+          if(e.key==='Escape'){ done(null); document.removeEventListener('keydown', onKey); }
+          if(e.key==='Enter'){ done(input.value.trim()); document.removeEventListener('keydown', onKey); }
+        };
+        document.addEventListener('keydown', onKey);
+        setTimeout(() => input.focus(), 50);
+      });
+    }
+
+    // ─── 拖拽文件导入：拖到窗口任意位置，松开即走批次备注→导入流程 ───
+    // WebView2 默认会打开/导航拖入的文件，dragover/drop 必须 preventDefault。
+    // 多文件按内容合并成一个导入请求；只认文本类（json/txt 无所谓后缀，内容
+    // 由后端 import_from_json 多格式解析兜底，格式不对会报「无法解析」）。
+    let _dragDepth = 0;
+    function _dropOverlay(){
+      let ov = document.getElementById('dropImportOverlay');
+      if (!ov) {
+        ov = document.createElement('div');
+        ov.id = 'dropImportOverlay';
+        ov.innerHTML = '<div class="drop-import-box"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg><span>松开鼠标，导入账号文件</span></div>';
+        document.body.appendChild(ov);
+      }
+      return ov;
+    }
+    document.addEventListener('dragenter', e => {
+      if (!e.dataTransfer || !e.dataTransfer.types.includes('Files')) return;
+      e.preventDefault();
+      _dragDepth++;
+      _dropOverlay().classList.add('show');
+    });
+    document.addEventListener('dragleave', e => {
+      e.preventDefault();
+      _dragDepth = Math.max(0, _dragDepth - 1);
+      if (_dragDepth === 0) _dropOverlay().classList.remove('show');
+    });
+    document.addEventListener('dragover', e => e.preventDefault());
+    document.addEventListener('drop', async e => {
+      e.preventDefault();
+      _dragDepth = 0;
+      _dropOverlay().classList.remove('show');
+      const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+      if (!files.length) return;
+      const texts = [];
+      for (const f of files) texts.push(await f.text());
+      const merged = texts.join('\n').trim();
+      if (!merged) { showToast('文件内容为空', 'error'); return; }
+      await importTextWithBatchNote(merged);
+    });
 
     // ─── Proxy ───
     function getProxyBaseUrl() { return `http://127.0.0.1:${proxyPort.value}`; }

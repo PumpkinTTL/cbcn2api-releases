@@ -406,8 +406,10 @@ class GuiApi:
         store.set_batch_note(platform, batch, (note or "").strip())
         return json.dumps({"success": True})
 
-    def import_from_json(self, platform: str, json_content: str) -> str:
+    def import_from_json(self, platform: str, json_content: str, batch_tag: str = "") -> str:
         content = (json_content or "").strip()
+        # 批次备注（可选）：作为标签打给这批导入的每个号，方便导入后按标签筛选这批账号
+        batch_tag = (batch_tag or "").strip()
 
         # API Key 格式导入：手机号----ck_xxx（每行一个）。任一行命中即走本分支，
         # 不命中的行跳过。key 是长期凭证（可直接当 Bearer 请求/查额度，无刷新），
@@ -415,7 +417,7 @@ class GuiApi:
         # 自动跳过换 token，只拉额度，转发/验活/调度与 OAuth 账号完全一致。
         key_entries, skipped_lines = _parse_apikey_lines(content)
         if key_entries:
-            return self._import_apikey_accounts(platform, key_entries, skipped_lines)
+            return self._import_apikey_accounts(platform, key_entries, skipped_lines, batch_tag)
 
         raw = None
         try:
@@ -447,6 +449,11 @@ class GuiApi:
         for idx, item in enumerate(items):
             try:
                 account = self._payload_to_account(item, platform)
+                if batch_tag:
+                    tags = list(account.tags or [])
+                    if batch_tag not in tags:
+                        tags.append(batch_tag)
+                    account.tags = tags
                 # 显式导入 = 恢复意图：清硬删 tombstone + 软删号回原状态，
                 # 并清调度器残留冷却/封禁计数
                 try:
@@ -479,7 +486,8 @@ class GuiApi:
             pass
         return json.dumps({"success": True, "accounts": results})
 
-    def _import_apikey_accounts(self, platform: str, entries: list, skipped: int) -> str:
+    def _import_apikey_accounts(self, platform: str, entries: list, skipped: int,
+                                batch_tag: str = "") -> str:
         """API Key 账号导入：手机号优先做账号身份，key 是凭证。
 
         去重三级（任一命中即复用已有账号，不建新号）：
@@ -501,6 +509,13 @@ class GuiApi:
                 new_account = account_id is None
                 if new_account:
                     account_id = Account.generate_id(phone or key)
+                # 批次标签：重导入已有号时合并原标签，不覆盖；新号直接打上
+                tags = None
+                if batch_tag:
+                    existing = None if new_account else store.load_account(platform, account_id)
+                    tags = list((existing.tags if existing else None) or [])
+                    if batch_tag not in tags:
+                        tags.append(batch_tag)
                 account = Account(
                     id=account_id,
                     email=phone,
@@ -510,6 +525,7 @@ class GuiApi:
                     auth_type="apikey",
                     status="normal",
                     created_at=Account.now_ts(),
+                    tags=tags,
                 )
                 try:
                     if store.revive_account(platform, account.id):
