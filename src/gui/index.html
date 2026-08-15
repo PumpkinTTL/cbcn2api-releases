@@ -3704,15 +3704,49 @@ const vApp = createApp({
     async function handleFileImport(e) {
       const file = e.target.files && e.target.files[0]; if (!file) return;
       e.target.value = '';
-      try {
-        const text = await file.text();
-        await importTextWithBatchNote(text);
-      } catch(e) { showToast('文件导入失败: '+e, 'error'); }
+      await importFiles([file]);
     }
 
-    // 文件导入（按钮/拖拽）共用：先弹批次备注弹窗（可留空），确认后导入。
+    // 文件导入（按钮/拖拽）共用入口：两道闸都过了才弹批次备注弹窗。
     // 粘贴导入不弹（textarea 本身就是主动操作），保持原 doImport 流程。
-    async function importTextWithBatchNote(text) {
+    async function importFiles(files) {
+      // 闸1：扩展名白名单 —— 音频/图片/可执行文件等直接拒绝，不读内容不弹窗
+      const okFiles = files.filter(f => /\.(json|txt)$/i.test(f.name));
+      const ignored = files.length - okFiles.length;
+      if (!okFiles.length) {
+        showToast(ignored > 1 ? `已忽略 ${ignored} 个文件：只支持 .json / .txt` : '只支持 .json / .txt 文件', 'error');
+        return;
+      }
+      let merged = '';
+      for (const f of okFiles) merged += (await f.text()) + '\n';
+      // 闸2：内容预检（与后端解析规则一致）——格式不对直接报错，不弹批次弹窗
+      const err = _precheckImportText(merged);
+      if (err) { showToast(err, 'error'); return; }
+      await importTextWithBatchNote(merged.trim(), ignored > 0 ? `已忽略 ${ignored} 个非 .json/.txt 文件` : '');
+    }
+
+    // 内容格式预检：合法返回 null，否则返回错误文案。规则与后端 import_from_json 对齐：
+    // JSON 对象/数组 | 逐行 手机号----ck_密钥 或 纯 ck_ 行 | 单行裸 token（凭证字符集）。
+    // 拖错的诊断日志/说明文件在这里就拦下，不给弹批次备注的机会。
+    function _precheckImportText(text){
+      const t = (text || '').trim();
+      if (!t) return '文件内容为空';
+      try {
+        const v = JSON.parse(t);
+        if (v && typeof v === 'object') return null;
+      } catch(_) {}
+      let keyLines = 0;
+      for (const line of t.split('\n')) {
+        const s = line.trim();
+        if (!s) continue;
+        if (/^.+?\s*-{2,}\s*ck_\S+$/.test(s) || /^ck_\S+$/.test(s)) keyLines++;
+      }
+      if (keyLines > 0) return null;
+      if (/^[A-Za-z0-9_\-+\.=]{8,}$/.test(t)) return null;
+      return '无法识别文件内容：不是有效的账号数据（支持 JSON、手机号----密钥、纯密钥、Token）';
+    }
+
+    async function importTextWithBatchNote(text, extraNote) {
       const tag = await showBatchNoteModal();
       if (tag === null) return;   // 用户取消
       importLoading.value = true;
@@ -3720,7 +3754,7 @@ const vApp = createApp({
       try {
         const r = JSON.parse(await pywebview.api.import_from_json(currentPlatform.value, text, tag||''));
         if (r.error) { showToast(r.error, 'error'); return; }
-        showToast('导入成功: '+(r.accounts?r.accounts.length:0)+' 个账号'+(tag?`（批次标签：${tag}）`:'')+(r.skipped?`，${r.skipped} 行无法识别已跳过`:''), 'success');
+        showToast('导入成功: '+(r.accounts?r.accounts.length:0)+' 个账号'+(tag?`（批次标签：${tag}）`:'')+(r.skipped?`，${r.skipped} 行无法识别已跳过`:'')+(extraNote?`，${extraNote}`:''), 'success');
         await loadAccounts();
       } catch(e) { showToast('导入失败: '+e, 'error'); }
       finally { importLoading.value = false; }
@@ -3793,11 +3827,7 @@ const vApp = createApp({
       _dropOverlay().classList.remove('show');
       const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
       if (!files.length) return;
-      const texts = [];
-      for (const f of files) texts.push(await f.text());
-      const merged = texts.join('\n').trim();
-      if (!merged) { showToast('文件内容为空', 'error'); return; }
-      await importTextWithBatchNote(merged);
+      await importFiles(files);
     });
 
     // ─── Proxy ───
