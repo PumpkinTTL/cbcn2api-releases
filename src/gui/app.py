@@ -456,6 +456,9 @@ class GuiApi:
                 except Exception:
                     pass
                 saved = store.upsert_account(platform, account)
+                # 指纹是独立列，不走 upsert；导入时若有指纹需单独落库，否则导出→导入会丢指纹。
+                if account.fingerprint:
+                    store.save_fingerprint(platform, saved.id, account.fingerprint)
                 # 导入即刷新额度：复用 refresh_token 的完整逻辑（拉 dosage/payment/
                 # userResource）。否则裸 token 走 build_payload_from_token 拉额度可能
                 # 失败/不全，导致额度条不显示，用户还要手动点一次刷新。
@@ -592,6 +595,15 @@ class GuiApi:
         refresh_token = data.get("refresh_token") or data.get("refreshToken")
         domain = data.get("domain")
 
+        # 指纹：导出时带 fingerprint，导入时原样还原（按白名单过滤，走 save_fingerprint 独立落库）
+        fingerprint = data.get("fingerprint")
+        if fingerprint:
+            from src.proxy.api_client import FINGERPRINT_FIELDS
+            fingerprint = {k: str(v) for k, v in fingerprint.items() if k in FINGERPRINT_FIELDS and v}
+            fingerprint = fingerprint or None
+        # 账号类型：oauth / apikey。缺失时由调用方根据导入格式推断（key 格式走 apikey）。
+        auth_type = data.get("auth_type") or data.get("authType")
+
         identity_seed = uid or email or "codebuddy_cn_user"
         account_id = Account.generate_id(identity_seed)
 
@@ -612,6 +624,8 @@ class GuiApi:
             token_type=data.get("token_type") or data.get("tokenType") or "Bearer",
             expires_at=data.get("expires_at") or data.get("expiresAt"),
             domain=domain,
+            auth_type=auth_type or "oauth",
+            fingerprint=fingerprint,
             plan_type=data.get("plan_type") or data.get("planType"),
             dosage_notify_code=data.get("dosage_notify_code") or data.get("dosageNotifyCode"),
             dosage_notify_zh=data.get("dosage_notify_zh") or data.get("dosageNotifyZh"),
@@ -834,7 +848,11 @@ class GuiApi:
 
     @staticmethod
     def _account_export_dict(a):
-        """账号 → 导出字典。全量导出和选中导出共用，保证字段一致。"""
+        """账号 → 导出字典。全量导出和选中导出共用，保证字段一致。
+
+        导出完整字段（指纹/auth_type/tags/额度），保证「导出 → 重新导入」闭环
+        不丢信息：指纹是独立列、auth_type 区分 key/登录号，漏掉重导就失真。
+        """
         return {
             "id": a.id, "email": a.email, "uid": a.uid,
             "nickname": a.nickname, "enterprise_id": a.enterprise_id,
@@ -842,6 +860,15 @@ class GuiApi:
             "access_token": a.access_token, "refresh_token": a.refresh_token,
             "token_type": a.token_type, "expires_at": a.expires_at,
             "domain": a.domain, "status": a.status,
+            "auth_type": a.auth_type,
+            "fingerprint": a.fingerprint,
+            "tags": a.tags,
+            "quota_raw": a.quota_raw,
+            "usage_raw": a.usage_raw,
+            "plan_type": a.plan_type,
+            "payment_type": a.payment_type,
+            "last_checkin_time": a.last_checkin_time,
+            "checkin_streak": a.checkin_streak,
         }
 
     def _save_accounts_json(self, platform: str, data: list, name_prefix: str) -> str:
