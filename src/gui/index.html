@@ -735,7 +735,7 @@
                   <svg class="more-dropdown-arrow" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
                 </div>
                 <div class="more-dropdown-menu" v-show="moreOpenId === a.id">
-                  <div class="more-dropdown-item" :class="{ busy: cardLoading[a.id + '_checkin'] }" @click.stop="doCheckin(a.id); moreOpenId = null" title="签到">
+                  <div class="more-dropdown-item" :class="{ busy: cardLoading[a.id + '_checkin'] }" @click.stop="doCheckin(a.id)" title="签到">
                     <span v-if="cardLoading[a.id + '_checkin']" class="spinner-sm"></span>
                     <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> 签到
                   </div>
@@ -2916,7 +2916,7 @@ const vApp = createApp({
         try { await pywebview.api.refresh_token(currentPlatform.value, id); } catch(e) {}
         await loadAccounts();
       } catch(e) { showToast('签到失败: '+e, 'error'); }
-      finally { cardLoading[id+'_checkin'] = false; }
+      finally { cardLoading[id+'_checkin'] = false; moreOpenId.value = null; }
     }
 
     async function refreshOne(id) {
