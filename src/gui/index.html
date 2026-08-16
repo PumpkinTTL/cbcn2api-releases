@@ -2909,14 +2909,21 @@ const vApp = createApp({
       cardLoading[id+'_checkin'] = true;
       try {
         const r = JSON.parse(await pywebview.api.checkin(currentPlatform.value, id));
+        // 签到动作到此完成：先停 spinner 关菜单再 toast——后面的额度刷新/列表
+        // 刷新是附带动作（refresh_token 要打上游接口数秒），不能让按钮陪着转。
+        cardLoading[id+'_checkin'] = false;
+        moreOpenId.value = null;
         if (r.error) { showToast(r.error, 'error'); return; }
         if (r.success) showToast(`签到成功! ${r.credit?'+'+r.credit+' 积分':''}`, 'success');
         else showToast(r.message||'签到完成(已签到)', 'info');
         // 签到后自动刷新该账号额度（用量），失败静默不影响签到结果
         try { await pywebview.api.refresh_token(currentPlatform.value, id); } catch(e) {}
         await loadAccounts();
-      } catch(e) { showToast('签到失败: '+e, 'error'); }
-      finally { cardLoading[id+'_checkin'] = false; moreOpenId.value = null; }
+      } catch(e) {
+        showToast('签到失败: '+e, 'error');
+        cardLoading[id+'_checkin'] = false;
+        moreOpenId.value = null;
+      }
     }
 
     async function refreshOne(id) {
