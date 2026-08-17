@@ -65,17 +65,11 @@ INJECT_JS_TEMPLATE = r"""
       divider: dark ? '#3c3c3c' : '#e4e6eb'
     };
   }
-  function applyTheme(el, t){
-    el.style.background = t.bg;
-    el.style.borderColor = t.border;
-    el.style.color = t.text;
-  }
   function restyleBar(){
     const t = themeCss();
     const bar = document.getElementById('gw-quota-bar');
-    const expand = document.getElementById('gw-q-expand');
-    if(bar) applyTheme(bar, t);
-    if(expand) applyTheme(expand, t);
+    // 只换文字色与分隔线色；背景保持透明（bar 融入输入框卡片，不涂底色）
+    if(bar) bar.style.color = t.text;
     document.querySelectorAll('.gw-q-divider').forEach(s=>{ s.style.background = t.divider; });
   }
   function inject(force){
@@ -89,14 +83,23 @@ INJECT_JS_TEMPLATE = r"""
     }
     bar = document.createElement('div');
     bar.id = 'gw-quota-bar';
-    let expand = document.getElementById('gw-q-expand');
-    if(expand) expand.remove();
+    // 清理旧版残留的折叠按钮（已废弃）
+    let _oldEx = document.getElementById('gw-q-expand');
+    if(_oldEx) _oldEx.remove();
     // 卡内顶条（真·贴边）：横条直接插进输入框卡片内部第一行——零缝隙、
-    // 宽度/圆角/边框天然继承卡片自身，无任何外层容器 gap 干扰。
+    // 撑满容器宽度（width:100% + 负 margin 抵消父容器 padding，分隔线横贯卡片），
     // 自身无背景无边框（融入卡片），只用底部分隔线区分状态区与输入区
     const T = themeCss();
     const barDivider = `<span class="gw-q-divider" style="width:1px;height:12px;background:${T.divider};margin:0 2px"></span>`;
-    bar.style.cssText = `display:flex;align-items:center;gap:6px;margin:0;padding:5px 12px 4px;background:transparent;border:none;border-bottom:1px solid ${T.divider};border-radius:0;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:11px;color:${T.text};box-sizing:border-box`;
+    bar.style.cssText = `display:flex;width:100%;align-items:center;gap:6px;margin:0;padding:5px 12px 4px;background:transparent;border:none;border-bottom:1px solid ${T.divider};border-radius:0;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:11px;color:${T.text};box-sizing:border-box`;
+    try {  // 父容器有 padding 时：bar 显式铺满父 border-box 宽（offsetWidth），
+      // 负 margin 抵消左 padding 贴住卡片左缘 → 分隔线横贯整张卡片
+      const _pc = getComputedStyle(composer);
+      const _pl = parseFloat(_pc.paddingLeft) || 0;
+      bar.style.width = (composer.offsetWidth || bar.offsetWidth) + 'px';
+      bar.style.marginLeft = (-_pl) + 'px';
+      bar.style.marginRight = '0';
+    } catch(e){}
     bar.innerHTML = '<span id="gw-q-dot" style="width:6px;height:6px;border-radius:50%;background:#22c55e;flex-shrink:0"></span>'
       + '<span style="font-weight:600">AI Gateway</span>'
       + '<span style="opacity:.45;font-size:10px">工作中</span>'
@@ -105,50 +108,22 @@ INJECT_JS_TEMPLATE = r"""
       + '<span style="opacity:.55">账号</span><b id="gw-q-count" style="font-weight:600;font-family:ui-monospace,Consolas">--</b>'
       + barDivider
       + '<span style="opacity:.55">剩余额度</span><b id="gw-q-remain" style="font-weight:600;font-family:ui-monospace,Consolas">--</b>'
-      + '</span>'
-      + '<span id="gw-q-toggle" style="cursor:pointer;opacity:.35;margin-left:2px;font-size:12px;user-select:none">›</span>';
-    // 折叠态展开按钮（卡外小胶囊，横条收起时显示），同套主题配色
-    expand = document.createElement('div');
-    expand.id = 'gw-q-expand';
-    expand.style.cssText = `display:none;cursor:pointer;align-self:flex-start;align-items:center;gap:5px;margin:0 0 6px;padding:3px 8px;background:${T.bg};border:1px solid ${T.border};border-radius:8px;font-family:inherit;font-size:11px;color:${T.text};box-shadow:0 1px 2px rgba(0,0,0,0.05);box-sizing:border-box`;
-    expand.innerHTML = '<span id="gw-q-expand-dot" style="width:6px;height:6px;border-radius:50%;background:#22c55e;display:inline-block"></span><span style="font-weight:600">AI Gateway</span><span style="opacity:.45;margin-left:2px">&#9656;</span>';
-    if(composer.parentElement) composer.parentElement.insertBefore(expand, composer);
+      + '</span>';
     composer.insertBefore(bar, composer.firstChild);  // 横条 = 卡片内部第一行，零缝隙贴边
-    // 交互：› 折叠 → 藏胶囊只留展开按钮；▸ 展开 → 恢复胶囊
-    const tg = document.getElementById('gw-q-toggle');
-    if(tg){
-      tg.onclick = ()=>{
-        bar.style.display = 'none';
-        expand.style.display = 'inline-flex';
-        window.__gwCollapsed = true;
-      };
-    }
-    expand.onclick = ()=>{
-      bar.style.display = 'inline-flex';
-      expand.style.display = 'none';
-      window.__gwCollapsed = false;
-    };
-    // 恢复记忆的折叠状态
-    if(window.__gwCollapsed){
-      bar.style.display = 'none';
-      expand.style.display = 'inline-flex';
-    }
     return true;
   }
   function loadData(){
     if(window.__gwJSVer !== MY_VER) return;
     fetch('__QUOTA_URL__', {cache:'no-store'}).then(r=>r.json()).then(d=>{
       const c = document.getElementById('gw-q-count'), m = document.getElementById('gw-q-remain');
-      const dot = document.getElementById('gw-q-dot'), ed = document.getElementById('gw-q-expand-dot');
+      const dot = document.getElementById('gw-q-dot');
       if(!c || !m) return;
       c.textContent = d.count;
       m.textContent = Math.round(d.remain).toLocaleString();
       if(dot){ dot.style.background = '#22c55e'; }
-      if(ed){ ed.style.background = '#22c55e'; }
     }).catch(()=>{
-      const dot = document.getElementById('gw-q-dot'), ed = document.getElementById('gw-q-expand-dot');
+      const dot = document.getElementById('gw-q-dot');
       if(dot){ dot.style.background = '#9aa0a8'; }
-      if(ed){ ed.style.background = '#9aa0a8'; }
     });
   }
   function tick(){ if(inject()){ loadData(); } }
