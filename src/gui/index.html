@@ -285,6 +285,10 @@
                 <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>
                 <span>CodeBuddy</span>
               </div>
+              <div class="sync-dd-item" @click="exportDdOpen=false; exportToIDE('zcode')">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 9l-4 3 4 3M16 9l4 3-4 3M13 5l-2 14"/></svg>
+                <span>ZCode</span>
+              </div>
             </div>
           </div>
           <button class="sync-btn" id="proxyChatToggleBtn" @click="chatCardCollapsed = !chatCardCollapsed">
@@ -1441,7 +1445,22 @@
       </div>
       <div class="modal-body">
         <div class="changelog-version">v1.1.2</div>
-        <div class="changelog-date">2026-08-15</div>
+        <div class="changelog-date">2026-08-18</div>
+
+        <div class="changelog-section-title">功能新增</div>
+        <ul class="changelog-list">
+          <li>文件导入支持 TXT：可直接拖拽 txt / json 文件到导入框批量导入，导入时可填写批次备注标签，批次管理更清晰</li>
+          <li>ZCode 客户端兼容：ZCode 现可正常接入网关使用</li>
+          <li>额度横条双端注入：除 WorkBuddy 外新增 ZCode 注入，横条贴附在输入框卡片内部顶端（零缝隙融合），账号数与剩余额度实时刷新</li>
+          <li>额度横条主题跟随：横条配色跟随 WorkBuddy / ZCode 深浅色主题实时切换，深色模式不再突兀</li>
+          <li>对话日志增强：请求日志记录 system prompt 摘要与消息概览，拦截 / 拒绝类短响应全文落日志，排查上游问题不用抓包</li>
+        </ul>
+
+        <div class="changelog-section-title">体验优化</div>
+        <ul class="changelog-list">
+          <li>签到体验优化：签到执行期间显示等待弹窗不再静默后台跑，完成后自动关闭菜单，提示与加载状态同步</li>
+          <li>文件导入前端预检：格式不对直接提示，不再误弹批次弹窗；导入过程增加 loading 提示，并收紧裸 token 判定减少误识别</li>
+        </ul>
 
         <div class="changelog-section-title">问题修复</div>
         <ul class="changelog-list">
@@ -4034,8 +4053,11 @@ const vApp = createApp({
     }
 
     async function exportToIDE(ide) {
-      const name = ide === 'codebuddy' ? 'CodeBuddy' : 'WorkBuddy';
-      if (!await showConfirm(`确认将本网关配置导入至 ${name}？\n\n这将覆盖 ${name} 现有的 API 配置。`, '导入确认')) return;
+      const name = ide === 'codebuddy' ? 'CodeBuddy' : (ide === 'zcode' ? 'ZCode' : 'WorkBuddy');
+      const confirmMsg = ide === 'zcode'
+        ? `确认将本网关配置导入至 ZCode？\n\n将以「AI Gateway」提供商合并进 ZCode 配置（自动备份原文件），不影响 ZCode 里其他提供商配置。`
+        : `确认将本网关配置导入至 ${name}？\n\n这将覆盖 ${name} 现有的 API 配置。`;
+      if (!await showConfirm(confirmMsg, '导入确认')) return;
       const loading = ide === 'codebuddy' ? cbExportLoading : wbExportLoading;
       const label = ide === 'codebuddy' ? cbExportLabel : wbExportLabel;
       loading.value = true; label.value = '导入中..';
@@ -4043,7 +4065,11 @@ const vApp = createApp({
         const r = JSON.parse(await pywebview.api.export_config(ide, String(proxyPort.value), String(proxyKey.value||'')));
         if (r.success) {
           label.value = `已导入${r.count}项`;
-          showToast(`已写入: ${r.path}${r.backup?'\n备份: '+r.backup:''}`, 'success');
+          if (ide === 'zcode') {
+            showConfirm(`已写入 ZCode 配置（${r.count} 个模型）。ZCode 无热重载，需完全退出并重新打开 ZCode 后生效。`, '导入成功', { danger: false, okText: '知道了' });
+          } else {
+            showToast(`已写入: ${r.path}${r.backup?'\n备份: '+r.backup:''}`, 'success');
+          }
         } else { throw new Error(r.error); }
       } catch(e) {
         label.value = '导入失败';

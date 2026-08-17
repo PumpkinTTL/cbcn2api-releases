@@ -1874,13 +1874,16 @@ class GuiApi:
                 "backup": str(backup) if backup else ""}
 
     def export_config(self, target: str, port: str = "", password: str = "") -> str:
-        """导出网关配置到本地 IDE 的 models.json。
+        """导出网关配置到本地 IDE 的配置文件。
         target='workbuddy' → ~/.workbuddy/models.json（裸数组）
         target='codebuddy' → ~/.codebuddy/models.json（{"models": [...]} 包裹）
+        target='zcode'     → ~/.zcode/v2/config.json（合并进 provider 字典，不动用户其他配置）
         """
         import pathlib
         port_num = int(port) if port and port.strip() else getattr(self, "_proxy_port", 8001)
         api_key = password.strip() if password else ""
+        if target == "zcode":
+            return json.dumps(self._export_zcode_config(port_num, api_key))
         config = self._build_model_configs(port_num, api_key)
         profiles = {
             "workbuddy": {"folder": ".workbuddy", "app": "WorkBuddy", "wrap": config},
@@ -1903,6 +1906,78 @@ class GuiApi:
             return json.dumps(self._write_config_file(tgt, prof["wrap"]))
         except Exception as e:
             return json.dumps({"error": str(e)})
+
+    # ZCode 网关 provider 的固定 UUID：重复导入时 upsert 到同一 provider，不产生重复条目
+    _ZCODE_PROVIDER_ID = "a1b2c3d4-0000-4000-8000-cbcn2apigw01"
+
+    def _export_zcode_config(self, port_num: int, api_key: str) -> dict:
+        """把网关作为一个 openai-compatible provider 合并进 ~/.zcode/v2/config.json。
+        读现有配置 → upsert provider → 写回（先备份）。模型列表按 ZCode 的
+        config 结构生成（limit/modalities/reasoning），与手写配置同构。"""
+        import pathlib
+        tgt = pathlib.Path.home() / ".zcode" / "v2" / "config.json"
+        try:
+            cfg = json.loads(tgt.read_text(encoding="utf-8")) if tgt.exists() else {}
+        except Exception:
+            cfg = {}
+        providers = cfg.setdefault("provider", {})
+        # 模型规格：显示名 + context/output 上限。ZCode 用 models 的 key 当默认
+        # 显示名（全小写难看），必须带 name 字段美化；reasoning 仅 deepseek 系开
+        specs = {
+            "deepseek-v4-flash": ("DeepSeek-V4-Flash", 1000000, 128000),
+            "deepseek-v4-pro": ("DeepSeek-V4-Pro", 1000000, 128000),
+            "hy3": ("Hy3", 192000, 64000),
+            "glm-5.2": ("GLM-5.2", 1000000, 128000),
+            "glm-5.1": ("GLM-5.1", 200000, 48000),
+            "minimax-m3": ("MiniMax-M3", 512000, 48000),
+            "kimi-k3-1": ("Kimi-K3", 1000000, 48000),
+            "kimi-k2.7": ("Kimi-K2.7-Code", 256000, 32000),
+            "kimi-k2.6": ("Kimi-K2.6", 256000, 32000),
+            "auto": ("Auto", 1000000, 64000),
+        }
+        models = {}
+        for mid, (name, ctx, out) in specs.items():
+            m = {
+                "name": name,
+                "limit": {"context": ctx, "output": out},
+                "modalities": {"input": ["text"], "output": ["text"]},
+            }
+            if mid in ("deepseek-v4-flash", "deepseek-v4-pro"):
+                m["reasoning"] = {
+                    "enabled": True,
+                    "variants": ["off", "high", "max"],
+                    "defaultVariant": "max",
+                }
+            models[mid] = m
+        existing = providers.get(self._ZCODE_PROVIDER_ID, {})
+        providers[self._ZCODE_PROVIDER_ID] = {
+            "name": "AI Gateway",
+            "kind": "openai-compatible",
+            "options": {
+                "apiKey": api_key or "none",
+                "baseURL": f"http://127.0.0.1:{port_num}/v1",
+                "apiKeyRequired": True,
+            },
+            "enabled": True,
+            "source": "custom",
+            # 用户在 ZCode 里改过的模型设置（zcode.modified 等）保留，不粗暴覆盖
+            "models": {**models, **{k: v for k, v in (existing.get("models") or {}).items()
+                                     if k in models and v.get("zcode", {}).get("modified")}},
+        }
+        backup = ""
+        if tgt.exists():
+            bak = tgt.with_suffix(".json.bak-gw")
+            try:
+                bak.write_text(tgt.read_text(encoding="utf-8"), encoding="utf-8")
+                backup = str(bak)
+            except Exception:
+                pass
+        try:
+            tgt.parent.mkdir(parents=True, exist_ok=True)
+            tgt.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
+            return {"success": True, "path": str(tgt), "count": len(specs), "backup": backup}
+        except Exception as e:
+            return {"error": str(e)}
 
     def _is_json(self, s: str) -> bool:
         try:
