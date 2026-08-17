@@ -1,8 +1,9 @@
-"""CDP 注入模块：连 WorkBuddy CDP（9222），把网关额度横条注入 AI 对话输入框上方。
+"""CDP 注入模块：连 WorkBuddy（9222）/ ZCode（9223）CDP，把网关额度横条注入 AI 对话输入框上方。
 
 横条每 5s fetch 网关 `/__gw/quota` 刷新（消耗通过 account_stats.total_credit 实时反映），
-带版本控制（多次注入自动失效旧 JS）、折叠按钮、MutationObserver（视图切换自动重挂）。
-WorkBuddy 未开启 CDP（9222 未监听）时静默返回 ok=False，不抛错。
+带版本控制（多次注入自动失效旧 JS）、折叠按钮、MutationObserver（视图切换自动重挂）、
+主题跟随（WorkBuddy=data-theme/vscode-dark；ZCode=html.dark/theme-zai-dark）。
+目标应用未开 CDP 端口时静默返回 ok=False，不抛错。
 """
 import json
 import socket
@@ -11,7 +12,12 @@ import threading
 import requests
 from websocket import create_connection
 
-CDP_PORT = 9222
+# 注入目标：端口 + 深色模式检测（各家标记不同：WorkBuddy 是 vscode 系，ZCode 是 zai 系）
+INJECT_TARGETS = {
+    9222: "WorkBuddy",
+    9223: "ZCode",
+}
+
 _LOCK = threading.Lock()
 
 INJECT_JS_TEMPLATE = r"""
@@ -19,46 +25,95 @@ INJECT_JS_TEMPLATE = r"""
   window.__gwJSVer = (window.__gwJSVer || 0) + 1;
   const MY_VER = window.__gwJSVer;  // 旧注入的 interval/observer 版本不匹配自动失效
   function findComposer(){
+    // 优先按各家已知锚点
     let c = document.querySelector('section.wb-home-composer')
       || document.querySelector('[class*="wb-home-composer"]')
+      || document.querySelector('.chat-composer-input-surface')
       || document.querySelector('[class*="Composer"]');
-    if(c) return c;
+    // 通用精确定位：从编辑器向上找第一个「有边框/圆角」的真实外框
+    // （透明容器不算——横条要贴在视觉输入框卡片上，不是外层布局容器上）
     const ed = document.querySelector('[contenteditable="true"]') || document.querySelector('textarea');
-    if(!ed) return null;
+    if (ed) {
+      let el = ed.parentElement, best = null;
+      for (let i = 0; i < 8 && el && el !== document.body; i++) {
+        const cs = getComputedStyle(el);
+        const hasBorder = parseFloat(cs.borderTopWidth) > 0 || parseFloat(cs.borderLeftWidth) > 0;
+        const hasRadius = parseFloat(cs.borderTopLeftRadius) > 0;
+        if (hasBorder || (hasRadius && cs.backgroundColor !== 'rgba(0, 0, 0, 0)')) { best = el; break; }
+        el = el.parentElement;
+      }
+      if (best) return best;
+    }
+    if (c) return c;
+    if (!ed) return null;
     return ed.closest('section') || ed.closest('[class*="composer"]') || ed.closest('[class*="Composer"]') || ed.closest('[class*="input-box"]') || ed.parentElement;
+  }
+  // 主题跟随：WorkBuddy 用 data-theme / vscode-dark class；ZCode 用 html.dark / theme-zai-dark
+  function isDark(){
+    const h = document.documentElement;
+    return h.getAttribute('data-theme') === 'dark'
+      || h.classList.contains('vscode-dark') || h.classList.contains('cb-dark')
+      || h.classList.contains('dark') || h.classList.contains('theme-zai-dark');
+  }
+  // 两套配色（bar/expand 共用）：浅色=白底深字，深色=#2b2b2b 底浅字
+  function themeCss(){
+    const dark = isDark();
+    return {
+      bg: dark ? '#2b2b2b' : '#fff',
+      border: dark ? '#3c3c3c' : '#e4e6eb',
+      text: dark ? '#cccccc' : '#1f2329',
+      divider: dark ? '#3c3c3c' : '#e4e6eb'
+    };
+  }
+  function applyTheme(el, t){
+    el.style.background = t.bg;
+    el.style.borderColor = t.border;
+    el.style.color = t.text;
+  }
+  function restyleBar(){
+    const t = themeCss();
+    const bar = document.getElementById('gw-quota-bar');
+    const expand = document.getElementById('gw-q-expand');
+    if(bar) applyTheme(bar, t);
+    if(expand) applyTheme(expand, t);
+    document.querySelectorAll('.gw-q-divider').forEach(s=>{ s.style.background = t.divider; });
   }
   function inject(force){
     if(window.__gwJSVer !== MY_VER) return false;
     const composer = findComposer();
-    if(!composer || !composer.parentElement) return false;
+    if(!composer) return false;
     let bar = document.getElementById('gw-quota-bar');
     if(bar){
-      if(!force && bar.parentNode === composer.parentElement && bar.nextElementSibling === composer) return true;
+      if(!force && bar.parentNode === composer && composer.firstElementChild === bar) return true;
       bar.remove();
     }
     bar = document.createElement('div');
     bar.id = 'gw-quota-bar';
     let expand = document.getElementById('gw-q-expand');
     if(expand) expand.remove();
-    // 胶囊条（内容包裹，不撑满父容器）
-    bar.style.cssText = 'display:inline-flex;align-self:flex-start;align-items:center;gap:6px;margin:0 0 8px;padding:4px 10px;background:#fff;border:1px solid #e4e6eb;border-radius:14px;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:11px;color:#1f2329;box-shadow:0 1px 2px rgba(0,0,0,0.05);box-sizing:border-box';
+    // 卡内顶条（真·贴边）：横条直接插进输入框卡片内部第一行——零缝隙、
+    // 宽度/圆角/边框天然继承卡片自身，无任何外层容器 gap 干扰。
+    // 自身无背景无边框（融入卡片），只用底部分隔线区分状态区与输入区
+    const T = themeCss();
+    const barDivider = `<span class="gw-q-divider" style="width:1px;height:12px;background:${T.divider};margin:0 2px"></span>`;
+    bar.style.cssText = `display:flex;align-items:center;gap:6px;margin:0;padding:5px 12px 4px;background:transparent;border:none;border-bottom:1px solid ${T.divider};border-radius:0;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:11px;color:${T.text};box-sizing:border-box`;
     bar.innerHTML = '<span id="gw-q-dot" style="width:6px;height:6px;border-radius:50%;background:#22c55e;flex-shrink:0"></span>'
       + '<span style="font-weight:600">AI Gateway</span>'
       + '<span style="opacity:.45;font-size:10px">工作中</span>'
       + '<span class="gw-detail" style="display:inline-flex;align-items:center;gap:6px">'
-      + '<span style="width:1px;height:12px;background:#e4e6eb;margin:0 2px"></span>'
+      + barDivider
       + '<span style="opacity:.55">账号</span><b id="gw-q-count" style="font-weight:600;font-family:ui-monospace,Consolas">--</b>'
-      + '<span style="width:1px;height:12px;background:#e4e6eb;margin:0 2px"></span>'
+      + barDivider
       + '<span style="opacity:.55">剩余额度</span><b id="gw-q-remain" style="font-weight:600;font-family:ui-monospace,Consolas">--</b>'
       + '</span>'
       + '<span id="gw-q-toggle" style="cursor:pointer;opacity:.35;margin-left:2px;font-size:12px;user-select:none">›</span>';
-    // 折叠态展开按钮（胶囊隐藏时只剩它，节省空间）
+    // 折叠态展开按钮（卡外小胶囊，横条收起时显示），同套主题配色
     expand = document.createElement('div');
     expand.id = 'gw-q-expand';
-    expand.style.cssText = 'display:none;cursor:pointer;align-self:flex-start;align-items:center;gap:5px;margin:0 0 8px;padding:3px 8px;background:#fff;border:1px solid #e4e6eb;border-radius:12px;font-family:inherit;font-size:11px;color:#1f2329;box-shadow:0 1px 2px rgba(0,0,0,0.05);box-sizing:border-box';
+    expand.style.cssText = `display:none;cursor:pointer;align-self:flex-start;align-items:center;gap:5px;margin:0 0 6px;padding:3px 8px;background:${T.bg};border:1px solid ${T.border};border-radius:8px;font-family:inherit;font-size:11px;color:${T.text};box-shadow:0 1px 2px rgba(0,0,0,0.05);box-sizing:border-box`;
     expand.innerHTML = '<span id="gw-q-expand-dot" style="width:6px;height:6px;border-radius:50%;background:#22c55e;display:inline-block"></span><span style="font-weight:600">AI Gateway</span><span style="opacity:.45;margin-left:2px">&#9656;</span>';
-    composer.parentElement.insertBefore(expand, composer);
-    composer.parentElement.insertBefore(bar, composer);  // 胶囊紧贴输入框上方
+    if(composer.parentElement) composer.parentElement.insertBefore(expand, composer);
+    composer.insertBefore(bar, composer.firstChild);  // 横条 = 卡片内部第一行，零缝隙贴边
     // 交互：› 折叠 → 藏胶囊只留展开按钮；▸ 展开 → 恢复胶囊
     const tg = document.getElementById('gw-q-toggle');
     if(tg){
@@ -96,7 +151,16 @@ INJECT_JS_TEMPLATE = r"""
       if(ed){ ed.style.background = '#9aa0a8'; }
     });
   }
-  function tick(){ if(inject()) loadData(); }
+  function tick(){ if(inject()){ loadData(); } }
+  // 主题切换跟随：WorkBuddy 切深/浅色时 html 的 class 与 data-theme 同步变化，
+  // 检测到即重刷横条配色。必须幂等注册（首次注入与重复注入都要有），
+  // 否则升级 JS 后旧实例占着 __gwInited、新实例拿不到监听。
+  if(!window.__gwThemeObs){
+    try {
+      window.__gwThemeObs = new MutationObserver(()=>{ restyleBar(); });
+      window.__gwThemeObs.observe(document.documentElement, {attributes:true, attributeFilter:['class','data-theme']});
+    } catch(e){}
+  }
   if(!window.__gwInited){
     window.__gwInited = true;
     tick();
@@ -116,26 +180,32 @@ INJECT_JS_TEMPLATE = r"""
 """
 
 
-def _cdp_available() -> bool:
+def _cdp_available(port: int) -> bool:
     try:
-        s = socket.create_connection(("127.0.0.1", CDP_PORT), timeout=1)
+        s = socket.create_connection(("127.0.0.1", port), timeout=1)
         s.close()
         return True
     except Exception:
         return False
 
 
-def inject_quota_bar(proxy_port: int = 8001) -> dict:
-    """连 WorkBuddy CDP 注入额度横条。WorkBuddy 未开/未带 CDP 参数时返回 ok=False（静默）。"""
-    if not _cdp_available():
-        return {"ok": False, "error": "WorkBuddy CDP 未开启（9222 未监听）"}
+def _first_page(port: int):
+    """取目标应用的第一个 page 渲染进程。"""
+    targets = requests.get(f"http://127.0.0.1:{port}/json", timeout=3).json()
+    return next((t for t in targets if t["type"] == "page"), None)
+
+
+def inject_quota_bar(proxy_port: int = 8001, cdp_port: int = 9222) -> dict:
+    """连目标应用 CDP 注入额度横条。未开 CDP 端口时返回 ok=False（静默）。"""
+    name = INJECT_TARGETS.get(cdp_port, f"port {cdp_port}")
+    if not _cdp_available(cdp_port):
+        return {"ok": False, "error": f"{name} CDP 未开启（{cdp_port} 未监听）"}
     with _LOCK:
         ws = None
         try:
-            targets = requests.get(f"http://127.0.0.1:{CDP_PORT}/json", timeout=3).json()
-            page = next((t for t in targets if t["type"] == "page"), None)
+            page = _first_page(cdp_port)
             if not page:
-                return {"ok": False, "error": "未找到 WorkBuddy 主渲染进程"}
+                return {"ok": False, "error": f"未找到 {name} 主渲染进程"}
             js = INJECT_JS_TEMPLATE.replace("__QUOTA_URL__",
                                             f"http://127.0.0.1:{proxy_port}/__gw/quota")
             ws = create_connection(page["webSocketDebuggerUrl"], timeout=5)
@@ -153,14 +223,21 @@ def inject_quota_bar(proxy_port: int = 8001) -> dict:
                     pass
 
 
-def bar_present() -> bool:
-    """WorkBuddy 渲染进程里横条是否已注入（轮询保活用，避免重复注入）。"""
-    if not _cdp_available():
+def inject_all(proxy_port: int = 8001) -> dict:
+    """向所有已开 CDP 的目标应用注入（WorkBuddy 9222 / ZCode 9223）。返回 {应用名: 结果}。"""
+    out = {}
+    for port, name in INJECT_TARGETS.items():
+        out[name] = inject_quota_bar(proxy_port, port)
+    return out
+
+
+def bar_present(cdp_port: int = 9222) -> bool:
+    """目标渲染进程里横条是否已注入（轮询保活用，避免重复注入）。"""
+    if not _cdp_available(cdp_port):
         return False
     ws = None
     try:
-        targets = requests.get(f"http://127.0.0.1:{CDP_PORT}/json", timeout=3).json()
-        page = next((t for t in targets if t["type"] == "page"), None)
+        page = _first_page(cdp_port)
         if not page:
             return False
         ws = create_connection(page["webSocketDebuggerUrl"], timeout=5)

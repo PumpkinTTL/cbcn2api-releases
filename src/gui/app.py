@@ -1571,11 +1571,12 @@ class GuiApi:
 
             self._proxy_server = server
             self._proxy_port = port_num
-            # 集成 WorkBuddy：注入快捷方式 CDP 参数（用户双击桌面图标即带调试端口），
-            # 后台轮询检测到 WorkBuddy CDP 起来后自动注入额度横条（WorkBuddy 未开则静默等）
+            # 集成 WorkBuddy / ZCode：注入快捷方式 CDP 参数（用户双击桌面图标即带调试端口），
+            # 后台轮询检测到 CDP 起来后自动注入额度横条（应用未开则静默等）
             try:
                 from src.gui.wb_shortcut import inject as _wb_shortcut_inject
-                _wb_shortcut_inject()
+                _wb_shortcut_inject("workbuddy")
+                _wb_shortcut_inject("zcode")
             except Exception:
                 pass
             self._start_cdp_inject_loop(port_num)
@@ -1589,8 +1590,8 @@ class GuiApi:
             return json.dumps({"error": f"网关启动失败: {str(e)[:200]}"})
 
     def _start_cdp_inject_loop(self, port_num: int):
-        """后台线程：WorkBuddy CDP（9222）起来且横条不在时注入额度横条。
-        WorkBuddy 重启 / 页面 reload 后横条丢失会自动重注入。
+        """后台线程：WorkBuddy（9222）/ ZCode（9223）CDP 起来且横条不在时注入额度横条。
+        应用重启 / 页面 reload 后横条丢失会自动重注入。
         退出条件：捕获启动时的 server 引用——代理停止（_proxy_server 置 None）或
         已换新 server（快速 stop→start）时线程自然退出，杜绝死线程/双线程并存。"""
 
@@ -1600,13 +1601,14 @@ class GuiApi:
 
         def _loop():
             import time
-            from src.gui.cdp_injector import inject_quota_bar, bar_present
+            from src.gui.cdp_injector import inject_quota_bar, bar_present, INJECT_TARGETS
             while getattr(self, "_proxy_server", None) is server_ref:
-                try:
-                    if not bar_present() and inject_quota_bar(port_num).get("ok"):
+                for cdp_port in INJECT_TARGETS:
+                    try:
+                        if not bar_present(cdp_port):
+                            inject_quota_bar(port_num, cdp_port)
+                    except Exception:
                         pass
-                except Exception:
-                    pass
                 time.sleep(5)
 
         threading.Thread(target=_loop, daemon=True).start()

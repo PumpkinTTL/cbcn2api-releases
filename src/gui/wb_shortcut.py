@@ -1,8 +1,9 @@
-"""WorkBuddy 快捷方式 CDP 参数注入。
+"""快捷方式 CDP 参数注入（WorkBuddy / ZCode）。
 
-网关启动代理服务时，给 WorkBuddy 的桌面/开始菜单快捷方式追加
-`--remote-debugging-port=9222 --remote-allow-origins=*`，用户照常双击桌面图标
-启动 WorkBuddy 就自带 CDP 调试端口（供 cdp_injector 注入额度横条）。
+网关启动代理服务时，给应用的桌面/开始菜单快捷方式追加 CDP 调试参数，
+用户照常双击桌面图标启动就自带调试端口（供 cdp_injector 注入额度横条）：
+- WorkBuddy → --remote-debugging-port=9222
+- ZCode     → --remote-debugging-port=9223
 停代理/网关退出时还原原 Arguments，不留痕。
 
 实现：优先 pywin32 COM（同一进程操作 .lnk，毫秒级，不拖慢网关启停）；
@@ -12,9 +13,19 @@ import os
 import subprocess
 from pathlib import Path
 
-WB_ARGS = "--remote-debugging-port=9222 --remote-allow-origins=*"
+# 各应用注入配置：lnk 匹配模式 + CDP 参数（端口错开，可同时开）
+APP_CDP_CONFIGS = {
+    "workbuddy": {
+        "pattern": "WorkBuddy*.lnk",
+        "args": "--remote-debugging-port=9222 --remote-allow-origins=*",
+    },
+    "zcode": {
+        "pattern": "ZCode*.lnk",
+        "args": "--remote-debugging-port=9223 --remote-allow-origins=*",
+    },
+}
 
-# path(str) -> 注入前的原 Arguments（进程内记忆，restore 时还原）
+# path(str) -> 注入前的原 Arguments（进程内记忆，restore 时还原；按应用隔离）
 _bak: dict = {}
 
 _LOOKUP_DIRS = [
@@ -24,7 +35,7 @@ _LOOKUP_DIRS = [
     ("PROGRAMDATA", r"Microsoft\Windows\Start Menu\Programs"),
 ]
 
-def _find_shortcuts() -> list:
+def _find_shortcuts(pattern: str) -> list:
     out = []
     for env, sub in _LOOKUP_DIRS:
         base = os.environ.get(env) or ""
@@ -34,7 +45,7 @@ def _find_shortcuts() -> list:
         if not root.exists():
             continue
         try:
-            for lnk in root.rglob("WorkBuddy*.lnk"):
+            for lnk in root.rglob(pattern):
                 out.append(lnk)
         except Exception:
             continue
@@ -86,10 +97,13 @@ def _set_args(path: Path, args: str) -> bool:
         return False
 
 
-def inject() -> int:
-    """给所有 WorkBuddy 快捷方式注入 CDP 参数（记录原值，幂等）。返回修改数。"""
+def inject(app: str = "workbuddy") -> int:
+    """给应用的所有快捷方式注入 CDP 参数（记录原值，幂等）。返回修改数。"""
+    cfg = APP_CDP_CONFIGS.get(app)
+    if not cfg:
+        return 0
     changed = 0
-    for p in _find_shortcuts():
+    for p in _find_shortcuts(cfg["pattern"]):
         key = str(p)
         if key in _bak:
             continue
@@ -97,9 +111,9 @@ def inject() -> int:
         if orig is None:
             continue
         _bak[key] = orig
-        if WB_ARGS in (orig or ""):
+        if cfg["args"] in (orig or ""):
             continue
-        new_args = (orig + " " + WB_ARGS).strip() if orig else WB_ARGS
+        new_args = (orig + " " + cfg["args"]).strip() if orig else cfg["args"]
         if _set_args(p, new_args):
             changed += 1
     return changed
