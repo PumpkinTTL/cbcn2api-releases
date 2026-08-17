@@ -203,6 +203,7 @@ async def _normalize_text_stream(
     aiter: AsyncIterator[str],
     usage_box: Optional[dict] = None,
     deadline: Optional[float] = None,
+    content_box: Optional[dict] = None,
 ) -> AsyncGenerator[str, None]:
     """规整上游 SSE，对照 9router passthrough 模式：
     - 只删空 tool_calls: []（CodeBuddy CN 每块都带，AI SDK 误判）
@@ -246,6 +247,16 @@ async def _normalize_text_stream(
                     # 捕获 usage（最后一个 chunk 携带）
                     if usage_box is not None and isinstance(obj.get("usage"), dict):
                         usage_box["usage"] = obj["usage"]
+
+                    # 捕获正文摘要（content_box：短响应排查用——拦截/拒绝消息
+                    # 通常很短，全文落日志；正常长回答只记长度，不刷屏）
+                    if content_box is not None:
+                        for choice in obj.get("choices", []):
+                            c = choice.get("delta", {}).get("content")
+                            if c:
+                                content_box["len"] = content_box.get("len", 0) + len(c)
+                                if content_box.get("len", 0) <= 1200:
+                                    content_box["text"] = content_box.get("text", "") + c
 
                     for choice in obj.get("choices", []):
                         delta = choice.get("delta", {})
@@ -307,7 +318,25 @@ async def _stream_inner(
 
         # add_log 是同步 sqlite 写，GUI 线程并发写库时可能抛 "database is locked"。
         # 这里裸调会让异常从生成器里穿出去，把一次本来能成功的请求打成 500。
-        _safe_log("request", platform, acc.id, acc.nickname, model, f"开始请求 model={model}", "")
+        # request 日志带请求摘要：模型 + 消息数 + 首个 system prompt（前 300 字符）。
+        # 排查「客户端注入提示词导致上游拦截」类问题——直接看日志就能确认
+        # 上游收到的是什么，不用再抓包。
+        req_detail = ""
+        try:
+            msgs = payload.get("messages", []) or []
+            sys_prompt = ""
+            for m in msgs:
+                if m.get("role") == "system" and m.get("content"):
+                    c = m["content"]
+                    sys_prompt = (c if isinstance(c, str) else json.dumps(c, ensure_ascii=False))[:300]
+                    break
+            req_detail = json.dumps(
+                {"model": model, "msgs": len(msgs), "system": sys_prompt},
+                ensure_ascii=False,
+            )
+        except Exception:
+            pass
+        _safe_log("request", platform, acc.id, acc.nickname, model, f"开始请求 model={model}", req_detail)
 
         base_url = resolve_base_url()
         api_url = f"{base_url}/v2/chat/completions"
@@ -422,19 +451,27 @@ async def _stream_inner(
 
             logger.info("[调度] 账号=%s 请求成功", acc.nickname)
             usage_box = {}
+            content_box = {}
             try:
-                async for piece in _normalize_text_stream(_combined(), usage_box, deadline):
+                async for piece in _normalize_text_stream(_combined(), usage_box, deadline, content_box):
                     sent_any = True
                     yield piece
             finally:
                 await resp.aclose()
+                # 短响应（≤500 字符）全文落日志：敏感词拦截/系统拒绝这类消息
+                # 通常很短且不走 error 结构（choices 正常返回），非 error 分支
+                # 记录不到内容，这里兜住——响应原文进日志，排查不用抓包。
+                short_resp = content_box.get("text") if content_box.get("len", 0) <= 500 else None
                 if usage_box.get("usage"):
                     u = usage_box["usage"]
                     consumed = _extract_consumed(u)
                     if consumed > 0:
                         token_rotator.deduct_quota(acc.id, consumed)
                     update_account_stats(platform, acc.id, u)
-                    _safe_log("success", platform, acc.id, acc.nickname, model, f"消耗 {consumed}" if consumed > 0 else "请求成功", "")
+                    if not short_resp:
+                        _safe_log("success", platform, acc.id, acc.nickname, model, f"消耗 {consumed}" if consumed > 0 else "请求成功", "")
+                if short_resp:
+                    _safe_log("success", platform, acc.id, acc.nickname, model, f"短响应({content_box['len']}字): {short_resp}", "")
             return
         except httpx.TimeoutException as e:
             await resp.aclose()
