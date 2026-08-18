@@ -863,3 +863,18 @@ input[type="number"] { -moz-appearance: textfield; }
   color: #1976d2; cursor: pointer; margin-top: 2px;
 }
 .overview-action-btn:hover { background: rgba(25,118,210,0.18); }
+
+/* 全部账号限流警示横幅（黄色警示 + 内联探测按钮） */
+.all-cooldown-banner {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 10px;
+  background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 8px; font-size: 13px; color: var(--warning, #f59e0b);
+}
+.all-cooldown-banner svg { flex-shrink: 0; }
+.banner-action-btn {
+  border: 1px solid rgba(245, 158, 11, 0.5); background: rgba(245, 158, 11, 0.15);
+  color: var(--warning, #f59e0b); font-size: 12px; padding: 2px 10px;
+  border-radius: 6px; cursor: pointer;
+}
+.banner-action-btn:hover { background: rgba(245, 158, 11, 0.28); }

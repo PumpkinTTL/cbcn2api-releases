@@ -330,3 +330,21 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
   .proxy-fields input { width: 100%; }
 }
 
+
+/* 激活失败错误框：标题 + 提示分层，醒目于旧的纯文本行 */
+.license-error.error-box {
+  margin-top: 12px; padding: 10px 12px; text-align: left;
+  background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 8px;
+}
+.license-error.error-box .act-err-title {
+  font-size: 14px; font-weight: 600; color: #ef4444;
+  display: flex; align-items: center; gap: 6px;
+}
+.license-error.error-box .act-err-title::before {
+  content: ''; width: 14px; height: 14px; flex-shrink: 0;
+  background: #ef4444; clip-path: polygon(0 0, 100% 0, 100% 60%, 60% 60%, 60% 100%, 40% 100%, 40% 60%, 0 60%);
+}
+.license-error.error-box .act-err-hint {
+  font-size: 12px; color: #b91c1c; margin-top: 4px; opacity: 0.85;
+}
