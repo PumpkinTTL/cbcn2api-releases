@@ -82,18 +82,6 @@ def _run_migrations(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE accounts ADD COLUMN auth_type TEXT")
     except sqlite3.OperationalError:
         pass
-    # 新表无条件建（老库 user_version 已 1，_ensure_schema 不再跑）
-    try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS offline_license_records (
-                code TEXT PRIMARY KEY,
-                used_at INTEGER NOT NULL,
-                expires_at INTEGER,
-                machine_code TEXT DEFAULT ''
-            )
-        """)
-    except sqlite3.OperationalError:
-        pass
 
 
 def _ensure_schema(conn: sqlite3.Connection):
@@ -698,43 +686,6 @@ def get_setting(key: str, default: str = "") -> str:
             "SELECT value FROM settings WHERE key=?", (key,)
         ).fetchone()
         return row["value"] if row else default
-    finally:
-        conn.close()
-
-
-def mark_offline_used(code: str, expires_at=None, machine_code: str = ""):
-    """登记已使用的离线授权码（防重用，落库不依赖激活码缓存文件）。"""
-    conn = _get_conn()
-    try:
-        conn.execute(
-            "INSERT OR IGNORE INTO offline_license_records (code, used_at, expires_at, machine_code) VALUES (?,?,?,?)",
-            (code, int(time.time()), expires_at, machine_code),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-
-def is_offline_used(code: str) -> bool:
-    """查询离线授权码是否已使用。"""
-    conn = _get_conn()
-    try:
-        row = conn.execute(
-            "SELECT 1 FROM offline_license_records WHERE code=?", (code,)
-        ).fetchone()
-        return row is not None
-    finally:
-        conn.close()
-
-
-def get_offline_record(code: str):
-    """查询离线授权码记录（含 expires_at），无则返回 None。"""
-    conn = _get_conn()
-    try:
-        row = conn.execute(
-            "SELECT code, used_at, expires_at, machine_code FROM offline_license_records WHERE code=?", (code,)
-        ).fetchone()
-        return dict(row) if row else None
     finally:
         conn.close()
 

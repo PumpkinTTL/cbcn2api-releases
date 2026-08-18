@@ -1,32 +1,35 @@
-"""网关授权校验（远端 lic-admin 服务器 + 本地 license_core 兜底）。
+"""网关授权校验（远端 lic-admin 服务器在线校验）。
 
 授权开关与激活/验证由远端 lic-admin（license.bitlesu.com）控制：
   - 远端返回 enabled=false → 免授权直接可用
   - 远端返回 enabled=true  → 走激活/验证流程（机器码绑定）
-  - 远端请求失败（断网/服务器宕机）→ 沿用本地 license_core 校验兜底，
-    避免网络抖动锁死用户。
+  - 远端请求失败（断网/服务器宕机）→ 在线校验失败拒绝放行，无离线兜底。
+    授权状态完全由服务端裁决，客户端不含任何签发/验签密钥。
 
-签发：lic-admin 后台生成激活码。
+签发：lic-admin 后台生成在线激活码。
+（离线授权码机制已移除，历史实现见 git 分支 backup/offline-license-v1.1.2。）
 """
 import hashlib
 import json
 import os
+import secrets
 import sys
-import time
 import urllib.error
 import urllib.request
 import uuid
 
-from .license_core import generate as _generate, verify as _verify
+from .build_flags import INTERNAL_BUILD
+from .ed25519 import verify as _ed25519_verify
 
 # 产品标识 = lic-admin 后台的产品 ID（硬编码，查授权开关用，数字）
-# APP 域标识 = license_core 密钥派生用（必须与签发工具一致，字符串）
-APP_ID = 1
-APP = "cbcn2api"
-# 本地签名密钥（离线兜底用，与签发工具一致）。
-# 必须与 lic-admin 的离线签发密钥一致（data/offline_secret.key / LIC_ADMIN_OFFLINE_SECRET）。
-# 当前值 = 服务器 lic-admin 的 offline_secret.key（本地 lic-admin 已同步）。
-SECRET = b"febfe7465b42c748bf60d43de5d595f58c9b8b6da3906fd3f35366fdcef36c81"
+# 必须与 lic-admin 的 products 表 id 一致（AI Gateway = 100）
+APP_ID = 100
+
+# 响应验签公钥（Ed25519，32 字节 hex）。对应 lic-admin 的私钥
+# data/signing_key.hex（或环境变量 LIC_ADMIN_SIGNING_KEY）。
+# 公钥内嵌二进制是安全的：逆向提取公钥也伪造不出签名（需要服务端私钥）。
+# 轮换密钥 = 服务端换 seed + 这里换公钥 + 重发客户端。
+PUBKEY_HEX = "67f1297244b0fba0c96caf32376c3a31ba4cbd52c006a0d55d99523b09231185"
 
 # 项目根 = src 的上一级（.env 放这里；按文件位置解析，与启动时 CWD 无关）
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -64,30 +67,30 @@ def _dev_bypass() -> bool:
     return os.environ.get("GW_DEV") == "1"
 
 
+def _internal_exempt() -> bool:
+    """内部豁免版：build_internal.bat 打包时把 src/build_flags.py 的
+    INTERNAL_BUILD 翻成 True 编译进二进制，跳过全部授权校验。
+    豁免是编译期常量而非运行期开关 —— 正式版 exe 里恒为 False，
+    设环境变量 / 改配置文件均无法触发。"""
+    return INTERNAL_BUILD
+
+
 # 远端授权服务器（lic-admin）。
 # 开发模式（非打包）默认连本地 http://127.0.0.1:8022；打包版默认 https://license.bitlesu.com。
-# 环境变量 LIC_SERVER 始终优先，可覆盖（也可写进项目根 .env）。
-if os.environ.get("LIC_SERVER"):
+# LIC_SERVER 环境变量仅开发模式可覆盖 —— 打包版硬卡（frozen 检查）：
+# 否则破解者设 LIC_SERVER 指向本地假服务器返回 enabled=false 即可免授权（零门槛秒破）。
+if os.environ.get("LIC_SERVER") and not getattr(sys, "frozen", False):
     _LIC_SERVER = os.environ["LIC_SERVER"]
 elif getattr(sys, "frozen", False):
     _LIC_SERVER = "https://license.bitlesu.com"
 else:
     _LIC_SERVER = "http://127.0.0.1:8022"
 
-# 本地兜底缓存
+# 本地缓存（在线激活码持久化）
 _LICENSE_DIR = os.path.join(os.path.expanduser("~"), ".cbcn2api")
 _LICENSE_FILE = os.path.join(_LICENSE_DIR, "license.dat")
 
-# 离线激活码仅当前会话有效（打开一次），存内存不落盘 —— 关闭软件即作废，
-# 重启需要新的码。同码严格防重用（DB offline_license_records 记录，不能二次激活）。
-_session_offline_code = None
-
 _TIMEOUT = 5
-
-
-def generate(expiry_ts: int) -> str:
-    """签发（仅供本地调试，正式发码用 lic-admin 后台）。"""
-    return _generate(SECRET, expiry_ts, app=APP)
 
 
 def machine_code() -> str:
@@ -132,109 +135,139 @@ def _http_json(method: str, path: str, payload: dict = None, timeout: int = _TIM
         raise ConnectionError(f"远端授权服务不可达: {e}")
 
 
+def _canon_json(body: dict) -> bytes:
+    """响应体规范序列化 —— 与 lic-admin _signed() 的 json.dumps 参数必须完全一致。"""
+    return json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+def _check_sig(body, nonce: str) -> dict:
+    """校验服务端响应签名（Ed25519）。失败抛 ConnectionError（调用方按不可达处理）。
+
+    防两种攻击：
+      - 伪造响应（HTTPS MITM 改 body）：无私钥签不出有效签名
+      - 重放旧响应：签名覆盖本次请求的随机 nonce，跨请求回放 nonce 不匹配
+    返回去掉 _sig/_nonce 装饰字段后的原始响应体。"""
+    if not isinstance(body, dict):
+        raise ConnectionError("响应验签失败：响应格式异常")
+    sig_hex = body.get("_sig")
+    if not sig_hex or body.get("_nonce") != nonce:
+        raise ConnectionError("响应验签失败：服务器版本过旧或连接被劫持")
+    core = {k: v for k, v in body.items() if k not in ("_sig", "_nonce")}
+    msg = (nonce + "|").encode("utf-8") + _canon_json(core)
+    try:
+        ok = _ed25519_verify(bytes.fromhex(PUBKEY_HEX), msg, bytes.fromhex(sig_hex))
+    except Exception:
+        ok = False
+    if not ok:
+        raise ConnectionError("响应验签失败：签名无效")
+    return core
+
+
+def remote_config() -> dict:
+    """查询远端 config：返回 {"enabled": bool, "announcement": str|None}。
+    公告随 config 下发，不依赖 verify/激活成功，启动第一跳即送达。
+
+    验签只保护 enabled 字段（防 MITM 伪造 enabled=false 免授权）——公告是通知性
+    内容，不需要防伪，直接从原始响应体取，验签失败也照常下发。开发/内部豁免版
+    enabled 硬编码 False，但公告一样拉。"""
+    dev = _dev_bypass() or _internal_exempt()
+    try:
+        nonce = secrets.token_hex(16)
+        code, body = _http_json("GET", f"/api/v1/config?id={int(APP_ID)}&nonce={nonce}", timeout=3)
+        if code != 200 or not isinstance(body, dict) or "enabled" not in body:
+            raise ConnectionError(f"远端返回异常: code={code} body={body}")
+        # 公告直接取，不参与验签（通知性内容，不需要防伪）
+        announcement = body.get("announcement")
+        if dev:
+            return {"enabled": False, "announcement": announcement}
+        # 正式版：验签 enabled（防 MITM 篡改授权开关），公告已取不受验签影响
+        body = _check_sig(body, nonce)
+        return {"enabled": bool(body["enabled"]), "announcement": announcement}
+    except ConnectionError:
+        if dev:
+            return {"enabled": False, "announcement": None}
+        raise
+
+
 def remote_license_enabled() -> bool:
-    """查询远端：本产品（按硬编码 APP_ID）是否启用授权验证。
-    返回 True/False；远端不可达时抛 ConnectionError，由调用方决定离线兜底。"""
-    if _dev_bypass():
-        return False  # 开发豁免：免授权，不查远端
-    code, body = _http_json("GET", f"/api/v1/config?id={int(APP_ID)}", timeout=3)
-    if code == 200 and isinstance(body, dict) and "enabled" in body:
-        return bool(body["enabled"])
-    raise ConnectionError(f"远端返回异常: code={code} body={body}")
+    """查询远端：本产品是否启用授权验证。向后兼容封装（丢弃 announcement）。
+    新调用方应直接用 remote_config() 拿公告。"""
+    return remote_config()["enabled"]
 
 
-def _is_offline_code(code: str) -> bool:
-    """离线授权码格式：XXXX-XXXX-XXXX-XXXX（4 段 4 位）。
-    在线激活码格式：XXXX-XXXXXXXXXXXX（前缀-12位hex）。"""
-    parts = code.split("-")
-    return len(parts) == 4 and all(len(p) == 4 for p in parts)
+def _app_version() -> str:
+    """当前客户端版本（上报服务端：在线追踪 + 最低版本门槛/黑名单校验）。
+    取 src.updater.APP_VERSION；取不到（异常防御）返回空串，等价老客户端不上报。"""
+    try:
+        from src.updater import APP_VERSION
+        return str(APP_VERSION)
+    except Exception:
+        return ""
 
 
 def verify(code: str):
-    """验证已有授权（status 调用）。自动识别在线码 / 离线码。
-    返回 (ok: bool, expiry: int|None, msg: str)。
-
-    离线码：本地 offline_license_records 有记录 = 已授权（此前已激活），
-    只检查是否过期；远端可达时顺带向服务端确认（已禁用则吊销）。
-    在线码：走 /api/v1/verify，失败回退本地 license_core。
-    """
+    """验证已有授权（status 调用）：调 /api/v1/verify。
+    返回 (ok: bool, expiry: int|None, msg: str)。附加字段（公告/版本门槛）
+    经 status() 的 extras 透出，不进本元组。"""
     code = (code or "").strip().upper()
-    if _is_offline_code(code):
-        return _check_offline_status(code)
-    return _verify_online(code)
-
-
-def _check_offline_status(code: str):
-    """验证离线码已有授权（纯本地算法验签，不联网）。"""
-    ok, payload, msg = _verify(SECRET, code, app=APP)
-    if ok:
-        exp = int(payload.get("exp", 0)) if payload else None
-        if exp and exp < time.time():
-            return False, exp, "激活码已过期"
-        return True, exp, "授权有效"
-    return ok, None, msg
-
-
-def _verify_offline(code: str):
-    """离线授权码激活（纯本地算法验签，不联网）。
-    严格防重用：同一码只能激活一次，本地 offline_license_records 有记录即拒绝。
-    激活后持久化落盘 + 记录 machine_code（跨机器防重用兜底）。"""
-    from src.storage import store
-    # 防重用：已使用过的码一律拒绝（同码不能二次激活，防止反复白嫖）
-    try:
-        if store.is_offline_used(code):
-            return False, None, "激活码已被使用"
-    except Exception:
-        pass
-    # 本地 license_core 验签
-    ok, payload, msg = _verify(SECRET, code, app=APP)
-    if ok:
-        exp = int(payload.get("exp", 0)) if payload else None
-        if exp and exp < time.time():
-            return False, exp, "激活码已过期"
-        try:
-            store.mark_offline_used(code, exp, machine_code())
-        except Exception:
-            pass
-        return True, exp, "授权有效"
-    return ok, None, msg
+    ok, exp, msg, _extras = _verify_online(code)
+    return ok, exp, msg
 
 
 def _verify_online(code: str):
-    """在线激活码验证。"""
+    """在线激活码验证。返回 (ok, expiry, msg, extras)；
+    extras 含服务端附加能力：announcement（公告）/ update_required +
+    latest_version（版本软门槛提示），无则空 dict。"""
     try:
+        nonce = secrets.token_hex(16)
         s, body = _http_json("POST", "/api/v1/verify",
-                             {"code": code, "machine_code": machine_code(), "product_id": APP_ID})
-        if s == 200 and body.get("ok"):
-            exp = body.get("expires_at")
-            return True, int(exp) if exp else None, "授权有效"
-        return False, None, body.get("message") or body.get("detail") or "授权校验失败"
+                             {"code": code, "machine_code": machine_code(), "product_id": APP_ID,
+                              "app_version": _app_version(), "nonce": nonce})
+        if s == 200 and isinstance(body, dict):
+            body = _check_sig(body, nonce)
+            extras = {}
+            if body.get("announcement"):
+                extras["announcement"] = body["announcement"]
+            if body.get("update_required"):
+                extras["update_required"] = True
+                extras["latest_version"] = body.get("latest_version")
+            if body.get("ok"):
+                exp = body.get("expires_at")
+                return True, int(exp) if exp else None, "授权有效", extras
+            return False, None, "授权校验失败", extras
+        return False, None, body.get("message") or body.get("detail") or "授权校验失败", {}
     except ConnectionError:
-        return False, None, "无法连接服务器，请检查网络或使用离线密钥单次激活"
+        return False, None, "无法连接授权服务器或响应校验失败，请检查网络后重试", {}
+
+
+def heartbeat(code: str):
+    """轻量在线心跳（授权有效期间每 5 分钟一拍，app.py 后台线程驱动）。
+    服务端仅刷新在线时间/版本并回带最新公告；状态异常（禁用/过期/版本报废）403。
+    响应经 Ed25519 签名，防运行途中 MITM 伪造心跳 200 掩盖吊销。
+    返回 (state, msg, announcement)：state ∈ ok / rejected / unreachable。
+    unreachable（断网/服务器宕机）不算失效 —— 心跳不做可用性惩罚，只在
+    服务端「明确拒绝」时触发客户端锁定。"""
+    code = (code or "").strip().upper()
+    if not code:
+        return "rejected", "未激活", None
+    try:
+        nonce = secrets.token_hex(16)
+        s, body = _http_json("POST", "/api/v1/heartbeat",
+                             {"code": code, "machine_code": machine_code(),
+                              "app_version": _app_version(), "nonce": nonce}, timeout=5)
+        if s == 200 and isinstance(body, dict):
+            body = _check_sig(body, nonce)
+            if body.get("ok"):
+                return "ok", "OK", body.get("announcement") or None
+        return "rejected", body.get("message") or body.get("detail") or "授权已失效", None
+    except ConnectionError:
+        return "unreachable", "授权服务器不可达", None
 
 
 def activate(code: str):
-    """激活（自动识别在线/离线码）。
-    在线码：调 /api/v1/activate 绑定机器码，持久化到 license.dat。
-    离线码：仅当服务器不可达时才允许（断网兜底）。单次会话有效 —— 存内存不落盘，
-    关闭软件即作废，重启需新码。同码严格防重用（激活一次，DB 记录后不能再用）。
+    """激活在线激活码：调 /api/v1/activate 绑定机器码，持久化到 license.dat。
     返回 (ok: bool, expiry: int|None, msg: str)。"""
-    global _session_offline_code
     code = (code or "").strip().upper()
-    if _is_offline_code(code):
-        # 服务器在线时禁止离线激活 —— 离线只是断网兜底，不是常规渠道
-        try:
-            remote_license_enabled()
-            return False, None, "服务器在线，请使用在线激活码（离线激活仅在服务器不可达时可用）"
-        except ConnectionError:
-            pass  # 服务器不可达，允许离线兜底
-        ok, exp, msg = _verify_offline(code)
-        if ok:
-            # 不落盘：单次会话有效，关闭即作废
-            _session_offline_code = code
-        return ok, exp, msg
-    # 在线码：清掉会话级离线码
-    _session_offline_code = None
     return _activate_online(code)
 
 
@@ -252,16 +285,20 @@ def _collect_device_info() -> dict:
 def _activate_online(code: str):
     """在线激活码激活（绑定机器码）。"""
     try:
+        nonce = secrets.token_hex(16)
         s, body = _http_json("POST", "/api/v1/activate",
                              {"code": code, "machine_code": machine_code(), "product_id": APP_ID,
-                              "device_info": _collect_device_info()})
-        if s == 200 and body.get("ok"):
-            exp = body.get("expires_at")
-            save_code(code)
-            return True, int(exp) if exp else None, "激活成功"
+                              "device_info": _collect_device_info(),
+                              "app_version": _app_version(), "nonce": nonce})
+        if s == 200 and isinstance(body, dict):
+            body = _check_sig(body, nonce)
+            if body.get("ok"):
+                exp = body.get("expires_at")
+                save_code(code)
+                return True, int(exp) if exp else None, "激活成功"
         return False, None, body.get("message") or body.get("detail") or "激活失败"
     except ConnectionError:
-        return False, None, "无法连接服务器，请检查网络或使用离线密钥单次激活"
+        return False, None, "无法连接授权服务器或响应校验失败，请检查网络后重试"
 
 
 def save_code(code: str):
@@ -279,10 +316,13 @@ def load_code() -> str:
 
 
 def status() -> dict:
-    """当前授权状态。
-    离线码仅当前会话有效（内存），关闭即作废；在线码持久化（license.dat）。"""
-    code = _session_offline_code or load_code()
+    """当前授权状态（读 license.dat 缓存的在线码，联网校验）。
+    附加字段（有才带）：announcement（服务端公告）、update_required +
+    latest_version（低于产品最低版本的升级提示）。"""
+    code = load_code()
     if not code:
         return {"licensed": False, "expiry": None, "message": "未激活"}
-    ok, exp, msg = verify(code)
-    return {"licensed": ok, "expiry": exp, "message": msg}
+    ok, exp, msg, extras = _verify_online(code)
+    st = {"licensed": ok, "expiry": exp, "message": msg}
+    st.update(extras)
+    return st

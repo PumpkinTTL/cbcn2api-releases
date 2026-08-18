@@ -10,7 +10,11 @@
 <script src="theme.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="layout.css">
+<link rel="stylesheet" href="gateway.css">
+<link rel="stylesheet" href="accounts.css">
+<link rel="stylesheet" href="components.css">
 <link rel="stylesheet" href="animations.css">
 <!-- Vue 运行时:用本地 vue.prod.js(= vue.global.prod.js v3.5.40 同版本)。
      不走在线 CDN —— pywebview 以 file:// 加载,断网/被墙会导致整个前端白屏。 -->
@@ -49,6 +53,19 @@
     <div class="license-error" id="licenseError"></div>
     <div class="license-info">激活码免费领取，为了防止转发滥用，仅供测试使用</div>
     <div class="license-mid-tag" title="当前机器标识"><span class="mid-tag-label">当前机器码</span><span id="licenseMachineId">—</span></div>
+  </div>
+</div>
+
+<!-- Version Blocked Overlay（版本过旧被服务端拒绝，引导升级而非激活） -->
+<div class="license-overlay" id="versionBlockedOverlay">
+  <div class="license-card">
+    <div class="license-icon" style="color:var(--warning,#f59e0b)">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    </div>
+    <h2>版本已弃用</h2>
+    <div class="license-sub" id="versionBlockedMsg">当前客户端版本过旧，服务端已停止支持，请更新到最新版本后继续使用。</div>
+    <button class="btn btn-primary" id="versionBlockedBtn" onclick="window.__checkForUpdate && window.__checkForUpdate()">立即更新</button>
+    <div class="license-info" style="margin-top:12px">更新完成后重新启动即可恢复使用</div>
   </div>
 </div>
 
@@ -1514,7 +1531,6 @@
           <li>修复更新后机器码变化导致需要重新激活的问题</li>
           <li>修复删除确认弹窗备注输入框与按钮重叠的问题</li>
           <li>修复窗口最大化时显示异常的问题</li>
-          <li>修复部分离线激活码无法正常激活的问题</li>
         </ul>
 
         <div class="changelog-section-title">功能新增</div>
@@ -1762,6 +1778,25 @@
     </div>
   </div>
 
+  <!-- Announcement Modal（授权服务端推送的公告） -->
+  <div class="modal-overlay" id="announcementModal" :class="{ show: activeModal === 'announcement' }">
+    <div class="modal announcement-modal">
+      <div class="modal-header">
+        <h2>公告</h2>
+        <button class="modal-close" @click="activeModal = null">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">{{ announcementContent }}</div>
+      <div class="modal-actions">
+        <label class="announcement-dismiss-label">
+          <input type="checkbox" v-model="announcementDismiss"> 不再提醒此公告
+        </label>
+        <button class="btn btn-primary" @click="dismissAnnouncement">我知道了</button>
+      </div>
+    </div>
+  </div>
+
 </div><!-- end #app -->
 
 <script>
@@ -1986,12 +2021,10 @@ function hideAppLoading() {
 
 // License (outside Vue – needs to show before Vue mounts)
 let appStarted = false;
-function hlOffline(msg) {
-  return String(msg || '').replace('离线密钥', '<strong>离线密钥</strong>');
-}
 function showLicenseOverlay(msg) {
+  document.getElementById('versionBlockedOverlay').classList.remove('show');
   const subEl = document.getElementById('licenseSub');
-  subEl.innerHTML = hlOffline(msg) || '请输入激活码以完成授权';
+  subEl.innerHTML = msg || '请输入激活码以完成授权';
   subEl.classList.toggle('error', /无法连接/.test(msg || ''));
   document.getElementById('licenseError').textContent = '';
   document.getElementById('licenseOverlay').classList.add('show');
@@ -2004,6 +2037,11 @@ function showLicenseOverlay(msg) {
       pywebview.api.get_machine_code().then(raw => { midEl.textContent = raw || '—'; }).catch(() => { midEl.textContent = '—'; });
     } catch(e) { midEl.textContent = '—'; }
   }
+}
+function showVersionBlocked(msg) {
+  document.getElementById('licenseOverlay').classList.remove('show');
+  document.getElementById('versionBlockedMsg').textContent = msg || '当前客户端版本过旧，请更新到最新版本后继续使用。';
+  document.getElementById('versionBlockedOverlay').classList.add('show');
 }
 function hideLicenseOverlay() { document.getElementById('licenseOverlay').classList.remove('show'); }
 async function doActivate() {
@@ -2022,17 +2060,10 @@ async function doActivate() {
     if (r.success) {
       hideLicenseOverlay();
       showToast('激活成功，有效期至 ' + (r.expiry_str || ''), 'success');
-      // 在线码：已持久化 license.dat，reload 走标准 onMounted 链路。
-      // 离线码：后端进程内存态（_session_offline_code），不能 reload（会丢）；
-      // 直接调 setup 暴露的全局入口无缝进入主界面，不刷新页面。
-      const isOffline = /^[A-Z0-9]{4}(?:-[A-Z0-9]{4}){3}$/.test(code.trim().toUpperCase());
-      if (isOffline && window.__onLicenseActivated) {
-        window.__onLicenseActivated(r.expiry_str);
-      } else {
-        location.reload();
-      }
+      // 激活码已持久化 license.dat，reload 走标准 onMounted 链路。
+      location.reload();
     } else {
-      document.getElementById('licenseError').innerHTML = hlOffline(r.message) || '激活失败';
+      document.getElementById('licenseError').textContent = r.message || '激活失败';
       btn.disabled = false;
       btn.classList.remove('btn-loading');
       document.getElementById('licenseSpinner').style.display = 'none';
@@ -2104,6 +2135,34 @@ const vApp = createApp({
     const hasUpdate = ref(false);
     const licenseExpiry = ref('—');
     const licenseAuthorized = ref(false);
+    const announcementContent = ref('');
+    const announcementDismiss = ref(false);
+
+    // 服务端公告：同一内容只弹一次。
+    // 未勾"不再提醒" → 关闭后记入 dismissed 列表，下次同内容不再弹（轻量去重）；
+    // 勾"不再提醒" → 同上，且 localStorage 标记，心跳推同内容也不再弹。
+    function showAnnouncement(content) {
+      if (!content) return;
+      let dismissed = [];
+      try { dismissed = JSON.parse(localStorage.getItem('gw_dismissedAnnouncements') || '[]'); } catch(e) {}
+      if (dismissed.includes(content)) return;
+      announcementContent.value = content;
+      announcementDismiss.value = false;
+      activeModal.value = 'announcement';
+    }
+    function dismissAnnouncement() {
+      if (announcementDismiss.value && announcementContent.value) {
+        let dismissed = [];
+        try { dismissed = JSON.parse(localStorage.getItem('gw_dismissedAnnouncements') || '[]'); } catch(e) {}
+        if (!dismissed.includes(announcementContent.value)) {
+          dismissed.push(announcementContent.value);
+          // 只保留最近 20 条，避免无限增长
+          dismissed = dismissed.slice(-20);
+          try { localStorage.setItem('gw_dismissedAnnouncements', JSON.stringify(dismissed)); } catch(e) {}
+        }
+      }
+      activeModal.value = null;
+    }
 
     // ── 账号数据 ──
     const accounts = ref([]);
@@ -2471,8 +2530,8 @@ const vApp = createApp({
       return (h+m) > 0 ? (h/(h+m)*100).toFixed(1) : '0.0';
     });
 
-    function getStatusBadgeClass(a) { const s=a.status||'normal'; if(s==='banned')return 'badge-status-banned'; if(s==='disabled')return 'badge-status-disabled'; return 'badge-status-normal'; }
-    function getStatusText(a) { const s=a.status||'normal'; if(s==='banned')return '封禁'; if(s==='disabled')return '已禁用'; return '正常'; }
+    function getStatusBadgeClass(a) { const s=a.status||'normal'; if(s==='banned')return 'badge-status-banned'; if(s==='disabled')return 'badge-status-disabled'; if(s==='cooldown')return 'badge-status-cooldown'; return 'badge-status-normal'; }
+    function getStatusText(a) { const s=a.status||'normal'; if(s==='banned')return '封禁'; if(s==='disabled')return '已禁用'; if(s==='cooldown')return '限流'; return '正常'; }
 
     // 账号统计概览：按状态计数（可点切换筛选）+ 低积分告警计数（cls=danger，只读）
     function statusCount(s) { return accounts.value.filter(a => (a.status||'normal') === s).length; }
@@ -2551,6 +2610,7 @@ const vApp = createApp({
       themePref.value = localStorage.getItem('theme') || window.__THEME__ || 'light';
     }
     window.__goSettings = showSettings;  // 标题栏齿轮跳转入口
+    window.__checkForUpdate = checkForUpdate;  // 版本弃用 overlay 的"立即更新"按钮入口
 
     // ─── 设置页数据：关闭行为 + 主题（自定义下拉，组件样式同状态筛选）───
     const closeActionPref = ref(localStorage.getItem('gw_closeAction') || '');
@@ -4207,13 +4267,18 @@ const vApp = createApp({
       tryLoad();
     }
 
-    // 全局入口：激活成功（离线码）后由 Vue 外的 doActivate 调用。
-    // setup 闭包内可访问 licenseAuthorized/licenseExpiry/startApp，无缝进入主界面（不刷新页面）。
-    window.__onLicenseActivated = (expiryStr) => {
-      licenseAuthorized.value = true;
-      licenseExpiry.value = expiryStr || '已激活';
-      hideLicenseOverlay();
-      startApp();
+    // 全局入口：授权心跳事件（app.py 后台线程 evaluate_js 调用）。
+    // revoked = 服务端运行途中明确拒绝（吊销/过期/版本报废）→ 锁回激活界面；
+    // announcement = 心跳带回的最新公告（同内容只弹一次）。
+    window.__licenseEvent = (e) => {
+      if (!e || !e.type) return;
+      if (e.type === 'revoked') {
+        licenseAuthorized.value = false;
+        showLicenseOverlay(e.message || '授权已失效，请重新激活');
+        startApp();  // 确保首屏框架就绪（若还没进主界面），再被 overlay 盖住
+      } else if (e.type === 'announcement') {
+        showAnnouncement(e.content);
+      }
     };
 
     onMounted(() => {
@@ -4231,22 +4296,25 @@ const vApp = createApp({
       }
 
       // License check → startApp（后端根据远端开关决定是否需授权）
-      // 刚激活成功（hash=activated）时跳过远端 verify，直接信任本地码
-      if (location.hash === '#activated') {
-        location.hash = '';
-        licenseAuthorized.value = true;
-        licenseExpiry.value = '已激活';
-        hideLicenseOverlay(); startApp();
-        return;
-      }
       const tryLicense=(attempt=0)=>{
         try{
           pywebview.api.check_license().then(raw=>{
             const r=JSON.parse(raw);
             licenseAuthorized.value = !!r.licensed;
             licenseExpiry.value = r.expiry_str || '无限制';
-            if(r.licensed){hideLicenseOverlay();startApp();}
-            else{showLicenseOverlay(r.message);}
+            if(r.licensed){
+              hideLicenseOverlay();startApp();
+              // 公告：config 启动第一跳已带回（不依赖 verify 成功），启动即弹
+              if (r.announcement) showAnnouncement(r.announcement);
+              if (r.update_required) {
+                showToast(`当前版本过低，请升级到 ${r.latest_version || '最新版本'}`, 'warning');
+                checkForUpdate();
+              }
+            } else if (r.version_blocked) {
+              showVersionBlocked(r.message);
+              // 版本被拦也要弹公告（如"新版本将解决限流"恰恰是给被拦用户看的）
+              if (r.announcement) showAnnouncement(r.announcement);
+            } else {showLicenseOverlay(r.message);}
           }).catch(()=>{if(attempt<10)setTimeout(()=>tryLicense(attempt+1),300);});
         }catch(e){if(attempt<10)setTimeout(()=>tryLicense(attempt+1),300);}
       };
@@ -4255,7 +4323,7 @@ const vApp = createApp({
 
     return {
       // State
-      currentPlatform, currentView, activeModal, hasUpdate,
+      currentPlatform, currentView, activeModal, hasUpdate, announcementContent, announcementDismiss, dismissAnnouncement,
       accounts, accountStats, statTotal, statQuota,
       statusFilter, filterDate, statusDropdownOpen, accountSearch, onSearchInput,
       regionFilter, regionFilterOpen,

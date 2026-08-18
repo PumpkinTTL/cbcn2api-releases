@@ -77,26 +77,32 @@ UPSTREAM_CLIENT_PROFILES = {
     },
 }
 
-AVAILABLE_MODELS = [
-    "auto",
-    "hy3",
-    "glm-5.2",
-    "glm-5.1",
-    "glm-5v-turbo",
-    "minimax-m3",
-    "kimi-k3-1",
-    "kimi-k2.7",
-    "kimi-k2.6",
-    "deepseek-v4-flash",
-    "deepseek-v4-pro",
-]
-
 DEFAULT_MODEL = "deepseek-v4-flash"
 
 MODEL_ALIASES = {
     "kimi-k3": "kimi-k3-1",
     "kimi-k2.7-code": "kimi-k2.7",
 }
+
+# 模型规格单一事实来源（上游无模型列表接口，只能本地维护）。
+# 三处消费方（代理 /v1/models、GUI WorkBuddy/CodeBuddy 导出、ZCode 导出）
+# 全部从此派生，改模型只改这一处。
+# context/output = 上下文/输出 token 上限；reasoning = 是否支持推理模式。
+MODEL_SPECS = {
+    "deepseek-v4-flash": {"name": "DeepSeek-V4-Flash", "context": 1000000, "output": 128000, "reasoning": True},
+    "deepseek-v4-pro":   {"name": "DeepSeek-V4-Pro",   "context": 1000000, "output": 128000, "reasoning": True},
+    "hy3":               {"name": "Hy3",               "context": 192000,  "output": 64000,  "reasoning": False},
+    "glm-5.3":           {"name": "GLM-5.3",           "context": 1000000, "output": 128000, "reasoning": False},
+    "glm-5.2":           {"name": "GLM-5.2",           "context": 1000000, "output": 128000, "reasoning": False},
+    "glm-5.1":           {"name": "GLM-5.1",           "context": 200000,  "output": 48000,  "reasoning": False},
+    "glm-5v-turbo":      {"name": "GLM-5v-Turbo",      "context": 200000,  "output": 38000,  "reasoning": False},
+    "minimax-m3":        {"name": "MiniMax-M3",        "context": 512000,  "output": 48000,  "reasoning": False},
+    "kimi-k3-1":         {"name": "Kimi-K3",           "context": 1000000, "output": 48000,  "reasoning": False},
+    "kimi-k2.7":         {"name": "Kimi-K2.7-Code",    "context": 256000,  "output": 32000,  "reasoning": False},
+    "kimi-k2.6":         {"name": "Kimi-K2.6",         "context": 256000,  "output": 32000,  "reasoning": False},
+    "auto":              {"name": "Auto",              "context": 1000000, "output": 64000,  "reasoning": False},
+}
+AVAILABLE_MODELS = list(MODEL_SPECS.keys())
 
 
 def resolve_base_url() -> str:

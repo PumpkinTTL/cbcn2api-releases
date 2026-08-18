@@ -1,0 +1,166 @@
+/* ==========================================================================
+   AI Model Gateway - Claude Warm Beige Design System (v1.0.4)
+   Aesthetic Directive: Soft Paper Warm Ivory / Warm Espresso Aesthetics
+   ========================================================================== */
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* v-cloak：Vue mount 前隐藏 #app，避免 {{ }} 模板未编译时裸露闪现。
+   Vue 接管后自动移除 v-cloak 属性，元素恢复显示。 */
+[v-cloak] { display: none !important; }
+
+/* @property：让 conic-gradient 的角度可被 CSS 动画驱动。
+   WebView2 (Chromium 85+) 完美支持。 */
+@property --bg-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+:root {
+  /* Default Dark Espresso Mode */
+  --bg: #191816;
+  --surface: #23211e;
+  --surface-hover: #2d2a26;
+  --surface-active: #38342e;
+  --border: rgba(230, 223, 211, 0.12);
+  --border-hover: rgba(230, 223, 211, 0.24);
+  --border-light: rgba(230, 223, 211, 0.08);
+  --text: #f3eee6;
+  --text-primary: #f3eee6;
+  --text-secondary: #b8b0a2;
+  --text-muted: #827a6f;
+  --text-tertiary: #6b6358;
+  --primary: #e08264;
+  --primary-hover: #ea9377;
+  --primary-light: rgba(224, 130, 100, 0.16);
+  --primary-border: rgba(224, 130, 100, 0.35);
+  --accent: #e68a6e;
+  --accent-light: rgba(230, 138, 110, 0.16);
+  --success: #4ba359;
+  --success-light: rgba(75, 163, 89, 0.16);
+  --warning: #f59e0b;
+  --warning-light: rgba(245, 158, 11, 0.16);
+  --danger: #e56b6b;
+  --danger-light: rgba(229, 107, 107, 0.16);
+  --bg-tertiary: #2a2723;
+  --hover: rgba(243, 238, 230, 0.05);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 16px;
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --transition: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+
+/* 主题切换动画期间：禁用全页元素颜色过渡，避免与圆形扩散动画叠加导致卡顿 */
+html.theme-animating, html.theme-animating *, html.theme-animating *::before, html.theme-animating *::after {
+  transition: none !important;
+}
+  --modal-overlay: rgba(0, 0, 0, 0.65);
+}
+
+[data-theme="light"] {
+  /* Eye-Care Warm Beige Theme (护眼暖米色) */
+  --bg: #f5f2eb;
+  --surface: #faf7f0;
+  --surface-hover: #efeae0;
+  --surface-active: #e5dfd3;
+  --border: #e4ded3;
+  --border-hover: #d6cfc2;
+  --border-light: #ebe5da;
+  --text: #24211e;
+  --text-primary: #24211e;
+  --text-secondary: #615a52;
+  --text-muted: #8e867c;
+  --text-tertiary: #a69e94;
+  --primary: #d9704e; /* Warm Terracotta Coral */
+  --primary-hover: #c25d3c;
+  --primary-light: #f3e8df;
+  --primary-border: rgba(217, 112, 78, 0.25);
+  --accent: #d97757;
+  --accent-light: #f7ebe3;
+  --success: #2e7d32;
+  --success-light: #edf5ed;
+  --warning: #d97706;
+  --warning-light: #fdf6e7;
+  --danger: #d9534f;
+  --danger-light: #fdf0ee;
+  --bg-tertiary: #eee8dc;
+  --hover: rgba(36, 33, 30, 0.04);
+  --shadow: 0 2px 10px rgba(36, 33, 30, 0.04), 0 1px 3px rgba(36, 33, 30, 0.02);
+  --shadow-lg: 0 10px 30px rgba(36, 33, 30, 0.08), 0 2px 6px rgba(36, 33, 30, 0.04);
+  --modal-overlay: rgba(36, 33, 30, 0.4);
+}
+
+[data-theme="dark"] {
+  /* Claude Warm Dark Espresso Mode */
+  --bg: #191816;
+  --surface: #23211e;
+  --surface-hover: #2d2a26;
+  --surface-active: #38342e;
+  --border: rgba(230, 223, 211, 0.12);
+  --border-hover: rgba(230, 223, 211, 0.24);
+  --border-light: rgba(230, 223, 211, 0.08);
+  --text: #f3eee6;
+  --text-primary: #f3eee6;
+  --text-secondary: #b8b0a2;
+  --text-muted: #827a6f;
+  --text-tertiary: #6b6358;
+  --primary: #e08264;
+  --primary-hover: #ea9377;
+  --primary-light: rgba(224, 130, 100, 0.16);
+  --primary-border: rgba(224, 130, 100, 0.35);
+  --accent: #e68a6e;
+  --accent-light: rgba(230, 138, 110, 0.16);
+  --success: #4ba359;
+  --success-light: rgba(75, 163, 89, 0.16);
+  --warning: #f59e0b;
+  --warning-light: rgba(245, 158, 11, 0.16);
+  --danger: #e56b6b;
+  --danger-light: rgba(229, 107, 107, 0.16);
+  --bg-tertiary: #2a2723;
+  --hover: rgba(243, 238, 230, 0.05);
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --modal-overlay: rgba(0, 0, 0, 0.65);
+}
+
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  display: flex;
+  flex-direction: row;
+  padding-top: 36px;
+}
+
+/* ===== 主题切换 View Transition（圆形扩散动画）===== */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-old(root) { z-index: 1; }
+::view-transition-new(root) { z-index: 9999; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation: none !important; }
+}
+
+/* ===== frameless 窗口边缘 resize 触发条 =====
+   系统边缘 hit-test 被 WebView2 吃掉，用透明边条 + JS 主动发起 sizing。
+   z-index 低于 titlebar(6000)：顶部/左上/右上让位给标题栏拖动和窗口按钮，
+   左/右/下边缘及左下/右下角可 resize。 */
+.rz { position: fixed; z-index: 5500; }
+.rz-t  { top: 0; left: 8px; right: 8px; height: 4px; cursor: ns-resize; }
+.rz-b  { bottom: 0; left: 8px; right: 8px; height: 4px; cursor: ns-resize; }
+.rz-l  { left: 0; top: 8px; bottom: 8px; width: 4px; cursor: ew-resize; }
+.rz-r  { right: 0; top: 8px; bottom: 8px; width: 4px; cursor: ew-resize; }
+.rz-tl { top: 0; left: 0; width: 8px; height: 8px; cursor: nwse-resize; }
+.rz-tr { top: 0; right: 0; width: 8px; height: 8px; cursor: nesw-resize; }
+.rz-bl { bottom: 0; left: 0; width: 8px; height: 8px; cursor: nesw-resize; }
+.rz-br { bottom: 0; right: 0; width: 8px; height: 8px; cursor: nwse-resize; }

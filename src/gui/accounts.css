@@ -1,0 +1,854 @@
+/* 导入模型下拉组（WorkBuddy / CodeBuddy 合一） */
+.sync-group { position: relative; display: inline-flex; }
+.sync-group .sync-btn { border-radius: var(--radius-sm); }
+.sync-group.open .sync-btn { color: var(--text); border-color: var(--border-hover); }
+.sync-group .dd-arrow { transition: transform 0.2s ease; opacity: .6; }
+.sync-group.open .dd-arrow { transform: rotate(180deg); opacity: 1; }
+.sync-dd {
+  position: absolute; top: calc(100% + 4px); right: 0; min-width: 150px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); z-index: 100; padding: 4px;
+}
+.sync-dd-item {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer;
+  font-size: 12px; color: var(--text); border-radius: var(--radius-sm); transition: var(--transition);
+}
+.sync-dd-item:hover { background: var(--surface-hover); }
+.sync-dd-item svg { opacity: .7; flex-shrink: 0; }
+
+.chat-send-btn {
+  padding: 7px 16px; font-size: 12px; font-weight: 600; border-radius: var(--radius-sm);
+  border: none; cursor: pointer; transition: var(--transition); background: var(--primary); color: #fff;
+}
+.chat-send-btn:hover { background: var(--primary-hover); }
+
+/* Filter Bar */
+.filter-bar {
+  display: flex; gap: 12px; align-items: center; margin-bottom: 14px; flex-wrap: wrap;
+  padding: 8px 14px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  position: relative;
+}
+.filter-label {
+  font-size: 11px; color: var(--text-muted); font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px;
+  text-transform: uppercase; letter-spacing: 0.3px; flex-shrink: 0;
+}
+.filter-label svg { width: 14px; height: 14px; color: var(--text-muted); }
+.filter-date-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+/* 替代原来那句「指定日期:」—— 一道竖线就够，少一段文字少一次阅读 */
+.filter-sep {
+  width: 1px; height: 16px; background: var(--border);
+  margin: 0 4px; flex-shrink: 0;
+}
+
+.date-input-wrapper {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+}
+/* 多选按钮：跟 date input / 状态下拉同高(28px)同风格的 icon 按钮，激活态用主色高亮 */
+.filter-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+.filter-icon-btn:hover { border-color: var(--border-hover); background: var(--surface-hover); color: var(--text); }
+.filter-icon-btn:disabled { opacity: .55; cursor: default; }
+.filter-icon-btn:disabled:hover { border-color: var(--border); background: var(--bg); color: var(--text-secondary); }
+.filter-icon-btn.active {
+  background: var(--primary-light);
+  border-color: var(--primary-border);
+  color: var(--primary);
+}
+
+/* 批量操作区：仅多选模式时出现，order 置后 + flex-basis 100% 强制独占第二行，
+   第一行元素位置不变，出现/消失不重排，避免布局跳动 */
+.filter-batch-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  flex-shrink: 0;
+  order: 99;
+  flex-basis: 100%;
+}
+/* 验活并启用：输入框 + 右侧主色按钮一体，常驻筛选条 */
+.detect-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 0 0 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.detect-field:focus-within { border-color: var(--primary); }
+/* 少积分过滤开启态：trigger 主色高亮 + 整体边框主色，和 .filter-icon-btn.active 风格一致 */
+.detect-field.active { border-color: var(--primary-border); background: var(--primary-light); }
+.detect-field.active span { color: var(--primary); }
+.detect-trigger.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.detect-field span {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-muted);
+  user-select: none;
+}
+.detect-field input {
+  width: 52px;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 11px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  padding: 0;
+}
+.detect-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 28px;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  background: var(--primary);
+  border: none;
+  outline: none;
+  cursor: pointer;
+  color: #fff;
+  border-radius: 0;
+  transition: background var(--transition);
+  flex-shrink: 0;
+}
+.detect-trigger:hover:not(:disabled) { background: var(--primary-hover); }
+.detect-trigger:disabled { cursor: default; }
+/* 积分区間筛选：双输入 + 分隔符。range-field 复用 detect-field 外观，仅缩窄输入框。
+   文本居中，让左右两个输入的占位符（0 / ∞）与实际数值在视觉上严格对齐 */
+.range-field .range-input {
+  width: 40px;
+  text-align: center;
+  padding: 0 3px;
+}
+.range-field .range-sep {
+  font-size: 12px;
+  color: var(--text-muted);
+  user-select: none;
+  line-height: 1;
+  opacity: 0.6;
+}
+/* 隐藏 number input 浏览器自带的上下增减箭头（spinner），紧凑 UI 中多余且不和谐 */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] { -moz-appearance: textfield; }
+.detect-count {
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  color: #fff;
+}
+.batch-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  position: relative;
+  user-select: none;
+  line-height: 1;
+  margin: 0 !important;   /* 必须显式重置 margin: 0，覆盖全局 label { margin-bottom: 6px; } 导致的上浮错位 */
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  box-sizing: border-box;
+}
+.batch-select-all input {
+  position: absolute; opacity: 0; width: 16px; height: 16px; cursor: pointer; margin: 0;
+}
+/* 自绘三态复选框：默认空框 */
+.batch-checkbox-box {
+  width: 16px; height: 16px;
+  border: 1.5px solid var(--border-hover);
+  border-radius: 4px;
+  background: var(--surface);
+  color: transparent;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.batch-select-all:hover .batch-checkbox-box { border-color: var(--primary); }
+/* 勾和横线默认都隐藏，靠 class 控制显隐 */
+.batch-checkbox-box .cb-check,
+.batch-checkbox-box .cb-dash { opacity: 0; }
+/* 全选态：填主色橙、显勾 */
+.batch-select-all.checked .batch-checkbox-box {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.batch-select-all.checked .batch-checkbox-box .cb-check { opacity: 1; }
+/* 部分选中态：填主色橙、显横线（indeterminate 视觉）*/
+.batch-select-all.indeterminate .batch-checkbox-box {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.batch-select-all.indeterminate .batch-checkbox-box .cb-dash { opacity: 1; }
+/* 选中数：合并进「全选」标签里的小徽章，比独立「已选 N 个」文本更轻量 */
+.batch-count-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  margin-left: 2px;
+  border-radius: 8px;
+  background: var(--primary-light);
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+}
+.filter-batch-actions .btn {
+  height: 28px;
+  padding: 0 11px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+}
+
+/* Account Grid & Cards */
+/* 账号统计概览栏：状态项可点切换筛选，低积分告警只读。
+   紧凑横排，数字大（等宽）、标签小、状态色点在数字前 */
+/* 概览统计行：融入 filter-bar 同一容器，独占一行（flex-basis 100%），
+   顶部虚线与上方控件分隔；底色继承 filter-bar（surface 卡片） */
+.accounts-overview {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  flex-basis: 100%;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.overview-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  user-select: none;
+}
+.overview-item:hover { background: var(--surface-hover); }
+.overview-item.active { background: var(--primary-light); }
+.overview-item.active .overview-num,
+.overview-item.active .overview-label { color: var(--primary); }
+.overview-num {
+  font-size: 17px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  line-height: 1;
+  color: var(--text);
+}
+.overview-label { font-size: 11px; color: var(--text-muted); line-height: 1; }
+/* 状态色点（::before 放数字前） */
+.overview-normal::before,
+.overview-disabled::before,
+.overview-banned::before,
+.overview-warn::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.overview-normal::before { background: #22c55e; }
+.overview-disabled::before { background: #94a3b8; }
+.overview-banned::before { background: #ef4444; }
+.overview-warn::before { background: #f59e0b; }
+/* 排序下拉推到概览栏最右 */
+.overview-sort { margin-left: auto; }
+
+.account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 14px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow);
+  position: relative;
+  transition: border-color 0.15s ease, padding-left 0.18s ease;
+}
+.card:hover {
+  border-color: var(--border-hover);
+}
+.card.current {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-light), var(--shadow);
+}
+.card.more-open {
+  z-index: 50;
+  position: relative;
+}
+
+/* ── 勾选态 ── */
+/* 复选框常驻显示（不再有「多选模式」开关），随时可勾选。
+   选中态用主色暖橙，跟整体 UI 配色一致 —— 不引入异色（蓝色）。
+   .card.current 是「当前调度号」(主色细边框)，.selected 用主色实色填充区分。 */
+.card { position: relative; }   /* 复选框 absolute 定位的锚点 */
+.card.selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-light), var(--shadow);
+}
+
+/* 卡片左侧复选框：自绘方框+勾，跨主题一致，不依赖系统原生 checkbox 外观 */
+.card-checkbox {
+  position: absolute;
+  top: 18px;       /* 与 .card-name 中线对齐：卡片 padding-top 18 + 字行高一半 ≈ 9 → 27，复选框高 18 居中 → top 18 */
+  left: 14px;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+  /* 缩放动画：默认 scale(0) 看不见也点不到，.show 时 scale(1) 放大出现。
+     退出多选模式时 scale 回 0，往里缩消失。transform-origin 左上角让缩放自然。*/
+  transform: scale(0);
+  transform-origin: top left;
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.12s ease;
+}
+.card-checkbox.show {
+  transform: scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+.card-checkbox input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+}
+.card-checkbox-box {
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border-hover);
+  border-radius: 4px;
+  background: var(--surface);
+  color: transparent;
+  transition: all 0.15s ease;
+}
+.card-checkbox:hover .card-checkbox-box {
+  border-color: var(--primary);
+}
+/* 选中：边框/背景转主色橙，勾显白 */
+.card.selected .card-checkbox-box {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+/* 多选模式下复选框出现，给卡片内容腾出左侧空间（非常驻，不影响正常布局）。 */
+.card.select-mode { padding-left: 42px; }
+
+/* 激光环：完全向内贴边（inset:0 + border-box），不向外溢出 1px。
+   配合 contain 隔离布局/绘制，持续动画不再撑动同行卡片高度。
+   box-shadow 改用 inset，外发光也收入卡片内部，彻底不影响外部尺寸。 */
+.card.active {
+  position: relative;
+  border-color: transparent !important;
+  contain: layout paint;
+}
+
+/* 环绕四边的旋转高亮激光束 — @property 动画角度，向内贴边不溢出 */
+.card.active::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  box-sizing: border-box;
+  background: conic-gradient(
+    from var(--bg-angle),
+    transparent 0%,
+    transparent 62%,
+    var(--primary) 78%,
+    #ffffff 90%,
+    var(--primary-hover, #ea7353) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+  animation: fx-orbit-spin 2.4s linear infinite;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* 激活态子元素提升 z-index 盖在激光束上，但复选框保持 absolute 定位不动 */
+.card.active > *:not(.card-checkbox) {
+  position: relative;
+  z-index: 2;
+}
+.card.active .card-checkbox { z-index: 3; }
+
+@keyframes fx-orbit-spin {
+  to { --bg-angle: 360deg; }
+}
+.current-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  height: 18px;
+  line-height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--primary);
+  color: #fff;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+.badge-status-normal { font-size: 10px; height: 18px; line-height: 16px; padding: 0 6px; border-radius: 4px; background: var(--success-light); color: var(--success); border: 1px solid rgba(56,142,60,0.25); box-sizing: border-box; flex-shrink: 0; }
+.badge-status-banned { font-size: 10px; height: 18px; line-height: 16px; padding: 0 6px; border-radius: 4px; background: var(--danger-light); color: var(--danger); border: 1px solid rgba(217,83,79,0.25); box-sizing: border-box; flex-shrink: 0; }
+.badge-status-disabled { font-size: 10px; height: 18px; line-height: 16px; padding: 0 6px; border-radius: 4px; background: var(--warning-light); color: var(--warning); border: 1px solid rgba(217,119,6,0.25); box-sizing: border-box; flex-shrink: 0; }
+.status-filter-group { display: flex; gap: 4px; margin-left: auto; }
+
+/* 自定义标签小徽章：柔和描边式，不喧宾夺主 */
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  height: 18px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 45%, transparent);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  line-height: 1;
+  transition: var(--transition);
+}
+.tag-pill:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+.fp-pill { display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 7px; font-size: 10px; border-radius: 4px; border: 1px solid var(--primary); color: var(--primary); background: var(--primary-light); cursor: default; box-sizing: border-box; }
+.tag-pill-mini { height: 16px; padding: 0 6px; font-size: 9px; border-radius: 8px; }
+
+/* 过滤组（filter-bar 内右侧分区）：日期 + 搜索 + 标签 + 状态 */
+.filter-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* 日期下拉归入右侧过滤簇：和标签/状态/地区一组靠右，左簇只留操作+搜索+阈值，
+   两个簇之间单一间距，整体分布更均匀 */
+.filter-bar .date-filter { margin-left: auto; }/* 覆盖全局 input[type="text"]（1759 行，specificity 同级且后定义）：
+   必须把 border/padding/background 一并覆盖，否则搜索 input 会带完整边框
+   套在 .account-search 容器里，看起来像两个搜索框叠在一起 */
+.filter-bar .account-search input {
+  width: 170px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  outline: none;
+  box-shadow: none;
+}
+
+/* 账号搜索框 */
+.account-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  transition: var(--transition);
+}
+.account-search:focus-within {
+  border-color: var(--border-hover);
+  background: var(--surface);
+}
+.account-search input {
+  width: 130px;
+  padding: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+}
+.account-search input::placeholder { color: var(--text-muted); }
+.account-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.account-search-clear:hover { background: var(--surface-hover); color: var(--text); }
+
+/* 过滤工具行里的状态下拉：flex:1 撑开已够，去掉 margin-left:auto 避免双重推挤 */
+.filter-tools .status-dropdown { margin-left: 0; }
+
+/* 自定义日历弹层（贴合主题，替代原生日历控件） */
+.cal-panel {
+  position: absolute;
+  z-index: 200;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 248px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 10px;
+}
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.cal-nav-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.cal-title {
+  flex: 1;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.cal-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.cal-nav:hover { background: var(--surface-hover); color: var(--text); }
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.cal-dow {
+  text-align: center;
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 2px 0;
+  user-select: none;
+}
+.cal-day {
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+.cal-day:hover:not(:disabled) { background: var(--surface-hover); }
+.cal-day.empty { cursor: default; }
+.cal-day.today { border: 1px solid var(--primary); color: var(--primary); font-weight: 600; }
+.cal-day.selected { background: var(--primary); color: #fff; font-weight: 600; }
+.cal-day.selected:hover { background: var(--primary-hover); }
+.cal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+/* 自定义贴合主题的状态下拉框 (Custom Status Dropdown) */
+.status-dropdown {
+  position: relative;
+  display: inline-block;
+  margin-left: auto;        /* 靠最右：元素少时均匀分布更好看。批量区会出现在它左边 */
+  user-select: none;
+}
+.status-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 10px 0 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.status-dropdown-trigger:hover {
+  border-color: var(--border-hover);
+  background: var(--surface-hover);
+}
+.status-dropdown.open .status-dropdown-trigger {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-light);
+}
+.status-dropdown-arrow {
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+  margin-left: 2px;
+}
+.cal-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: var(--transition);
+}
+.cal-clear-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+}
+.status-dropdown.open .status-dropdown-arrow {
+  transform: rotate(180deg);
+  color: var(--primary);
+}
+.status-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 120px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  z-index: 100;
+  animation: dropdownFadeIn 0.15s cubic-bezier(0, 0, 0.2, 1);
+}
+@keyframes dropdownFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.status-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-radius: calc(var(--radius-sm) - 2px);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.status-dropdown-item:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.status-dropdown-item.active {
+  background: var(--primary-light);
+  color: var(--primary);
+  font-weight: 600;
+}
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  display: inline-block;
+  opacity: 0.7;
+}
+.status-dropdown-item.active .status-dot,
+.status-dropdown-trigger .status-dot {
+  opacity: 1;
+}
+.status-dot.dot-all { background: var(--text-muted); }
+.status-dot.dot-normal { background: var(--success); box-shadow: 0 0 5px var(--success-light); }
+.status-dot.dot-disabled { background: var(--warning); box-shadow: 0 0 5px var(--warning-light); }
+.status-dot.dot-banned { background: var(--danger); box-shadow: 0 0 5px var(--danger-light); }
+
+/* 卡片「更多」下拉（额度详情 + 验活） */
+.more-dropdown {
+  position: relative;
+  display: inline-flex;
+  user-select: none;
+}
+.more-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 26px;
+  padding: 0 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.more-dropdown-trigger:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+}
+.more-dropdown.open .more-dropdown-trigger {
+  background: var(--surface-hover);
+  border-color: var(--border-hover);
+}
+.more-dropdown-arrow {
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+.more-dropdown.open .more-dropdown-arrow {
+  transform: rotate(180deg);
+  color: var(--primary);
+}
+.more-dropdown-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  right: 0;
+  min-width: 128px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  z-index: 100;
+  animation: dropdownFadeInUp 0.15s cubic-bezier(0, 0, 0.2, 1);
+}
+@keyframes dropdownFadeInUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.more-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-radius: calc(var(--radius-sm) - 2px);
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+.more-dropdown-item:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.more-dropdown-item.busy {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* 统一的下拉样式。原先用系统原生箭头，配色和圆角都由 OS 决定，
+   在暖米色界面里显得是外来控件。这里换成内嵌 SVG 箭头自己画。 */
+.select-styled,
+.status-filter-select {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 28px;
+  padding: 0 28px 0 11px;   /* 右侧留出箭头位置 */
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background-color: var(--bg);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238e867c' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 13px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  font-family: inherit;
+  line-height: 28px;
+  cursor: pointer;
+  outline: none;
+  transition: var(--transition);
+}
+.select-styled:hover,
+.status-filter-select:hover { border-color: var(--border-hover); background-color: var(--surface-hover); }
+.select-styled:focus,
+.status-filter-select:focus { border-color: var(--primary); }
+.select-styled option,
+.status-filter-select option {
+  background: var(--surface);
+  color: var(--text);
+}
+.version-link { color: var(--text-tertiary); cursor: pointer; transition: var(--transition); }
+.version-link:hover { color: var(--primary); text-decoration: underline; }
+.changelog-modal { max-width: 480px; width: 90%; }
+.changelog-modal .modal-body { max-height: 60vh; overflow-y: auto; }
+
+
+/* 冷却中（transient 临时错误，60秒自愈）——介于正常与禁用之间 */
+.badge-status-cooldown { font-size: 10px; height: 18px; line-height: 16px; padding: 0 6px; border-radius: 4px; background: var(--info-light, #e3f2fd); color: var(--info, #1976d2); border: 1px solid rgba(25,118,210,0.25); box-sizing: border-box; flex-shrink: 0; }

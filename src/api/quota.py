@@ -130,7 +130,21 @@ def calc_totals(quota_raw: Optional[dict], usage_raw: Optional[dict] = None,
         ur = usage_raw
     if not ur:
         return 0, 0
-    accounts = (ur.get("data") or {}).get("Response", {}).get("Data", {}).get("Accounts", [])
+    # 链式 .get 每级兜底 dict：上游报错时可能返回 {"data": null} / {"data": {"Response": null}}，
+    # 中间任何一级是 None 都会导致 .get 对 None 调用抛 AttributeError。
+    data = ur.get("data")
+    if not isinstance(data, dict):
+        return 0, 0
+    resp = data.get("Response")
+    if not isinstance(resp, dict):
+        return 0, 0
+    inner = resp.get("Data")
+    if not isinstance(inner, dict):
+        return 0, 0
+    accounts = inner.get("Accounts")
+    # Accounts 可能是 null（上游接口报错），兜底为空列表防 None 迭代
+    if not isinstance(accounts, list):
+        accounts = []
     resources = parse_resources(accounts, active_only=active_only)
     total = sum(r["total"] for r in resources)
     used = sum(r["used"] for r in resources)

@@ -15,20 +15,72 @@ from src.api.account_api import refresh_full_payload
 
 # 授权开关：启动时从远端 lic-admin 按产品 ID 查询（LIC_SERVER）。
 # 远端关闭授权 → 免授权直接用；远端开启 → 走激活码流程。
-# 远端不可达时保守视为需要授权，靠本地 license_core 离线验签兜底（缓存了有效激活码即可用）。
+# 远端不可达时保守视为需要授权（后续在线校验同样失败，等价拒绝放行；无离线兜底）。
 _LICENSE_ENABLED = None  # 运行时确定（True=需授权，False=免授权）
+_CONFIG_ANNOUNCEMENT = None  # config 响应带回的公告（启动第一跳即送达，不依赖 verify）
 
 
 def _resolve_license_enabled():
-    """查询远端授权开关。返回 True（需授权）/ False（免授权）。结果缓存。"""
-    global _LICENSE_ENABLED
+    """查询远端授权开关。返回 True（需授权）/ False（免授权）。结果缓存。
+    公告随 config 下发 —— 顺手缓存到 _CONFIG_ANNOUNCEMENT，check_license 透传给前端。"""
+    global _LICENSE_ENABLED, _CONFIG_ANNOUNCEMENT
     try:
         from src import license as lic
-        _LICENSE_ENABLED = lic.remote_license_enabled()
+        cfg = lic.remote_config()
+        _LICENSE_ENABLED = cfg["enabled"]
+        _CONFIG_ANNOUNCEMENT = cfg.get("announcement")
     except Exception:
-        # 远端不可达：无法确认开关，保守走授权，靠离线 license_core 验签兜底
+        # 远端不可达：无法确认开关，保守走授权（在线校验会失败，等价拒绝放行）
         _LICENSE_ENABLED = True
+        _CONFIG_ANNOUNCEMENT = None
     return _LICENSE_ENABLED
+
+
+# ── 授权心跳（服务端已上线 /api/v1/heartbeat，客户端每 5 分钟一拍）───────
+# 价值：服务端实时掌握在线状态/版本分布；吊销/过期/版本报废在运行途中即时生效
+# （不必等用户重启）。断网/服务器宕机不做惩罚（unreachable 只重试不锁定）——
+# 可用性优先，真正的授权裁决仍在启动时的签名 verify。
+_HB_INTERVAL = 300  # 秒，与服务端建议节奏一致
+_hb_started = False
+_hb_thread = None
+
+
+def _push_license_event(window, payload: dict):
+    """把心跳事件推给前端（evaluate_js 调 window.__licenseEvent 钩子）。"""
+    try:
+        if window is not None:
+            window.evaluate_js(
+                "window.__licenseEvent && window.__licenseEvent(" + json.dumps(payload, ensure_ascii=False) + ")"
+            )
+    except Exception:
+        pass  # 窗口关闭/JS 未就绪期间的事件直接丢弃
+
+
+def _heartbeat_loop(window):
+    from src import license as lic
+    from src.gui.log_setup import write_runtime_log
+    while True:
+        time.sleep(_HB_INTERVAL)
+        code = lic.load_code()
+        if not code:
+            continue  # 未激活（免授权模式不会启动本线程；激活码被清则空转等重新激活）
+        state, msg, announcement = lic.heartbeat(code)
+        if state == "rejected":
+            write_runtime_log(f"[license] 心跳被拒：{msg}", "WARN")
+            _push_license_event(window, {"type": "revoked", "message": msg})
+            return  # 授权已被服务端明确拒绝：停止心跳，前端锁定
+        if state == "ok" and announcement:
+            _push_license_event(window, {"type": "announcement", "content": announcement})
+
+
+def start_license_heartbeat(window):
+    """授权有效后启动心跳线程（幂等；免授权/内部豁免不启动）。"""
+    global _hb_started, _hb_thread
+    if _hb_started:
+        return
+    _hb_started = True
+    _hb_thread = threading.Thread(target=_heartbeat_loop, args=(window,), daemon=True)
+    _hb_thread.start()
 
 
 def _parse_apikey_lines(content: str) -> tuple:
@@ -226,7 +278,22 @@ class GuiApi:
 
     def list_accounts(self, platform: str) -> str:
         accounts = store.list_accounts(platform)
-        return json.dumps([a.to_dict() for a in accounts])
+        out = [a.to_dict() for a in accounts]
+        # 叠加 transient 冷却状态（内存级，不落库）——调度器 _disabled 里
+        # reason=transient 且未过期的账号，响应里临时标记为 cooldown，
+        # 前端显示「冷却中」而非「正常」，用户能看到账号在临时不可用。
+        try:
+            from src.proxy.token_rotator import token_rotator
+            token_rotator.ensure_loaded(platform)
+            st = token_rotator.status()
+            cooldown_ids = {d["id"] for d in st.get("disabled", [])
+                            if d.get("reason") == "transient" and d.get("until") and d["until"] > time.time()}
+            for a in out:
+                if a.get("id") in cooldown_ids and a.get("status") == "normal":
+                    a["status"] = "cooldown"
+        except Exception:
+            pass
+        return json.dumps(out)
 
     def get_account(self, platform: str, account_id: str) -> str:
         account = store.load_account(platform, account_id)
@@ -1486,11 +1553,26 @@ class GuiApi:
     def check_license(self) -> str:
         enabled = _LICENSE_ENABLED if _LICENSE_ENABLED is not None else _resolve_license_enabled()
         if not enabled:
-            return json.dumps({"licensed": True, "expiry": None, "message": "OK"}, ensure_ascii=False)
+            # 免授权模式：不走 verify，但 config 公告仍要透传（启动即送达）
+            result = {"licensed": True, "expiry": None, "message": "OK"}
+            if _CONFIG_ANNOUNCEMENT:
+                result["announcement"] = _CONFIG_ANNOUNCEMENT
+            return json.dumps(result, ensure_ascii=False)
         from src import license as lic
         st = lic.status()
         if st["expiry"]:
             st["expiry_str"] = time.strftime("%Y-%m-%d %H:%M", time.localtime(st["expiry"]))
+        # config 公告兜底：verify 可能因版本被拦/未激活/断网而拿不到公告，
+        # 但 config 是启动第一跳，公告已缓存 —— 这里补上，保证启动即弹。
+        if _CONFIG_ANNOUNCEMENT and "announcement" not in st:
+            st["announcement"] = _CONFIG_ANNOUNCEMENT
+        if st.get("licensed"):
+            start_license_heartbeat(self._window)  # 心跳：在线追踪 + 运行途中吊销即时生效
+        else:
+            # 版本被拦（服务端 min_version / 黑名单）→ 前端显示升级提示而非激活输入框
+            msg = st.get("message") or ""
+            if "版本" in msg and "升级" in msg:
+                st["version_blocked"] = True
         return json.dumps(st, ensure_ascii=False)
 
     def activate(self, code: str) -> str:
@@ -1821,25 +1903,10 @@ class GuiApi:
         return _json.dumps({"priority": store.get_setting("priority_account", "")})
 
     def _build_model_configs(self, port_num: int, api_key: str) -> list:
-        model_specs = {
-            "hy3":            {"input": 192000,  "output": 64000,  "name": "Hy3"},
-            "deepseek-v4-flash": {"input": 1000000, "output": 50000,  "name": "Deepseek-V4-Flash"},
-            "deepseek-v4-pro":  {"input": 1000000, "output": 50000,  "name": "Deepseek-V4-Pro"},
-            "glm-5.2":         {"input": 1000000, "output": 48000,  "name": "GLM-5.2"},
-            "glm-5.1":         {"input": 200000,  "output": 48000,  "name": "GLM-5.1"},
-            "glm-5v-turbo":    {"input": 200000,  "output": 38000,  "name": "GLM-5v-Turbo"},
-            "minimax-m3":      {"input": 512000,  "output": 48000,  "name": "MiniMax-M3"},
-            "kimi-k3-1":       {"input": 1000000, "output": 48000,  "name": "Kimi-K3"},
-            "kimi-k2.7":       {"input": 256000,  "output": 32000,  "name": "Kimi-K2.7-Code"},
-            "kimi-k2.6":       {"input": 256000,  "output": 32000,  "name": "Kimi-K2.6"},
-            "auto":            {"input": 1000000, "output": 64000,  "name": "Auto"},
-        }
+        from src.proxy.api_client import MODEL_SPECS
         config = []
-        for m in ["deepseek-v4-flash", "deepseek-v4-pro", "hy3",
-                   "glm-5.2", "glm-5.1", "glm-5v-turbo",
-                   "minimax-m3", "kimi-k3-1", "kimi-k2.7", "kimi-k2.6", "auto"]:
-            spec = model_specs.get(m, {"input": 1000000, "output": 128000, "name": m})
-            config.append({
+        for mid, spec in MODEL_SPECS.items():
+            entry = {
                 "id": spec["name"],
                 "name": spec["name"],
                 "vendor": "Gateway",
@@ -1847,15 +1914,17 @@ class GuiApi:
                 "apiKey": api_key,
                 "supportsToolCall": True,
                 "supportsImages": True,
-                "supportsReasoning": True,
+                "supportsReasoning": spec["reasoning"],
                 "useCustomProtocol": False,
-                "maxInputTokens": spec["input"],
+                "maxInputTokens": spec["context"],
                 "maxOutputTokens": spec["output"],
-                "reasoning": {
+            }
+            if spec["reasoning"]:
+                entry["reasoning"] = {
                     "supportedEfforts": ["low", "medium", "high", "xhigh"],
                     "defaultEffort": "high",
-                },
-            })
+                }
+            config.append(entry)
         return config
 
     @staticmethod
@@ -1914,6 +1983,7 @@ class GuiApi:
         """把网关作为一个 openai-compatible provider 合并进 ~/.zcode/v2/config.json。
         读现有配置 → upsert provider → 写回（先备份）。模型列表按 ZCode 的
         config 结构生成（limit/modalities/reasoning），与手写配置同构。"""
+        from src.proxy.api_client import MODEL_SPECS
         import pathlib
         tgt = pathlib.Path.home() / ".zcode" / "v2" / "config.json"
         try:
@@ -1921,28 +1991,14 @@ class GuiApi:
         except Exception:
             cfg = {}
         providers = cfg.setdefault("provider", {})
-        # 模型规格：显示名 + context/output 上限。ZCode 用 models 的 key 当默认
-        # 显示名（全小写难看），必须带 name 字段美化；reasoning 仅 deepseek 系开
-        specs = {
-            "deepseek-v4-flash": ("DeepSeek-V4-Flash", 1000000, 128000),
-            "deepseek-v4-pro": ("DeepSeek-V4-Pro", 1000000, 128000),
-            "hy3": ("Hy3", 192000, 64000),
-            "glm-5.2": ("GLM-5.2", 1000000, 128000),
-            "glm-5.1": ("GLM-5.1", 200000, 48000),
-            "minimax-m3": ("MiniMax-M3", 512000, 48000),
-            "kimi-k3-1": ("Kimi-K3", 1000000, 48000),
-            "kimi-k2.7": ("Kimi-K2.7-Code", 256000, 32000),
-            "kimi-k2.6": ("Kimi-K2.6", 256000, 32000),
-            "auto": ("Auto", 1000000, 64000),
-        }
         models = {}
-        for mid, (name, ctx, out) in specs.items():
+        for mid, spec in MODEL_SPECS.items():
             m = {
-                "name": name,
-                "limit": {"context": ctx, "output": out},
+                "name": spec["name"],
+                "limit": {"context": spec["context"], "output": spec["output"]},
                 "modalities": {"input": ["text"], "output": ["text"]},
             }
-            if mid in ("deepseek-v4-flash", "deepseek-v4-pro"):
+            if spec["reasoning"]:
                 m["reasoning"] = {
                     "enabled": True,
                     "variants": ["off", "high", "max"],
@@ -1975,7 +2031,7 @@ class GuiApi:
         try:
             tgt.parent.mkdir(parents=True, exist_ok=True)
             tgt.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
-            return {"success": True, "path": str(tgt), "count": len(specs), "backup": backup}
+            return {"success": True, "path": str(tgt), "count": len(models), "backup": backup}
         except Exception as e:
             return {"error": str(e)}
 
