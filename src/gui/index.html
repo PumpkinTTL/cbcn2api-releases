@@ -581,7 +581,7 @@
         </div>
       <!-- 账号统计概览：一眼看全局健康度；状态项可点切换筛选，低积分告警为只读统计 -->
       <!-- 全部账号限流警示横幅：把用户引到探测按钮（正常号 >0 时不显示） -->
-      <div class="all-cooldown-banner" v-if="accounts.length && statusCount('cooldown') === accounts.length && statusCount('normal') === 0">
+      <div class="all-cooldown-banner" v-if="accounts.length && (statusCount('cooldown') === accounts.length && statusCount('normal') === 0 || BANNER_PREVIEW)">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2 18a2 2 0 001.7 3h16.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
         <span>所有账号均处于限流保护（上游临时错误）。网关会在收到请求时自动探测恢复；</span>
         <button class="banner-action-btn" :disabled="detecting" @click="detectCooldown">{{ detecting ? '探测中…' : '立即探测' }}</button>
@@ -2169,6 +2169,7 @@ window.addEventListener('unhandledrejection', function(e) {
 const vApp = createApp({
   setup() {
     // ── 核心状态 ──
+    const BANNER_PREVIEW = true; // TODO 临时预览开关：true = 强制显示全限流横幅（看完改回 false 并删除）
     const currentPlatform = ref('workbuddy');
     const currentView = ref('console');
     const activeModal = ref(null);
@@ -4384,6 +4385,7 @@ const vApp = createApp({
 
     return {
       // State
+      BANNER_PREVIEW,
       currentPlatform, currentView, activeModal, hasUpdate, announcementContent, announcementDismiss, dismissAnnouncement,
       accounts, accountStats, statTotal, statQuota,
       statusFilter, filterDate, statusDropdownOpen, accountSearch, onSearchInput,

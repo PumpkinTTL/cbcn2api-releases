@@ -212,14 +212,20 @@ class TokenRotator:
                     result = acc
                     break
             if result is None:
-                # 所有可用账号耗尽：轮询一个 transient 限流账号当探测。
+                # 所有可用账号耗尽：轮转探测 transient 限流账号。
                 # until=None 无限期，上游解除与否未知 —— 用真实请求试：
                 # 成功（代理层收到数据后调 clear_disabled）解除限流，
                 # 失败（又超时/报错）mark_disabled 重新标记，继续限流。
-                for acc in self._accounts:
+                # 从当前轮转位置开始扫（不是固定第一个）—— 多个限流号时
+                # 每次请求探测不同号，配合代理层 tried_ids 去重，单请求内
+                # 所有号各试一次，不会重复轰炸同一个号。
+                n2 = len(self._accounts)
+                for i in range(n2):
+                    acc = self._accounts[(self._index + i) % n2]
                     st = self._disabled.get(acc.id)
                     if st and st.get("reason") == "transient" and acc.status == "normal":
                         self._current_id = acc.id
+                        self._index = (self._index + i + 1) % n2
                         result = acc
                         break
             if result is None:
@@ -349,6 +355,12 @@ class TokenRotator:
     def count_usable(self) -> int:
         with self._lock:
             return sum(1 for a in self._accounts if self._is_usable(a))
+
+    def count_total(self) -> int:
+        """池中账号总数（含限流/冷却中的）—— 代理层 failover 重试上限用：
+        正常号 + 限流探测号都算，保证限流号也有机会被探测。"""
+        with self._lock:
+            return len(self._accounts)
 
     def has_usable_besides(self, account_ids) -> bool:
         """删除/禁用前置检查：除了给定账号外，池中是否还有可用账号。

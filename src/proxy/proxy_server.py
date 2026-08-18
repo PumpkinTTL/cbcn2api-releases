@@ -350,7 +350,11 @@ async def _stream_inner(
     # count_usable 在池未加载时返回 0（get_next 才会触发 reload），max(...,1) 会让
     # 明明有 N 个号的情况只试一次。先确保池已加载再算重试次数。
     token_rotator.ensure_loaded(platform)
-    max_attempts = max(token_rotator.count_usable(), 1)
+    # 重试上限 = 池总数（正常号 + 限流探测号），配合 tried_ids 去重 ——
+    # 每个账号本请求最多试一次：正常号失败进限流，限流号失败保持限流，
+    # 不会对同一个号反复轰炸（探测风暴），也保证有限次数内必然结束（无死循环）。
+    max_attempts = max(token_rotator.count_total(), 1)
+    tried_ids: set = set()
     last_msg = "无可用账号"
     model = payload.get("model", "")
     deadline = time.monotonic() + STREAM_DEADLINE
@@ -363,6 +367,11 @@ async def _stream_inner(
         acc = token_rotator.get_next(platform) or token_rotator.get_next(fallback)
         if not acc:
             break
+        if acc.id in tried_ids:
+            # 池已轮空（get_next 只会重复返回试过的号）：所有账号本请求都试过了
+            last_msg = "所有账号均已尝试且不可用"
+            break
+        tried_ids.add(acc.id)
 
         # add_log 是同步 sqlite 写，GUI 线程并发写库时可能抛 "database is locked"。
         # 这里裸调会让异常从生成器里穿出去，把一次本来能成功的请求打成 500。
