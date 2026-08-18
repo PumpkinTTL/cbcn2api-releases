@@ -51,12 +51,22 @@
   --shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55);
   --transition: 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  --modal-overlay: rgba(0, 0, 0, 0.65);
+}
 
-/* 主题切换动画期间：禁用全页元素颜色过渡，避免与圆形扩散动画叠加导致卡顿 */
-html.theme-animating, html.theme-animating *, html.theme-animating *::before, html.theme-animating *::after {
+/* 主题切换动画期间：禁用全页元素颜色过渡 + 去掉卡片阴影 + 暂停激光环，
+   避免与圆形扩散动画叠加渲染导致掉帧（卡片越多叠加越重）。 */
+html.theme-animating,
+html.theme-animating *,
+html.theme-animating *::before,
+html.theme-animating *::after {
   transition: none !important;
 }
-  --modal-overlay: rgba(0, 0, 0, 0.65);
+html.theme-animating .card {
+  box-shadow: none !important;
+}
+html.theme-animating .card.active::before {
+  animation: none !important;
 }
 
 [data-theme="light"] {
@@ -138,14 +148,21 @@ body {
   padding-top: 36px;
 }
 
-/* ===== 主题切换 View Transition（圆形扩散动画）===== */
-::view-transition-old(root),
-::view-transition-new(root) {
+/* ===== 主题切换 View Transition（圆形扩散动画）=====
+   圆内直接是新主题的真实界面（快照），无白屏；
+   圆心/半径由 JS 写入 --reveal-x / --reveal-y / --reveal-r。 */
+::view-transition-old(root) {
+  z-index: 1;
   animation: none;
-  mix-blend-mode: normal;
 }
-::view-transition-old(root) { z-index: 1; }
-::view-transition-new(root) { z-index: 9999; }
+::view-transition-new(root) {
+  z-index: 9999;
+  animation: theme-reveal 260ms ease-in-out;
+}
+@keyframes theme-reveal {
+  from { clip-path: circle(0px at var(--reveal-x, 50%) var(--reveal-y, 50%)); }
+  to   { clip-path: circle(var(--reveal-r, 150vmax) at var(--reveal-x, 50%) var(--reveal-y, 50%)); }
+}
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(root),
   ::view-transition-new(root) { animation: none !important; }

@@ -302,6 +302,11 @@ input[type="number"] { -moz-appearance: textfield; }
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 14px;
 }
+/* 增量渲染哨兵：占满整行，只有它进视口才触发加载下一批卡片 */
+.account-grid-sentinel {
+  grid-column: 1 / -1;
+  height: 1px;
+}
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -312,6 +317,10 @@ input[type="number"] { -moz-appearance: textfield; }
   box-shadow: var(--shadow);
   position: relative;
   transition: border-color 0.15s ease, padding-left 0.18s ease;
+  /* 账号多时卡片列表一次性渲染全部 DOM 是首页卡顿主因：离屏卡片跳过布局/绘制，
+     滚动到附近才渲染（auto = 渲染后记住实际高度，展开菜单/详情也能自适应）。 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 150px;
 }
 .card:hover {
   border-color: var(--border-hover);
@@ -398,29 +407,38 @@ input[type="number"] { -moz-appearance: textfield; }
   contain: layout paint;
 }
 
-/* 环绕四边的旋转高亮激光束 — @property 动画角度，向内贴边不溢出 */
+/* 环绕四边的旋转高亮激光束。
+   静态 conic-gradient 铺在一个足够大的正方形上，靠 transform 旋转 ——
+   transform 是合成器(GPU)属性，动画不重绘，是账号多时首页不卡的关键；
+   旧的 @property --bg-angle 方案每一帧都要重绘渐变，已弃用。 */
 .card.active::before {
   content: '';
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  box-sizing: border-box;
+  left: 50%;
+  top: 50%;
+  width: 300%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
   background: conic-gradient(
-    from var(--bg-angle),
+    from 0deg,
     transparent 0%,
     transparent 62%,
     var(--primary) 78%,
     #ffffff 90%,
     var(--primary-hover, #ea7353) 100%
   );
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-          mask-composite: exclude;
   animation: fx-orbit-spin 2.4s linear infinite;
   z-index: 0;
+  pointer-events: none;
+}
+/* 用与卡片同色的盖板遮住中心，只留 1px 边环透出旋转激光束 */
+.card.active::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  background: var(--surface);
+  border-radius: inherit;
+  z-index: 1;
   pointer-events: none;
 }
 
@@ -432,7 +450,8 @@ input[type="number"] { -moz-appearance: textfield; }
 .card.active .card-checkbox { z-index: 3; }
 
 @keyframes fx-orbit-spin {
-  to { --bg-angle: 360deg; }
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
 }
 .current-badge {
   display: inline-flex;

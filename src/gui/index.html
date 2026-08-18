@@ -655,7 +655,7 @@
         </div>
 
         <!-- Cards -->
-        <div v-for="a in filteredAccounts" :key="a.id"
+        <div v-for="a in visibleAccounts" :key="a.id"
           class="card"
           :class="{
             active: a.id === proxyCurrentAccount && proxyActive,
@@ -687,7 +687,7 @@
                   <span v-if="a.status === 'cooldown'" :class="getStatusBadgeClass(a)" title="触发限流保护（临时错误或单模型频率限制）。网关会在需要时自动探测恢复；也可点卡片「更多 → 验活」或概览栏「限流 → 探测」立即验证">{{ getStatusText(a) }}</span>
                   <span v-else-if="a.status === 'quota'" :class="getStatusBadgeClass(a)" title="上游返回额度已用尽（429/14018）。购买加量包或额度结算后，点验活/一键探测验证恢复">{{ getStatusText(a) }}</span>
                   <span v-else :class="getStatusBadgeClass(a)" :title="a.status === 'banned' ? '上游返回封号特征（11140），已隔离不参与调度；验活通过可恢复' : a.status === 'disabled' ? '手动禁用或阈值自动禁用，不参与调度' : ''">{{ getStatusText(a) }}</span>
-                  <span class="badge" :class="getPlanBadgeClass(a)">{{ getPlanText(a) }}</span>
+                  <span class="badge" :class="a._planCls">{{ a._planText }}</span>
                   <span v-if="a.auth_type === 'apikey'" class="badge badge-apikey" title="API Key 账号：长期密钥凭证，无刷新">
                     <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.4" style="vertical-align:-1px;margin-right:2px"><circle cx="7.5" cy="15.5" r="4"/><path d="M10.5 12.5L21 2M15 7l3 3M18 4l3 3"/></svg>API Key
                   </span>
@@ -707,18 +707,18 @@
               </div>
             </div>
             <div class="checkin-status">
-              <template v-if="parseCheckin(a) !== null">
-                <span class="checkin-badge" :class="parseCheckin(a).done ? 'done' : 'pending'">
-                  <template v-if="parseCheckin(a).done">
+              <template v-if="a._checkin !== null">
+                <span class="checkin-badge" :class="a._checkin.done ? 'done' : 'pending'">
+                  <template v-if="a._checkin.done">
                     <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:-1px"><path d="M5 13l4 4L19 7"/></svg> 已签到
                   </template>
                   <template v-else>
                     <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> 未签到
                   </template>
                 </span>
-                <span v-if="parseCheckin(a).streak > 0" class="streak-badge">
+                <span v-if="a._checkin.streak > 0" class="streak-badge">
                   <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.5" style="vertical-align:-1px"><path d="M8 2c0 4-3 6-3 9 0 4 3 7 7 7s7-3 7-7c0-3-2-5-3-7 0 3-2 5-4 5s-4-3-4-7z"/><path d="M12 22v-4"/></svg>
-                  {{ parseCheckin(a).streak }}天
+                  {{ a._checkin.streak }}天
                 </span>
               </template>
               <span v-else class="checkin-badge inactive">未开通</span>
@@ -726,14 +726,14 @@
           </div>
 
           <!-- Quota：常驻占位（min-height 固定），避免有/无额度数据时卡片高度跳动 -->
-          <div class="quota-section" :class="{ empty: !getCardQuota(a) }">
-            <template v-if="getCardQuota(a)">
+          <div class="quota-section" :class="{ empty: !a._quota }">
+            <template v-if="a._quota">
               <div class="quota-header" title="本地估算值：按请求实时扣减 + 上游快照取小（上游结算有延迟，数字可能略滞后，不影响实际可用性）">
-                <span class="quota-used-remain">已用 {{ fmt(getCardQuota(a).adjUsed) }} · 剩余 <strong class="quota-remain-val">{{ fmt(getCardQuota(a).adjRemain) }}</strong></span>
-                <span class="quota-total-val" title="总额度">{{ fmt(getCardQuota(a).total) }}</span>
+                <span class="quota-used-remain">已用 {{ fmt(a._quota.adjUsed) }} · 剩余 <strong class="quota-remain-val">{{ fmt(a._quota.adjRemain) }}</strong></span>
+                <span class="quota-total-val" title="总额度">{{ fmt(a._quota.total) }}</span>
               </div>
               <div class="quota-bar">
-                <div class="quota-fill" :class="getCardQuota(a).cls" :style="{ width: getCardQuota(a).pct + '%' }"></div>
+                <div class="quota-fill" :class="a._quota.cls" :style="{ width: a._quota.pct + '%' }"></div>
               </div>
             </template>
           </div>
@@ -801,6 +801,9 @@
             </div>
           </div>
         </div>
+
+        <!-- 增量渲染哨兵：滚近时触发加载下一批卡片 -->
+        <div v-if="visibleAccounts.length < enrichedAccounts.length" ref="accountSentinel" class="account-grid-sentinel"></div>
 
       </div>
     </div>
@@ -2575,6 +2578,45 @@ const vApp = createApp({
       return result;
     });
 
+    // 卡片渲染预计算：每张卡片的额度/签到/套餐徽章一次算好，模板直接读缓存字段。
+    // 避免每次重渲染每张卡片重复调用 getCardQuota(5次)/parseCheckin(4次)/getPlan*(2次)，
+    // 账号多时这是首页卡顿的主要 JS 开销。
+    const enrichedAccounts = computed(() => filteredAccounts.value.map(a => ({
+      ...a,
+      _quota: getCardQuota(a),
+      _checkin: parseCheckin(a),
+      _planCls: getPlanBadgeClass(a),
+      _planText: getPlanText(a),
+    })));
+
+    // ── 账号卡片增量渲染：首页只渲染一屏卡片，滚动接近底部再加载下一批。
+    // 每张卡片几十个 DOM 节点，全量渲染时切主题快照/样式重算/滚动都随 DOM 数
+    // 线性变卡（日志界面元素少所以不卡，正是反证）。增量渲染让 DOM 只随浏览增长。
+    const ACCOUNT_PAGE = 24;
+    const accountVisibleCount = ref(ACCOUNT_PAGE);
+    const accountSentinel = ref(null);
+    let _accountObserver = null;
+    const visibleAccounts = computed(() => enrichedAccounts.value.slice(0, accountVisibleCount.value));
+    function setupAccountInfiniteScroll() {
+      if (_accountObserver) { _accountObserver.disconnect(); _accountObserver = null; }
+      const el = accountSentinel.value;
+      if (!el) return;
+      _accountObserver = new IntersectionObserver((entries) => {
+        if (entries.some(e => e.isIntersecting)) {
+          const total = enrichedAccounts.value.length;
+          if (accountVisibleCount.value < total) {
+            accountVisibleCount.value = Math.min(total, accountVisibleCount.value + ACCOUNT_PAGE);
+          }
+        }
+      }, { rootMargin: '800px 0px' });
+      _accountObserver.observe(el);
+    }
+    // 列表内容/顺序变化（筛选/搜索/排序/刷新）：回到第一屏重新渲染
+    watch(() => enrichedAccounts.value.map(a => a.id).join('\u0001'), () => {
+      accountVisibleCount.value = Math.min(ACCOUNT_PAGE, enrichedAccounts.value.length);
+      nextTick(setupAccountInfiniteScroll);
+    }, { immediate: true });
+
     const detailResourcesTotal = computed(() => {
       if (!detailData.value?.resources) return { used:0, remain:0, pct:0, cls:'' };
       let allTotal=0, allUsed=0, allRemain=0;
@@ -2722,22 +2764,25 @@ const vApp = createApp({
     function openModal(name) { activeModal.value = name; }
 
     // ─── Theme ───
+    // 主题切换：圆形扩散（View Transition 快照，圆内直接是新主题真实界面，无白屏）。
+    // 圆心/半径写入 CSS 变量，交给 ::view-transition-new(root) 的 @keyframes 驱动。
     async function toggleTheme(event) {
       const html = document.documentElement;
       const isDark = html.getAttribute('data-theme') === 'dark';
       const theme = isDark ? 'light' : 'dark';
-      const x = event?.clientX ?? innerWidth/2, y = event?.clientY ?? innerHeight/2;
-      const endR = Math.hypot(Math.max(x, innerWidth-x), Math.max(y, innerHeight-y));
+      // 扩散圆心取按钮中心（不是鼠标点击坐标），动画更稳定、更自然
+      const rect = event?.currentTarget?.getBoundingClientRect?.();
+      const x = rect ? rect.left + rect.width/2 : (event?.clientX ?? innerWidth/2);
+      const y = rect ? rect.top + rect.height/2 : (event?.clientY ?? innerHeight/2);
+      const endR = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+      html.style.setProperty('--reveal-x', x + 'px');
+      html.style.setProperty('--reveal-y', y + 'px');
+      html.style.setProperty('--reveal-r', endR + 'px');
       const apply = () => setThemeUI(theme);
       if (document.startViewTransition) {
-        // 动画期间禁用全页元素自身的颜色过渡（style.css 有几十处 transition），
-        // 否则与圆形扩散动画叠加渲染，切主题会明显卡顿；动画结束再恢复。
+        // 动画期间禁用全页元素自身的颜色过渡，避免与圆形扩散叠加渲染
         html.classList.add('theme-animating');
         const t = document.startViewTransition(apply);
-        t.ready.then(() => html.animate(
-          { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${endR}px at ${x}px ${y}px)`] },
-          { duration:280, easing:'ease-in-out', pseudoElement:'::view-transition-new(root)' }
-        )).catch(()=>{});
         t.finished.finally(() => html.classList.remove('theme-animating'));
       } else { apply(); }
       // 同步 window.__THEME__ + localStorage：
@@ -4468,7 +4513,7 @@ const vApp = createApp({
       resultModalTitle, resultModalText, resultModalVariant, resultModalStats,
       logs, logEnabled, logEventFilter,
       // Computed
-      filteredAccounts, detailResourcesTotal,
+      filteredAccounts, enrichedAccounts, visibleAccounts, detailResourcesTotal,
       // Methods
       fmt, fmtK, fmtL, _n, dateStr, friendlyDate, getHitRate,
       getStatusBadgeClass, getStatusText, getPlanBadgeClass, getPlanText,
