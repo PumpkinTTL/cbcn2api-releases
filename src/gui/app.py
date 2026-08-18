@@ -1318,6 +1318,88 @@ class GuiApi:
             pass
         return json.dumps({"success": success, "total": len(accounts)})
 
+    def detect_cooldown_accounts(self, platform: str) -> str:
+        """一键探测限流账号：对当前处于 transient 限流的账号逐个发真实 chat 请求，
+        上游有响应 = 限流已解除（clear_disabled，内存+库同步清）；
+        仍超时/报错 = 继续限流。复用验活的探测内核（probe_chat_available），
+        但只清限流标记、不动账号 status。后台线程跑，前端轮询 detect_enable_status。"""
+        import concurrent.futures
+        from src.proxy.token_rotator import token_rotator, _COOLDOWN_SETTING_KEY
+        from src.proxy.probe import probe_chat_available
+
+        # 限流账号 = settings 表里 reason=transient 且未过期（含 until=None 无限期）
+        try:
+            raw = store.get_setting(_COOLDOWN_SETTING_KEY, "")
+            saved = json.loads(raw) if raw else {}
+        except Exception:
+            saved = {}
+        now = time.time()
+        cooldown_ids = {aid for aid, s in saved.items()
+                        if s.get("reason") == "transient"
+                        and (s.get("until") is None or s.get("until", 0) > now)}
+        # 内存里的也合并进来（运行期标记还没落库的极端情况）
+        try:
+            with token_rotator._lock:
+                for aid, s in token_rotator._disabled.items():
+                    if s.get("reason") == "transient":
+                        until = s.get("until")
+                        if until is None or until > now:
+                            cooldown_ids.add(aid)
+        except Exception:
+            pass
+
+        targets = [a for a in store.list_accounts(platform) if a.id in cooldown_ids]
+        if not targets:
+            return json.dumps({"ok": True, "started": False, "message": "当前没有限流账号"})
+
+        with self._detect_lock:
+            if self._detect_state.get("running"):
+                return json.dumps({"error": "验活正在进行中，请稍后再试"})
+            self._detect_state = {
+                "running": True, "finished": False,
+                "total": len(targets), "done": 0,
+                "enabled": 0, "skipped": 0, "banned": 0, "checked": 0, "failed": 0,
+                "last_account": "", "summary": "",
+            }
+
+        def worker(acc):
+            name = acc.nickname or acc.email or acc.id
+            try:
+                result = probe_chat_available(acc, acc.access_token)
+            except Exception as e:
+                return ("failed", name, f"探测异常: {e}")
+            if result == "ok":
+                token_rotator.clear_disabled(acc.id)  # 内存+库同步清限流
+                return ("enabled", name, "限流已解除（上游响应正常）")
+            if result == "banned":
+                return ("banned", name, "探测被拒（封号特征），限流保持")
+            return ("failed", name, "上游仍无响应，限流保持")
+
+        def runner():
+            released, kept = 0, 0
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+                futs = [ex.submit(worker, a) for a in targets]
+                for fut in concurrent.futures.as_completed(futs):
+                    try:
+                        status, name, reason = fut.result()
+                    except Exception:
+                        status, name, reason = "failed", "?", "未知错误"
+                    if status == "enabled":
+                        released += 1
+                    else:
+                        kept += 1
+                    with self._detect_lock:
+                        self._detect_state["done"] += 1
+                        self._detect_state[status] = self._detect_state.get(status, 0) + 1
+                        self._detect_state["last_account"] = name
+            with self._detect_lock:
+                self._detect_state["running"] = False
+                self._detect_state["finished"] = True
+                self._detect_state["summary"] = f"限流探测完成：解除 {released} 个，保持限流 {kept} 个"
+
+        threading.Thread(target=runner, daemon=True).start()
+        return json.dumps({"ok": True, "started": True, "total": len(targets)})
+
     def detect_and_enable_accounts(self, platform: str, threshold: float = -1) -> str:
         """并发验活全部账号：拉取最新额度，达标的禁用号自动启用。
 

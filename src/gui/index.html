@@ -589,6 +589,13 @@
           <span class="overview-num">{{ statusCount('normal') }}</span>
           <span class="overview-label">正常</span>
         </div>
+        <div class="overview-item overview-cooldown" :class="{ active: statusFilter==='cooldown' }" @click="selectStatusFilter('cooldown')" title="点击只看限流账号（临时错误，探测/验活通过自动恢复）">
+          <span class="overview-num">{{ statusCount('cooldown') }}</span>
+          <span class="overview-label">限流</span>
+          <button class="overview-action-btn" v-if="statusCount('cooldown') > 0 && !detecting" @click.stop="detectCooldown" title="一键探测限流账号：发真实请求验证，上游已解除的自动恢复">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg> 探测
+          </button>
+        </div>
         <div class="overview-item overview-disabled" :class="{ active: statusFilter==='disabled' }" @click="selectStatusFilter('disabled')" title="点击只看已禁用账号">
           <span class="overview-num">{{ statusCount('disabled') }}</span>
           <span class="overview-label">已禁用</span>
@@ -2901,6 +2908,24 @@ const vApp = createApp({
       detectAndEnable();
     }
 
+    // 一键探测限流账号：后端对限流号发真实 chat 请求，上游有响应即解除限流。
+    // 复用验活的进度轮询（detectTimer/pollDetectStatus/detectProgress）。
+    async function detectCooldown() {
+      if (detecting.value) return;
+      detecting.value = true;
+      detectProgress.done = 0; detectProgress.total = 0;
+      detectProgress.enabled = 0; detectProgress.skipped = 0;
+      detectProgress.banned = 0; detectProgress.checked = 0; detectProgress.failed = 0; detectProgress.summary = '';
+      try {
+        const r = JSON.parse(await pywebview.api.detect_cooldown_accounts(currentPlatform.value));
+        if (r.error) { showToast(r.error, 'error'); detecting.value = false; return; }
+        if (!r.started) { showToast(r.message || '当前没有限流账号', 'info'); detecting.value = false; return; }
+        detectProgress.total = r.total;
+        showToast(`开始探测 ${r.total} 个限流账号...`, 'info');
+        detectTimer = setInterval(pollDetectStatus, 600);
+      } catch(e) { showToast('限流探测启动失败: '+e, 'error'); detecting.value = false; }
+    }
+
     async function detectAndEnable() {
       if (detecting.value) return;
       detecting.value = true;
@@ -4366,7 +4391,7 @@ const vApp = createApp({
       selectStatusFilter, getStatusDotClass, getStatusFilterLabel,
       showConsole, showLogs, showShopCards, showAbout, showSettings, closeActionPref, closeActionOpen, saveCloseAction, setCloseAction, themePref, themeOpen, setThemePref, licenseExpiry, licenseAuthorized, openShop, openShopExternal, openModal,
       toggleTheme,
-      setFilterDate, saveQuotaThreshold, saveEnableThreshold, detectAndEnable, openDetectModal, confirmDetect,
+      setFilterDate, saveQuotaThreshold, saveEnableThreshold, detectAndEnable, openDetectModal, confirmDetect, detectCooldown,
       exportAccounts, checkinAll, refreshAll, refreshAccounts, loadAccounts,
       loadUsageSummary,
       doCheckin, refreshOne, detectOne, deleteOne, setPriorityAccount, toggleAccountStatus,

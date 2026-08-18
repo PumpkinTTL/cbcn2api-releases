@@ -852,3 +852,14 @@ input[type="number"] { -moz-appearance: textfield; }
 
 /* 冷却中（transient 临时错误，60秒自愈）——介于正常与禁用之间 */
 .badge-status-cooldown { font-size: 10px; height: 18px; line-height: 16px; padding: 0 6px; border-radius: 4px; background: var(--info-light, #e3f2fd); color: var(--info, #1976d2); border: 1px solid rgba(25,118,210,0.25); box-sizing: border-box; flex-shrink: 0; }
+
+/* 限流概览卡片（蓝色系，与限流徽章一致）+ 一键探测按钮 */
+.overview-cooldown::before { background: #1976d2; }
+.overview-item.overview-cooldown { position: relative; }
+.overview-action-btn {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; padding: 1px 6px; border-radius: 4px;
+  border: 1px solid rgba(25,118,210,0.35); background: rgba(25,118,210,0.08);
+  color: #1976d2; cursor: pointer; margin-top: 2px;
+}
+.overview-action-btn:hover { background: rgba(25,118,210,0.18); }
