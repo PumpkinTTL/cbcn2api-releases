@@ -278,7 +278,7 @@ class GuiApi:
     def list_accounts(self, platform: str) -> str:
         accounts = store.list_accounts(platform)
         out = [a.to_dict() for a in accounts]
-        # 叠加探测制冷却状态（transient=限流 / quota=额度耗尽）。数据源两处合一：
+        # 叠加探测制冷却状态（transient/model=限流 / quota=额度耗尽）。数据源两处合一：
         #   1) 进程内存 token_rotator._disabled（运行期标记）
         #   2) settings 表 cooldowns（持久化记录，含外部写入/上次运行遗留）
         # 直接读库而不只信内存 —— 否则外部写入的限流记录要等重启才能看到。
@@ -294,7 +294,7 @@ class GuiApi:
                     until = s.get("until")
                     if until is not None and until <= now:
                         continue  # 已过期
-                    if s.get("reason") == "transient":
+                    if s.get("reason") in ("transient", "model"):
                         cooldown_ids.add(aid)
                     elif s.get("reason") == "quota":
                         quota_ids.add(aid)
@@ -1298,37 +1298,39 @@ class GuiApi:
             pass
         return json.dumps({"success": success, "total": len(accounts)})
 
-    def detect_cooldown_accounts(self, platform: str) -> str:
-        """一键探测限流/额度耗尽账号：对处于 transient 限流或 quota 耗尽的账号逐个发真实 chat 请求，
-        上游有响应 = 限流已解除（clear_disabled，内存+库同步清）；
-        仍超时/报错 = 继续限流。复用验活的探测内核（probe_chat_available），
-        但只清限流标记、不动账号 status。后台线程跑，前端轮询 detect_enable_status。"""
+    def detect_cooldown_accounts(self, platform: str, model: str = "") -> str:
+        """一键探测限流/额度耗尽账号。
+
+        model 为空（自动）：model 限流号用其被限模型逐个探测，transient/quota 号用默认
+        hy3/deepseek 探测；model 指定：全部限流号都用该模型探测（面板指定模型）。
+        上游 200 = 恢复（逐模型 clear），仍 6004/报错 = 保持限流。
+        只清限流标记、不动账号 status。后台线程跑，前端轮询 detect_enable_status。"""
         import concurrent.futures
-        from src.proxy.token_rotator import token_rotator, _COOLDOWN_SETTING_KEY
+        from src.proxy.token_rotator import token_rotator, _COOLDOWN_SETTING_KEY, _models_of
         from src.proxy.probe import probe_chat_available
 
-        # 限流账号 = settings 表里 reason=transient 且未过期（含 until=None 无限期）
+        # 限流账号 = settings 表里 reason ∈ transient/quota/model 且未过期（含 until=None 无限期）
         try:
             raw = store.get_setting(_COOLDOWN_SETTING_KEY, "")
             saved = json.loads(raw) if raw else {}
         except Exception:
             saved = {}
         now = time.time()
-        cooldown_ids = {aid for aid, s in saved.items()
-                        if s.get("reason") in ("transient", "quota")
+        cooldown_map = {aid: s for aid, s in saved.items()
+                        if s.get("reason") in ("transient", "quota", "model")
                         and (s.get("until") is None or s.get("until", 0) > now)}
         # 内存里的也合并进来（运行期标记还没落库的极端情况）
         try:
             with token_rotator._lock:
                 for aid, s in token_rotator._disabled.items():
-                    if s.get("reason") in ("transient", "quota"):
+                    if s.get("reason") in ("transient", "quota", "model"):
                         until = s.get("until")
                         if until is None or until > now:
-                            cooldown_ids.add(aid)
+                            cooldown_map[aid] = s
         except Exception:
             pass
 
-        targets = [a for a in store.list_accounts(platform) if a.id in cooldown_ids]
+        targets = [a for a in store.list_accounts(platform) if a.id in cooldown_map]
         if not targets:
             return json.dumps({"ok": True, "started": False, "message": "当前没有限流账号"})
 
@@ -1344,15 +1346,33 @@ class GuiApi:
 
         def worker(acc):
             name = acc.nickname or acc.email or acc.id
-            try:
-                result = probe_chat_available(acc, acc.access_token)
-            except Exception as e:
-                return ("failed", name, f"探测异常: {e}")
-            if result == "ok":
-                token_rotator.clear_disabled(acc.id)  # 内存+库同步清限流/耗尽
-                return ("enabled", name, "已恢复（上游响应正常）")
-            if result == "banned":
-                return ("banned", name, "探测被拒（封号特征），限流保持")
+            st = cooldown_map.get(acc.id) or {}
+            # 决定探测哪些模型：指定模型 > 被限模型列表 > 默认(hy3/deepseek)
+            if model:
+                probe_models = [model]
+            elif st.get("reason") == "model":
+                probe_models = _models_of(st) or [None]
+            else:
+                probe_models = [None]
+            recovered = 0
+            for m in probe_models:
+                try:
+                    result = probe_chat_available(acc, acc.access_token, model=m)
+                except Exception as e:
+                    return ("failed", name, f"探测异常: {e}")
+                if result == "ok":
+                    if m:
+                        token_rotator.clear_model_disabled(acc.id, m)
+                    else:
+                        token_rotator.clear_disabled(acc.id)
+                    recovered += 1
+                elif result == "banned":
+                    return ("banned", name, "探测被拒（封号特征），限流保持")
+                # unknown → 该模型仍限流，继续下一个
+            if recovered:
+                if recovered == len(probe_models):
+                    return ("enabled", name, "已恢复（上游响应正常）")
+                return ("enabled", name, f"部分恢复 {recovered}/{len(probe_models)}")
             return ("failed", name, "上游仍无响应，限流保持")
 
         def runner():
@@ -2146,6 +2166,11 @@ class GuiApi:
         logs = list_logs(platform, limit=limit, offset=offset, event=event, since=since)
         for log in logs:
             log["_time"] = time.strftime("%H:%M:%S", time.localtime(log["timestamp"]))
+            # 防御：details 截断 —— 历史超大记录（700KB+）会把日志页一次拉垮，
+            # 截断后展开也能看到错误 body / 关键摘要，不影响排查
+            d = log.get("details")
+            if d and len(d) > 3000:
+                log["details"] = d[:3000] + "…(truncated)"
         return json.dumps({"logs": logs, "count": len(logs)})
 
     def clear_logs(self, platform: str = "", before: int = 0) -> str:

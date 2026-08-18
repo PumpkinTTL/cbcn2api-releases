@@ -63,12 +63,22 @@ def _snapshot_usable(quota_raw: Optional[dict], usage_raw: Optional[dict]) -> bo
     return False
 
 
+def _models_of(st: dict) -> list:
+    """从冷却记录里取被限模型列表（兼容旧单字段 model + 新字段 models）。"""
+    models = list(st.get("models") or [])
+    legacy = st.get("model")
+    if legacy and legacy not in models:
+        models.append(legacy)
+    return models
+
+
 class TokenRotator:
     """粘性优先账号池：锁定一个主账号持续使用，直到它额度耗尽/出错，
     再切到下一个。未被选中的账号保持干净（不轮询消耗）。
 
     账号状态：
       - quota     额度耗尽（14018/429），冷却 1h
+      - model     单模型每日额度/频率限制（6004），探测制同 quota
       - auth      非法请求（403），冷却 10min
       - transient 临时错误（401/502/503/504/超时），冷却 1min
       - disabled/banned  由配额API判定持久化，本类不可覆盖
@@ -224,7 +234,7 @@ class TokenRotator:
                     acc = self._accounts[(self._index + i) % n2]
                     st = self._disabled.get(acc.id)
                     # 探测制两类：transient（限流）+ quota（额度耗尽，买了加量包即恢复）
-                    if (st and st.get("reason") in ("transient", "quota")
+                    if (st and st.get("reason") in ("transient", "quota", "model")
                             and acc.status == "normal"):
                         self._current_id = acc.id
                         self._index = (self._index + i + 1) % n2
@@ -246,18 +256,23 @@ class TokenRotator:
         st = self._disabled.get(account_id)
         if st:
             r = st.get("reason")
+            if r == "model":
+                models = _models_of(st)
+                label = "、".join(models) if models else "未知"
+                prefix = "单模型" if len(models) <= 1 else "多模型"
+                return f"{prefix}被限制频率-{label}-已移入限流池"
             if r:
                 return {"quota": "额度耗尽", "auth": "非法请求", "transient": "临时错误", "banned": "封号", "manual": "手动禁用"}.get(r, r)
         return ""
 
-    def mark_disabled(self, account_id: str, reason: str):
+    def mark_disabled(self, account_id: str, reason: str, model: Optional[str] = None):
         """标记账号不可用，自动持久化冷却记录到 settings 表。
 
         banned（11140 封号）：3 次机会（30s→2m→5m 冷却），第 3 次在 DB 标记
         status='banned'（永久隔离）+ reload 立即生效，恢复靠验活。
-        quota（额度耗尽）与 transient 同为无限期限流（探测制）：上游何时恢复
-        未知（买加量包/结算），恢复唯一途径是真实请求探测（验活/一键探测/
-        调度轮询），通过才解除。
+        quota（额度耗尽）/ model（单模型每日限流 6004）与 transient 同为无限期限流
+        （探测制）：上游何时恢复未知（买加量包/结算/跨日重置），恢复唯一途径是
+        真实请求探测（验活/一键探测/调度轮询），通过才解除。
         落库/reload 放到锁外 —— store 是同步 sqlite，锁内写库会卡住事件循环。
         """
         to_persist = None
@@ -278,11 +293,16 @@ class TokenRotator:
             else:
                 # quota（额度耗尽）/ transient（超时/DNS）：无限期限流（until=None），
                 # 探测制恢复 —— 所有可用账号耗尽时轮询限流账号发请求，
-                # 成功（代理层调 clear_disabled）才解除，失败继续保持限流。
-                self._disabled[account_id] = {
-                    "reason": reason,
-                    "until": None,
-                }
+                # 成功（代理层调 clear_model_disabled/clear_disabled）才解除，失败继续保持限流。
+                if reason == "model" and model:
+                    # 单模型限流：累积多个被限模型（一个号可能先后撞 glm-5.3 和 glm-5.2）
+                    existing = self._disabled.get(account_id)
+                    models = _models_of(existing) if existing and existing.get("reason") == "model" else []
+                    if model not in models:
+                        models.append(model)
+                    self._disabled[account_id] = {"reason": "model", "until": None, "models": models}
+                else:
+                    self._disabled[account_id] = {"reason": reason, "until": None}
             if account_id == self._current_id:
                 # 当前号被标记不可用：暂存原号与原因，供 get_next 换号时写切号日志
                 self._pending_switch_from = account_id
@@ -331,6 +351,34 @@ class TokenRotator:
                     store.save_setting(_COOLDOWN_SETTING_KEY, json.dumps(saved, ensure_ascii=False))
         except Exception:
             pass
+
+    def clear_model_disabled(self, account_id: str, model: str):
+        """逐模型清除：model 限流号只移除指定模型，仍有其他被限模型则保留限流；
+        非 model 冷却（transient/quota）任何模型成功都算整体恢复。内存+库同步。"""
+        removed_all = False
+        with self._lock:
+            st = self._disabled.get(account_id)
+            if not st:
+                return
+            if st.get("reason") != "model":
+                self._disabled.pop(account_id, None)
+                self._banned_fail.pop(account_id, None)
+                removed_all = True
+            else:
+                models = _models_of(st)
+                if model in models:
+                    models.remove(model)
+                if models:
+                    st["models"] = models
+                    st.pop("model", None)
+                else:
+                    self._disabled.pop(account_id, None)
+                    self._banned_fail.pop(account_id, None)
+                    removed_all = True
+        if removed_all:
+            self.clear_disabled(account_id)
+        else:
+            self._persist_cooldowns()
 
     def on_disable(self, account_id: str) -> bool:
         """手动禁用账号后，若它是当前号则切换到下一个可用号。

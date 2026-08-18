@@ -27,10 +27,11 @@ _UPSTREAM_LOG_KEYS = (
 
 
 def _log_upstream(op: str, account, url: str, resp: requests.Response):
-    """记录一次上游交互（受统一日志开关 log_enabled 控制，add_log 内部检查）。
+    """记录一次上游失败交互（受统一日志开关 log_enabled 控制，add_log 内部检查）。
 
-    只截取关键信息：HTTP 状态码 + 响应里的白名单字段（code/msg/额度数字等），
-    不落完整 JSON —— 方便排查「刷新/额度/登录」类问题又不会刷屏。
+    成功探活（签到状态/额度查询 200 OK）是高频噪音，不落日志；
+    只记录 FAIL / 非 200 / 业务码异常 —— 这些才是排查 6004/14018/11140 等问题的关键。
+    只截取白名单字段（code/msg/额度数字等），不落完整 JSON。
     """
     # 账号标识：email 或 nickname 截断（不落完整 id，缩短日志行）
     name = ""
@@ -78,6 +79,8 @@ def _log_upstream(op: str, account, url: str, resp: requests.Response):
     details = json.dumps(details, ensure_ascii=False)
     if body_text:
         details += f" | body: {body_text}"
+    if ok == "OK":
+        return
     try:
         from src.storage.store import add_log
         add_log("upstream", "workbuddy", account_id, name, "", message, details[:1000])

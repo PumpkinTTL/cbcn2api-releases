@@ -36,8 +36,9 @@ def update_config(port: int, password: str, platform: str):
 security = HTTPBearer(auto_error=False)
 
 # 上游错误分类
-QUOTA_ERROR_CODES = {14018}                # 额度耗尽（body code）
-QUOTA_STATUS_CODES = {429}                 # 额度耗尽（HTTP 429）
+QUOTA_ERROR_CODES = {14018}                # 额度耗尽（账号级，body code）
+MODEL_RATE_LIMIT_CODES = {6004}            # 单个模型每日额度/频率限制（body code）
+QUOTA_STATUS_CODES = {429}                 # HTTP 429 兜底：body code 未识别时归 quota
 TRANSIENT_STATUS_CODES = {401, 502, 503, 504}  # 临时错误
 
 # CodeBuddy 上游对 system prompt 做关键词审核：安全条款里列举攻击性术语
@@ -180,6 +181,8 @@ def _classify_upstream_error(status_code: int, body: str) -> Optional[str]:
         return "banned"
     if code in QUOTA_ERROR_CODES:
         return "quota"
+    if code in MODEL_RATE_LIMIT_CODES:
+        return "model"
     if status_code in QUOTA_STATUS_CODES:
         return "quota"
     if status_code == 403:
@@ -246,7 +249,6 @@ async def _normalize_text_stream(
     aiter: AsyncIterator[str],
     usage_box: Optional[dict] = None,
     deadline: Optional[float] = None,
-    content_box: Optional[dict] = None,
 ) -> AsyncGenerator[str, None]:
     """规整上游 SSE，对照 9router passthrough 模式：
     - 只删空 tool_calls: []（CodeBuddy CN 每块都带，AI SDK 误判）
@@ -290,16 +292,6 @@ async def _normalize_text_stream(
                     # 捕获 usage（最后一个 chunk 携带）
                     if usage_box is not None and isinstance(obj.get("usage"), dict):
                         usage_box["usage"] = obj["usage"]
-
-                    # 捕获正文摘要（content_box：短响应排查用——拦截/拒绝消息
-                    # 通常很短，全文落日志；正常长回答只记长度，不刷屏）
-                    if content_box is not None:
-                        for choice in obj.get("choices", []):
-                            c = choice.get("delta", {}).get("content")
-                            if c:
-                                content_box["len"] = content_box.get("len", 0) + len(c)
-                                if content_box.get("len", 0) <= 1200:
-                                    content_box["text"] = content_box.get("text", "") + c
 
                     for choice in obj.get("choices", []):
                         delta = choice.get("delta", {})
@@ -375,33 +367,14 @@ async def _stream_inner(
 
         # add_log 是同步 sqlite 写，GUI 线程并发写库时可能抛 "database is locked"。
         # 这里裸调会让异常从生成器里穿出去，把一次本来能成功的请求打成 500。
-        # request 日志带请求摘要：模型 + 消息数 + 首个 system prompt（前 300 字符）。
-        # 排查「客户端注入提示词导致上游拦截」类问题——直接看日志就能确认
-        # 上游收到的是什么，不用再抓包。
+        # request 日志只记模型 + 消息数，不保存消息内容/会话记录 ——
+        # 全量会话会让单条 details 膨胀到几百 KB，日志页一次拉 200 条即内存爆炸。
+        # （要排查「客户端注入提示词导致上游拦截」时，看 error 事件的详情即可）
         req_detail = ""
         try:
             msgs = payload.get("messages", []) or []
-            sys_prompt = ""
-            msgs_view = []
-            for m in msgs:
-                role = m.get("role", "?")
-                c = m.get("content")
-                if isinstance(c, str):
-                    text = c
-                else:
-                    try:
-                        text = json.dumps(c, ensure_ascii=False)
-                    except Exception:
-                        text = str(c)
-                # 对比诊断模式：system prompt 全量记录（敏感词可能在几万字符
-                # prompt 的任意位置，截断就看不到）；其余消息前 1500 字符
-                if role == "system" and not sys_prompt:
-                    sys_prompt = text
-                msgs_view.append({"role": role, "text": text[:1500]})
             req_detail = json.dumps(
-                {"model": model, "msgs": len(msgs), "system": sys_prompt, "msgs_view": msgs_view},
-                ensure_ascii=False,
-            )
+                {"model": model, "msgs": len(msgs)}, ensure_ascii=False)
         except Exception:
             pass
         _safe_log("request", platform, acc.id, acc.nickname, model, f"开始请求 model={model}", req_detail)
@@ -441,7 +414,7 @@ async def _stream_inner(
                 kind = _classify_upstream_error(resp.status_code, body)
                 logger.warning("[调度] 账号=%s 上游返回 %d, kind=%s, body=%s", acc.nickname, resp.status_code, kind, body[:200])
                 if kind:
-                    token_rotator.mark_disabled(acc.id, kind)
+                    token_rotator.mark_disabled(acc.id, kind, model=model)
                     _safe_log("error", platform, acc.id, acc.nickname, model, f"HTTP {resp.status_code} → {kind}", body[:500])
                     last_msg = body[:300]
                     continue
@@ -495,7 +468,7 @@ async def _stream_inner(
                 kind = _classify_upstream_error(200, inline_err)
                 logger.warning("[调度] 账号=%s 200内联错误, kind=%s, err=%s", acc.nickname, kind, inline_err[:200])
                 if kind:
-                    token_rotator.mark_disabled(acc.id, kind)
+                    token_rotator.mark_disabled(acc.id, kind, model=model)
                     _safe_log("error", platform, acc.id, acc.nickname, model, f"200内联错误 → {kind}", inline_err[:500])
                     last_msg = inline_err[:300]
                     continue
@@ -518,33 +491,26 @@ async def _stream_inner(
                     yield c
 
             logger.info("[调度] 账号=%s 请求成功", acc.nickname)
-            # 限流探测成功：真实请求通了 = 上游已解除，清除 transient 限流标记
+            # 限流探测成功：真实请求通了 = 上游已解除，逐模型清除限流标记
+            # （model 限流号只清本次请求的模型；transient/quota 号整体恢复）
             try:
-                token_rotator.clear_disabled(acc.id)
+                token_rotator.clear_model_disabled(acc.id, model)
             except Exception:
                 pass
             usage_box = {}
-            content_box = {}
             try:
-                async for piece in _normalize_text_stream(_combined(), usage_box, deadline, content_box):
+                async for piece in _normalize_text_stream(_combined(), usage_box, deadline):
                     sent_any = True
                     yield piece
             finally:
                 await resp.aclose()
-                # 短响应（≤500 字符）全文落日志：敏感词拦截/系统拒绝这类消息
-                # 通常很短且不走 error 结构（choices 正常返回），非 error 分支
-                # 记录不到内容，这里兜住——响应原文进日志，排查不用抓包。
-                short_resp = content_box.get("text") if content_box.get("len", 0) <= 500 else None
                 if usage_box.get("usage"):
                     u = usage_box["usage"]
                     consumed = _extract_consumed(u)
                     if consumed > 0:
                         token_rotator.deduct_quota(acc.id, consumed)
                     update_account_stats(platform, acc.id, u)
-                    if not short_resp:
-                        _safe_log("success", platform, acc.id, acc.nickname, model, f"消耗 {consumed}" if consumed > 0 else "请求成功", "")
-                if short_resp:
-                    _safe_log("success", platform, acc.id, acc.nickname, model, f"短响应({content_box['len']}字): {short_resp}", "")
+                    _safe_log("success", platform, acc.id, acc.nickname, model, f"消耗 {consumed}" if consumed > 0 else "请求成功", "")
             return
         except httpx.TimeoutException as e:
             await resp.aclose()

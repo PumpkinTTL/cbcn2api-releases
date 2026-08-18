@@ -588,7 +588,7 @@
       <div class="all-cooldown-banner" v-if="accounts.length && ((statusCount('cooldown') + statusCount('quota')) === accounts.length && statusCount('normal') === 0 || BANNER_PREVIEW)">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2 18a2 2 0 001.7 3h16.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
         <span>所有账号均处于限流保护（上游临时错误）。网关会在收到请求时自动探测恢复；</span>
-        <button class="banner-action-btn" :disabled="detecting" @click="detectCooldown">{{ detecting ? '探测中…' : '立即探测' }}</button>
+        <button class="banner-action-btn" :disabled="detecting" @click="openProbeModal">{{ detecting ? '探测中…' : '立即探测' }}</button>
         <span>或稍后重试。</span>
       </div>
       <div class="accounts-overview" v-show="accounts.length">
@@ -603,7 +603,7 @@
         <div class="overview-item overview-cooldown" :class="{ active: statusFilter==='cooldown' }" @click="selectStatusFilter('cooldown')" title="点击只看限流账号（临时错误，探测/验活通过自动恢复）">
           <span class="overview-num">{{ statusCount('cooldown') }}</span>
           <span class="overview-label">限流</span>
-          <button class="overview-action-btn" v-if="(statusCount('cooldown') + statusCount('quota')) > 0 && !detecting" @click.stop="detectCooldown" title="一键探测限流账号：发真实请求验证，上游已解除的自动恢复">
+          <button class="overview-action-btn" v-if="(statusCount('cooldown') + statusCount('quota')) > 0 && !detecting" @click.stop="openProbeModal" title="一键探测限流账号：发真实请求验证，上游已解除的自动恢复">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg> 探测
           </button>
         </div>
@@ -684,7 +684,7 @@
                   <span v-if="proxyRunning && a.id === proxyCurrentAccount" class="current-badge">
                     <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg>当前
                   </span>
-                  <span v-if="a.status === 'cooldown'" :class="getStatusBadgeClass(a)" title="上游临时错误（超时/网络抖动）触发限流保护。网关会在需要时自动探测恢复；也可点卡片「更多 → 验活」或概览栏「限流 → 探测」立即验证">{{ getStatusText(a) }}</span>
+                  <span v-if="a.status === 'cooldown'" :class="getStatusBadgeClass(a)" title="触发限流保护（临时错误或单模型频率限制）。网关会在需要时自动探测恢复；也可点卡片「更多 → 验活」或概览栏「限流 → 探测」立即验证">{{ getStatusText(a) }}</span>
                   <span v-else-if="a.status === 'quota'" :class="getStatusBadgeClass(a)" title="上游返回额度已用尽（429/14018）。购买加量包或额度结算后，点验活/一键探测验证恢复">{{ getStatusText(a) }}</span>
                   <span v-else :class="getStatusBadgeClass(a)" :title="a.status === 'banned' ? '上游返回封号特征（11140），已隔离不参与调度；验活通过可恢复' : a.status === 'disabled' ? '手动禁用或阈值自动禁用，不参与调度' : ''">{{ getStatusText(a) }}</span>
                   <span class="badge" :class="getPlanBadgeClass(a)">{{ getPlanText(a) }}</span>
@@ -1111,6 +1111,37 @@
       <div class="modal-actions">
         <button class="btn btn-ghost" @click="activeModal = null">取消</button>
         <button class="btn btn-primary" @click="confirmDetect">开始验活</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Probe Cooldown Modal：选择探测模型（默认自动=被限模型，或指定模型） -->
+  <div class="modal-overlay" id="probeModal" :class="{ show: activeModal === 'probeCooldown' }">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header">
+        <h2>探测限流账号</h2>
+        <p>发真实 chat 请求验证上游是否已恢复</p>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>探测模型</label>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px">
+            <button type="button"
+              :class="probeModel === '' ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'"
+              @click="probeModel = ''">自动（被限模型）</button>
+            <button type="button" v-for="m in probeModelOptions" :key="m.id"
+              :class="probeModel === m.id ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'"
+              @click="probeModel = m.id">{{ m.name }}</button>
+          </div>
+        </div>
+        <p style="font-size:12px;color:var(--text-muted);line-height:1.7;margin:0">
+          自动：单模型限流号用其被限模型逐个探测（一个号多个模型被限会逐个测），其余限流号用 hy3/deepseek 验活。
+          指定模型：所有限流号都用该模型探测。
+        </p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" @click="activeModal = null">取消</button>
+        <button class="btn btn-primary" @click="confirmProbe">开始探测</button>
       </div>
     </div>
   </div>
@@ -2138,6 +2169,7 @@ const MODEL_ICONS = {
 const PRESET_MODELS = [
   { id:'auto', provider:'auto', name:'Auto' },
   { id:'hy3', provider:'hunyuan', name:'Hy3' },
+  { id:'glm-5.3', provider:'glm', name:'GLM-5.3' },
   { id:'glm-5.2', provider:'glm', name:'GLM-5.2' },
   { id:'glm-5.1', provider:'glm', name:'GLM-5.1' },
   { id:'glm-5v-turbo', provider:'glm', name:'GLM-5v-Turbo' },
@@ -2285,6 +2317,7 @@ const vApp = createApp({
     const enableThreshold = ref(0);
     const detecting = ref(false);
     const detectProgress = reactive({ done:0, total:0, enabled:0, skipped:0, banned:0, checked:0, failed:0, summary:'' });
+    const probeModel = ref('');
     const deletedAccounts = ref([]);
     const recycleBusy = ref(false);
     const deletedSelected = ref({});
@@ -2382,6 +2415,7 @@ const vApp = createApp({
     const chatInput = ref('');
     const chatSending = ref(false);
     const modelList = ref(PRESET_MODELS);
+    const probeModelOptions = computed(() => modelList.value.filter(m => m.id !== 'auto'));
     const currentModel = ref(PRESET_MODELS[0]);
     const modelDropdownOpen = ref(false);
     const syncLoading = ref(false);
@@ -2944,16 +2978,26 @@ const vApp = createApp({
       detectAndEnable();
     }
 
-    // 一键探测限流账号：后端对限流号发真实 chat 请求，上游有响应即解除限流。
+    // 一键探测限流账号：先弹面板选模型（默认「自动」= 用该号被限模型逐个探测；也可指定模型），
+    // 后端对限流号发真实 chat 请求，上游有响应即解除限流。
     // 复用验活的进度轮询（detectTimer/pollDetectStatus/detectProgress）。
-    async function detectCooldown() {
+    function openProbeModal() {
+      if (detecting.value) return;
+      probeModel.value = '';
+      activeModal.value = 'probeCooldown';
+    }
+    function confirmProbe() {
+      activeModal.value = null;
+      detectCooldown(probeModel.value);
+    }
+    async function detectCooldown(model) {
       if (detecting.value) return;
       detecting.value = true;
       detectProgress.done = 0; detectProgress.total = 0;
       detectProgress.enabled = 0; detectProgress.skipped = 0;
       detectProgress.banned = 0; detectProgress.checked = 0; detectProgress.failed = 0; detectProgress.summary = '';
       try {
-        const r = JSON.parse(await pywebview.api.detect_cooldown_accounts(currentPlatform.value));
+        const r = JSON.parse(await pywebview.api.detect_cooldown_accounts(currentPlatform.value, model || ''));
         if (r.error) { showToast(r.error, 'error'); detecting.value = false; return; }
         if (!r.started) { showToast(r.message || '当前没有限流账号', 'info'); detecting.value = false; return; }
         detectProgress.total = r.total;
@@ -4432,7 +4476,8 @@ const vApp = createApp({
       selectStatusFilter, getStatusDotClass, getStatusFilterLabel,
       showConsole, showLogs, showShopCards, showAbout, showSettings, closeActionPref, closeActionOpen, saveCloseAction, setCloseAction, themePref, themeOpen, setThemePref, licenseExpiry, licenseAuthorized, openShop, openShopExternal, openModal,
       toggleTheme,
-      setFilterDate, saveQuotaThreshold, saveEnableThreshold, detectAndEnable, openDetectModal, confirmDetect, detectCooldown,
+      setFilterDate, saveQuotaThreshold, saveEnableThreshold, detectAndEnable, openDetectModal, confirmDetect,
+      probeModel, probeModelOptions, openProbeModal, confirmProbe, detectCooldown,
       exportAccounts, checkinAll, refreshAll, refreshAccounts, loadAccounts,
       loadUsageSummary,
       doCheckin, refreshOne, detectOne, deleteOne, setPriorityAccount, toggleAccountStatus,

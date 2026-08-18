@@ -29,7 +29,7 @@ APP_ID = 100
 # data/signing_key.hex（或环境变量 LIC_ADMIN_SIGNING_KEY）。
 # 公钥内嵌二进制是安全的：逆向提取公钥也伪造不出签名（需要服务端私钥）。
 # 轮换密钥 = 服务端换 seed + 这里换公钥 + 重发客户端。
-PUBKEY_HEX = "08c03eafb6b5cafde1c524dde4a178cc9d89cc9c4e386b98d9bc0f179d9f643b"
+PUBKEY_HEX = "be1ddc722acef5858af095d9b67042c4cba36b2c460ade30e8b4183664c3bec2"
 
 # 项目根 = src 的上一级（.env 放这里；按文件位置解析，与启动时 CWD 无关）
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

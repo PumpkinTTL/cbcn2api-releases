@@ -745,7 +745,7 @@ def list_logs(platform: str, limit: int = 200, offset: int = 0,
         if since:
             sql += "AND timestamp>=? "
             params.append(since)
-        sql += "ORDER BY timestamp DESC LIMIT ? OFFSET ?"
+        sql += "ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         rows = conn.execute(sql, tuple(params)).fetchall()
         return [dict(r) for r in rows]

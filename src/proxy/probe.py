@@ -8,6 +8,9 @@
   全 11140 → "banned"（封号）
   任意 200 → "ok"（账号活着）
   其他错误/网络异常 → "unknown"（不算封号证据，不判定）
+
+指定 model 时：只探该模型，用于「单模型限流」的恢复判定——
+  200 → ok（该模型已恢复）；6004/其他 → unknown（仍限流）；11140 → banned。
 """
 import logging
 
@@ -18,7 +21,7 @@ logger = logging.getLogger(__name__)
 _PROBE_MODELS = ("hy3", "hy3", "deepseek-v4-flash")
 
 
-def probe_chat_available(account, access_token: str) -> str:
+def probe_chat_available(account, access_token: str, model: str = None) -> str:
     """返回 'ok' | 'banned' | 'unknown'。"""
     from src.api.client import get_session
 
@@ -26,11 +29,12 @@ def probe_chat_available(account, access_token: str) -> str:
     headers["X-TUID"] = account.uid or ""
     headers["x-traffic-id"] = account.uid or ""
 
+    models = [model] if model else list(_PROBE_MODELS)
     fail_count = 0
     session = get_session()
-    for model in _PROBE_MODELS:
+    for m in models:
         payload = {
-            "model": model,
+            "model": m,
             "messages": [{"role": "user", "content": "hi"}],
             "stream": True,
             "max_tokens": 3,
@@ -54,4 +58,4 @@ def probe_chat_available(account, access_token: str) -> str:
                     return "unknown"
         except Exception:
             return "unknown"
-    return "banned" if fail_count >= 3 else "unknown"
+    return "banned" if fail_count >= len(models) else "unknown"
