@@ -1212,6 +1212,15 @@ class GuiApi:
             if account.status == "disabled":
                 return {"id": account.id, "name": name, "status": "disabled",
                         "reason": "验活通过，保持手动禁用"}
+            # 普通账号验活通过 = 上游真实请求打通 → 顺手清 transient 限流标记
+            # （限流是无限期探测制，验活就是最好的手动探测入口）
+            try:
+                if account.id in token_rotator._disabled:
+                    token_rotator.clear_disabled(account.id)
+                    return {"id": account.id, "name": name, "status": "normal",
+                            "reason": "验活通过，已解除限流"}
+            except Exception:
+                pass
             return {"id": account.id, "name": name, "status": "normal", "reason": "验活通过"}
         return {"id": account.id, "name": name, "status": "unknown",
                 "reason": "非封号错误，未判定（限流/额度/网络等）"}

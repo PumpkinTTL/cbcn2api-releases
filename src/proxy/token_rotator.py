@@ -192,6 +192,7 @@ class TokenRotator:
                 pa = next((a for a in self._accounts if a.id == prev_id), None)
                 prev_nick = pa.nickname or "" if pa else ""
             n = len(self._accounts)
+            result = None
             for _ in range(n):
                 if self._index >= n:
                     self._index = 0
@@ -210,11 +211,21 @@ class TokenRotator:
                     self._pending_switch_reason = ""
                     result = acc
                     break
-            else:
+            if result is None:
+                # 所有可用账号耗尽：轮询一个 transient 限流账号当探测。
+                # until=None 无限期，上游解除与否未知 —— 用真实请求试：
+                # 成功（代理层收到数据后调 clear_disabled）解除限流，
+                # 失败（又超时/报错）mark_disabled 重新标记，继续限流。
+                for acc in self._accounts:
+                    st = self._disabled.get(acc.id)
+                    if st and st.get("reason") == "transient" and acc.status == "normal":
+                        self._current_id = acc.id
+                        result = acc
+                        break
+            if result is None:
                 self._pending_switch_from = None
                 self._pending_switch_from_nick = ""
                 self._pending_switch_reason = ""
-                result = None
         if switch_row:
             try:
                 store.add_switch_log(*switch_row)
@@ -254,10 +265,13 @@ class TokenRotator:
                     cd = BANNED_COOLDOWNS[min(n - 1, len(BANNED_COOLDOWNS) - 1)]
                     self._disabled[account_id] = {"reason": "banned", "until": time.time() + cd}
             else:
-                cd = _COOLDOWNS.get(reason, TRANSIENT_COOLDOWN)
+                # transient（超时/DNS/临时错误）：上游何时解除未知，60s 只是猜测。
+                # 改为无限期限流（until=None）—— 恢复的唯一途径是真实请求探测：
+                # 所有可用账号耗尽时轮询限流账号发请求，成功（代理层调
+                # clear_disabled）才解除，失败继续保持限流。宁可多等，不盲目信任。
                 self._disabled[account_id] = {
                     "reason": reason,
-                    "until": time.time() + cd,
+                    "until": None,
                 }
             if account_id == self._current_id:
                 # 当前号被标记不可用：暂存原号与原因，供 get_next 换号时写切号日志
@@ -493,7 +507,9 @@ class TokenRotator:
     def _persist_cooldowns(self):
         with self._lock:
             now = time.time()
-            active = {aid: s for aid, s in self._disabled.items() if s.get("until", 0) > now}
+            # until=None 是无限期限流（transient 探测制），也要持久化；过期的丢弃
+            active = {aid: s for aid, s in self._disabled.items()
+                      if s.get("until") is None or s.get("until", 0) > now}
             payload = json.dumps(active, ensure_ascii=False)
         try:
             store.save_setting(_COOLDOWN_SETTING_KEY, payload)
@@ -508,8 +524,9 @@ class TokenRotator:
             saved = json.loads(raw)
             now = time.time()
             for aid, s in saved.items():
-                until = s.get("until", 0)
-                if until > now:
+                until = s.get("until")
+                # until=None 是无限期限流（transient 探测制），照常恢复
+                if until is None or until > now:
                     self._disabled[aid] = s
         except Exception:
             pass

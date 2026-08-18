@@ -556,6 +556,9 @@
               <div class="status-dropdown-item" :class="{ active: statusFilter === 'normal' }" @click.stop="selectStatusFilter('normal')">
                 <span class="status-dot dot-normal"></span>正常
               </div>
+              <div class="status-dropdown-item" :class="{ active: statusFilter === 'cooldown' }" @click.stop="selectStatusFilter('cooldown')">
+                <span class="status-dot dot-disabled"></span>限流
+              </div>
               <div class="status-dropdown-item" :class="{ active: statusFilter === 'disabled' }" @click.stop="selectStatusFilter('disabled')">
                 <span class="status-dot dot-disabled"></span>已禁用
               </div>

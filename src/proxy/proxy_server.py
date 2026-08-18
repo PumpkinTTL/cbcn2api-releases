@@ -509,6 +509,11 @@ async def _stream_inner(
                     yield c
 
             logger.info("[调度] 账号=%s 请求成功", acc.nickname)
+            # 限流探测成功：真实请求通了 = 上游已解除，清除 transient 限流标记
+            try:
+                token_rotator.clear_disabled(acc.id)
+            except Exception:
+                pass
             usage_box = {}
             content_box = {}
             try:
