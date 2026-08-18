@@ -29,7 +29,7 @@ APP_ID = 100
 # data/signing_key.hex（或环境变量 LIC_ADMIN_SIGNING_KEY）。
 # 公钥内嵌二进制是安全的：逆向提取公钥也伪造不出签名（需要服务端私钥）。
 # 轮换密钥 = 服务端换 seed + 这里换公钥 + 重发客户端。
-PUBKEY_HEX = "67f1297244b0fba0c96caf32376c3a31ba4cbd52c006a0d55d99523b09231185"
+PUBKEY_HEX = "05453d18173718c4efb7ffdcf675026757d6c876747ecccb352216e14c5d746d"
 
 # 项目根 = src 的上一级（.env 放这里；按文件位置解析，与启动时 CWD 无关）
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -236,8 +236,13 @@ def _verify_online(code: str):
                 return True, int(exp) if exp else None, "授权有效", extras
             return False, None, "授权校验失败", extras
         return False, None, body.get("message") or body.get("detail") or "授权校验失败", {}
-    except ConnectionError:
-        return False, None, "无法连接授权服务器或响应校验失败，请检查网络后重试", {}
+    except ConnectionError as e:
+        # 区分真话：网络不通 vs 验签失败（服务器换密钥或连接被劫持）——
+        # 提示混在一起会把人引去查网络，方向全错
+        msg = str(e)
+        if "验签失败" in msg:
+            return False, None, "签名异常，请更新到最新版本客户端", {}
+        return False, None, "无法连接授权服务器，请检查网络后重试", {}
 
 
 def heartbeat(code: str):
@@ -297,8 +302,11 @@ def _activate_online(code: str):
                 save_code(code)
                 return True, int(exp) if exp else None, "激活成功"
         return False, None, body.get("message") or body.get("detail") or "激活失败"
-    except ConnectionError:
-        return False, None, "无法连接授权服务器或响应校验失败，请检查网络后重试"
+    except ConnectionError as e:
+        msg = str(e)
+        if "验签失败" in msg:
+            return False, None, "签名异常，请更新到最新版本客户端"
+        return False, None, "无法连接授权服务器，请检查网络后重试"
 
 
 def save_code(code: str):

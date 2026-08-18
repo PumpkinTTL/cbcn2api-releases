@@ -64,7 +64,7 @@
   border: 1px solid var(--primary-border, rgba(234, 115, 83, 0.25));
   line-height: 1;
   letter-spacing: 0.5px;
-  margin-left: auto;
+  margin-left: 1px;
 }
 .titlebar-controls {
   display: flex;
@@ -346,4 +346,5 @@
 .empty-state svg { width: 48px; height: 48px; margin-bottom: 14px; opacity: 0.4; color: var(--primary); }
 .empty-state h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; color: var(--text); }
 .empty-state p { font-size: 13px; color: var(--text-secondary); }
+
 

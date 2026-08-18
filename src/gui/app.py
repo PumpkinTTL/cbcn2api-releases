@@ -17,22 +17,21 @@ from src.api.account_api import refresh_full_payload
 # 远端关闭授权 → 免授权直接用；远端开启 → 走激活码流程。
 # 远端不可达时保守视为需要授权（后续在线校验同样失败，等价拒绝放行；无离线兜底）。
 _LICENSE_ENABLED = None  # 运行时确定（True=需授权，False=免授权）
-_CONFIG_ANNOUNCEMENT = None  # config 响应带回的公告（启动第一跳即送达，不依赖 verify）
+# 公告实时拉取入口——公告以服务器为准，每次调用现拉，客户端不缓存
+# （唯一本地留存的是用户勾「不再提醒」的记录，在前端 localStorage）。
+from src.license import remote_config as lic_remote_config
 
 
 def _resolve_license_enabled():
-    """查询远端授权开关。返回 True（需授权）/ False（免授权）。结果缓存。
-    公告随 config 下发 —— 顺手缓存到 _CONFIG_ANNOUNCEMENT，check_license 透传给前端。"""
-    global _LICENSE_ENABLED, _CONFIG_ANNOUNCEMENT
+    """查询远端授权开关。返回 True（需授权）/ False（免授权）。结果缓存。"""
+    global _LICENSE_ENABLED
     try:
         from src import license as lic
         cfg = lic.remote_config()
         _LICENSE_ENABLED = cfg["enabled"]
-        _CONFIG_ANNOUNCEMENT = cfg.get("announcement")
     except Exception:
         # 远端不可达：无法确认开关，保守走授权（在线校验会失败，等价拒绝放行）
         _LICENSE_ENABLED = True
-        _CONFIG_ANNOUNCEMENT = None
     return _LICENSE_ENABLED
 
 
@@ -1660,27 +1659,34 @@ class GuiApi:
             return ""
 
     def check_license(self) -> str:
+        """每次调用都实时拉 config 公告（不缓存）—— 否则服务端删了公告，
+        客户端进程内存里的旧值会一直透传，弹个不停。授权开关仍用启动缓存
+        （开关变化要求重启生效，公告要实时）。"""
+        announcement = None
+        try:
+            announcement = lic_remote_config().get("announcement")
+        except Exception:
+            pass
         enabled = _LICENSE_ENABLED if _LICENSE_ENABLED is not None else _resolve_license_enabled()
         if not enabled:
-            # 免授权模式：不走 verify，但 config 公告仍要透传（启动即送达）
+            # 免授权模式：不走 verify，公告实时拉取透传
             result = {"licensed": True, "expiry": None, "message": "OK"}
-            if _CONFIG_ANNOUNCEMENT:
-                result["announcement"] = _CONFIG_ANNOUNCEMENT
+            if announcement:
+                result["announcement"] = announcement
             return json.dumps(result, ensure_ascii=False)
         from src import license as lic
         st = lic.status()
         if st["expiry"]:
             st["expiry_str"] = time.strftime("%Y-%m-%d %H:%M", time.localtime(st["expiry"]))
-        # config 公告兜底：verify 可能因版本被拦/未激活/断网而拿不到公告，
-        # 但 config 是启动第一跳，公告已缓存 —— 这里补上，保证启动即弹。
-        if _CONFIG_ANNOUNCEMENT and "announcement" not in st:
-            st["announcement"] = _CONFIG_ANNOUNCEMENT
+        # 公告以本次实时拉取为准（None = 服务端已删，不带字段）
+        if announcement:
+            st["announcement"] = announcement
         if st.get("licensed"):
             start_license_heartbeat(self._window)  # 心跳：在线追踪 + 运行途中吊销即时生效
         else:
             # 版本被拦（服务端 min_version / 黑名单）→ 前端显示升级提示而非激活输入框
             msg = st.get("message") or ""
-            if "版本" in msg and "升级" in msg:
+            if "版本过旧" in msg or "请升级至" in msg:
                 st["version_blocked"] = True
         return json.dumps(st, ensure_ascii=False)
 

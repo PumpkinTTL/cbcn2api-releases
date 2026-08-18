@@ -43,7 +43,7 @@
     <div class="license-icon">
       <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
     </div>
-    <h2>激活授权</h2>
+    <h2>激活授权 <span class="license-ver-tag">v1.1.3</span></h2>
     <div class="license-sub" id="licenseSub">请输入激活码以完成授权</div>
     <input id="licenseInput" placeholder="请输入激活码" onkeydown="if(event.key==='Enter')doActivate()">
     <button class="btn btn-primary" id="licenseBtn" onclick="doActivate()">
@@ -52,6 +52,10 @@
     </button>
     <div class="license-error" id="licenseError"></div>
     <div class="license-info">激活码免费领取，为了防止转发滥用，仅供测试使用</div>
+    <button class="license-download-link" id="licenseDownloadBtn" style="display:none" onclick="window.__checkForUpdate && window.__checkForUpdate()">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+      下载最新版本
+    </button>
     <div class="license-mid-tag" title="当前机器标识"><span class="mid-tag-label">当前机器码</span><span id="licenseMachineId">—</span></div>
   </div>
 </div>
@@ -62,7 +66,7 @@
     <div class="license-icon" style="color:var(--warning,#f59e0b)">
       <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
     </div>
-    <h2>版本已弃用</h2>
+    <h2>版本已弃用 <span class="license-ver-tag">v1.1.3</span></h2>
     <div class="license-sub" id="versionBlockedMsg">当前客户端版本过旧，服务端已停止支持，请更新到最新版本后继续使用。</div>
     <button class="btn btn-primary" id="versionBlockedBtn" onclick="window.__checkForUpdate && window.__checkForUpdate()">立即更新</button>
     <div class="license-info" style="margin-top:12px">更新完成后重新启动即可恢复使用</div>
@@ -105,7 +109,7 @@
           <svg viewBox="0 0 24 24" width="18" height="18" fill="#D9704E" fill-rule="evenodd"><path d="M22.369 17.676c-1.387 1.259-3.17 2.378-5.332 3.417.044.03.086.057.13.083l.018.01.019.012c.216.123.42.184.641.184.222 0 .426-.061.642-.184l.018-.011.019-.011c.14-.084.266-.178.492-.366l.178-.148c.279-.232.426-.342.625-.456.304-.174.612-.266.949-.266.337 0 .645.092.949.266l.023.014c.188.109.334.219.602.442l.178.148c.221.184.346.278.483.36l.028.017.018.01c.21.12.407.181.62.185h.022a.31.31 0 110 .618c-.337 0-.645-.092-.95-.266a3.137 3.137 0 01-.09-.054l-.022-.014-.022-.013-.02-.014a5.356 5.356 0 01-.49-.377l-.159-.132a3.836 3.836 0 00-.483-.36l-.027-.017-.019-.01a1.256 1.256 0 00-.641-.185c-.222 0-.426.061-.641.184l-.02.011-.018.011c-.14.084-.266.178-.492.366l-.158.132a5.125 5.125 0 01-.51.39l-.022.014-.022.014-.09.054a1.868 1.868 0 01-.95.266c-.337 0-.644-.092-.949-.266a3.137 3.137 0 01-.09-.054l-.022-.014-.022-.013-.026-.017a4.881 4.881 0 01-.425-.325.308.308 0 01-.12-.1l-.098-.081a3.836 3.836 0 00-.483-.36l-.027-.017-.019-.01a1.256 1.256 0 00-.641-.185c-.222 0-.426.061-.642.184l-.018.011-.019.011c-.14.084-.266.178-.492.366l-.158.132a5.125 5.125 0 01-.51.39l-.022.014-.022.014-.09.054A1.868 1.868 0 0112 22c-.337 0-.645-.092-.949-.266a3.137 3.137 0 01-.09-.054l-.022-.014-.022-.013-.021-.014a5.356 5.356 0 01-.49-.377l-.158-.132a3.836 3.836 0 00-.483-.36l-.028-.017-.018-.01a1.256 1.256 0 00-.642-.185c-.221 0-.425.061-.641.184l-.019.011-.018.011c-.141.084-.266.178-.492.366l-.158.132a5.125 5.125 0 01-.511.39l-.022.014-.022.014-.09.054a1.868 1.868 0 01-.986.264c-.746-.09-1.319-.38-1.89-.866l-.035-.03c-.047-.041-.118-.106-.192-.174l-.196-.181-.107-.1-.011-.01a1.531 1.531 0 00-.336-.253.313.313 0 00-.095-.03h-.005c-.119.022-.238.059-.361.11a.308.308 0 01-.077.061l-.008.005a.309.309 0 01-.126.034 5.66 5.66 0 00-.774.518l-.416.324-.055.043a6.542 6.542 0 01-.324.236c-.305.207-.552.315-.8.315a.31.31 0 01-.01-.618h.01c.09 0 .235-.062.438-.198l.04-.027c.077-.054.163-.117.27-.199l.385-.301.06-.047c.268-.206.506-.373.73-.505l-.633-1.21a.309.309 0 01.254-.451l20.287-1.305a.309.309 0 01.228.537zm-1.118.14L2.369 19.03l.423.809c.128-.045.256-.078.388-.1a.31.31 0 01.052-.005c.132 0 .26.032.386.093.153.073.294.179.483.35l.016.015.092.086.144.134.097.089c.065.06.125.114.16.144.485.418.948.658 1.554.736h.011a1.25 1.25 0 00.6-.172l.021-.011.019-.011.018-.011c.141-.084.266-.178.492-.366l.178-.148c.279-.232.426-.342.625-.456.305-.174.612-.266.95-.266.336 0 .644.092.948.266l.023.014c.188.109.335.219.603.442l.177.148c.222.184.346.278.484.36l.027.017.019.01c.215.124.42.185.641.185.222 0 .426-.061.641-.184l.019-.011.018-.011c.141-.084.267-.178.493-.366l.177-.148c.28-.232.427-.342.626-.456.304-.174.612-.266.949-.266.337 0 .644.092.949.266l.025.015c.187.109.334.22.603.443 1.867-.878 3.448-1.811 4.73-2.832l.02-.016zM3.653 2.026C6.073 3.06 8.69 4.941 10.8 7.258c2.46 2.7 4.109 5.828 4.637 9.149a.31.31 0 01-.421.335c-2.348-.945-4.54-1.258-6.59-1.02-1.739.2-3.337.792-4.816 1.703-.294.182-.62-.182-.405-.454 1.856-2.355 2.581-4.99 2.343-7.794-.195-2.292-1.031-4.61-2.284-6.709a.31.31 0 01.388-.442zM10.04 4.45c1.778.543 3.892 2.102 5.782 4.243 1.984 2.248 3.552 4.934 4.347 7.582a.31.31 0 01-.401.38l-.022-.01-.386-.154a10.594 10.594 0 00-.291-.112l-.016-.006c-.68-.247-1.199-.291-1.944-.101a.31.31 0 01-.375-.218C15.378 11.123 13.073 7.276 9.775 5c-.291-.201-.072-.653.266-.55zM4.273 2.996l.008.015c1.028 1.94 1.708 4.031 1.885 6.113.213 2.513-.31 4.906-1.673 7.092l-.02.031.003-.001c1.198-.581 2.47-.969 3.825-1.132l.055-.006c1.981-.23 4.083.029 6.309.837l.066.025-.007-.039c-.593-2.95-2.108-5.737-4.31-8.179l-.07-.078c-1.785-1.96-3.944-3.6-6.014-4.65l-.057-.028zm7.92 3.238l.048.048c2.237 2.295 3.885 5.431 4.974 9.191l.038.132.022-.004c.71-.133 1.284-.063 1.963.18l.027.01.066.024.046.018-.025-.073c-.811-2.307-2.208-4.62-3.936-6.594l-.058-.065c-1.02-1.155-2.103-2.132-3.15-2.856l-.015-.011z"/></svg>
         </span>
         <span class="titlebar-title">AI Gateway</span>
-        <span class="titlebar-pro-badge">PRO</span>
+        <span class="titlebar-pro-badge" title="查看更新日志" @click="openModal('changelog')">v1.1.3 · PRO</span>
       </div>
     </div>
     <div class="titlebar-controls">
@@ -157,7 +161,7 @@
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg> 切换主题
       </button>
       <div style="text-align:center;font-size:11px;margin-top:8px">
-        <span class="version-link" @click="openModal('changelog')">v1.1.2</span>
+        <span class="version-link" @click="openModal('changelog')">v1.1.3</span>
         <span style="margin:0 4px;color:var(--text-muted)">|</span>
         <span class="version-link" @click="checkForUpdate">检查更新
           <span v-if="hasUpdate" id="updateBadge" style="margin-left:4px;color:var(--accent,#2563eb);vertical-align:-1px">
@@ -879,7 +883,7 @@
         <img src="icons/workbuddy-logo.svg" class="about-logo" alt="">
         <div class="about-header-text">
           <h2 class="about-title">AI Gateway</h2>
-          <p class="about-version">v1.1.2</p>
+          <p class="about-version">v1.1.3</p>
         </div>
       </div>
 
@@ -994,7 +998,7 @@
               <span class="settings-item-desc">更新日志与检查更新</span>
             </div>
             <div class="settings-item-control">
-              <span class="version-link" @click="openModal('changelog')">v1.1.2</span>
+              <span class="version-link" @click="openModal('changelog')">v1.1.3</span>
               <button class="btn btn-ghost btn-sm" @click="checkForUpdate">检查更新</button>
             </div>
           </div>
@@ -1479,7 +1483,7 @@
         </button>
       </div>
       <div class="modal-body">
-        <div class="changelog-version">v1.1.2</div>
+        <div class="changelog-version">v1.1.3</div>
         <div class="changelog-date">2026-08-18</div>
 
         <div class="changelog-section-title">功能新增</div>
@@ -2099,7 +2103,7 @@ function showActivateError(message, code) {
   else if (/过期/.test(m)) { title = '激活码已过期'; hint = '该激活码已超过有效期，请联系管理员获取新码'; }
   else if (/禁用|吊销/.test(m)) { title = '激活码已被禁用'; hint = '该码已被管理员停用，请联系管理员'; }
   else if (/其他设备|其他机器/.test(m)) { title = '激活码已在其他设备使用'; hint = '一个激活码只能绑定一台设备，换机请联系管理员解绑'; }
-  else if (/版本/.test(m)) { title = '客户端版本过旧'; hint = m; }
+  else if (/版本过旧|请升级至/.test(m)) { title = '客户端版本过旧'; hint = m; }
   else if (/连接|网络|不可达/.test(m)) { title = '无法连接授权服务器'; hint = '请检查网络后重试'; }
   else { title = '激活失败'; hint = m || '请重试'; }
   el.innerHTML = '<div class="act-err-title">' + title + '</div>' +
