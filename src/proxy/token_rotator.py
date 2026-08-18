@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 QUOTA_COOLDOWN = 3600   # 额度耗尽（429）：1 小时后重试
 AUTH_COOLDOWN = 600     # 非法请求（403）：10 分钟后重试
 TRANSIENT_COOLDOWN = 60  # 临时错误（401/502/503/504/超时）：1 分钟后重试
-BANNED_COOLDOWNS = (30, 60, 120, 300, 600)  # 11140 封号：渐进冷却 30s→1m→2m→5m→10m
+BANNED_COOLDOWNS = (30, 120, 300)  # 11140 封号：3 次机会（30s→2m→5m），第 3 次直接永封
 
 _COOLDOWN_SETTING_KEY = "cooldowns"
 _THRESHOLD_SETTING_KEY = "quota_threshold"
@@ -223,7 +223,9 @@ class TokenRotator:
                 for i in range(n2):
                     acc = self._accounts[(self._index + i) % n2]
                     st = self._disabled.get(acc.id)
-                    if st and st.get("reason") == "transient" and acc.status == "normal":
+                    # 探测制两类：transient（限流）+ quota（额度耗尽，买了加量包即恢复）
+                    if (st and st.get("reason") in ("transient", "quota")
+                            and acc.status == "normal"):
                         self._current_id = acc.id
                         self._index = (self._index + i + 1) % n2
                         result = acc
@@ -251,8 +253,11 @@ class TokenRotator:
     def mark_disabled(self, account_id: str, reason: str):
         """标记账号不可用，自动持久化冷却记录到 settings 表。
 
-        banned（11140 封号）：渐进冷却 30s→1m→2m→5m→10m，给临时风控恢复机会；
-        连续第 5 次在 DB 标记 status='banned'（永久隔离）+ reload 立即生效。
+        banned（11140 封号）：3 次机会（30s→2m→5m 冷却），第 3 次在 DB 标记
+        status='banned'（永久隔离）+ reload 立即生效，恢复靠验活。
+        quota（额度耗尽）与 transient 同为无限期限流（探测制）：上游何时恢复
+        未知（买加量包/结算），恢复唯一途径是真实请求探测（验活/一键探测/
+        调度轮询），通过才解除。
         落库/reload 放到锁外 —— store 是同步 sqlite，锁内写库会卡住事件循环。
         """
         to_persist = None
@@ -260,7 +265,7 @@ class TokenRotator:
             if reason == "banned":
                 n = self._banned_fail.get(account_id, 0) + 1
                 self._banned_fail[account_id] = n
-                if n >= 5:
+                if n >= 3:
                     acc = next((a for a in self._accounts if a.id == account_id), None)
                     if acc:
                         acc.status = "banned"
@@ -271,10 +276,9 @@ class TokenRotator:
                     cd = BANNED_COOLDOWNS[min(n - 1, len(BANNED_COOLDOWNS) - 1)]
                     self._disabled[account_id] = {"reason": "banned", "until": time.time() + cd}
             else:
-                # transient（超时/DNS/临时错误）：上游何时解除未知，60s 只是猜测。
-                # 改为无限期限流（until=None）—— 恢复的唯一途径是真实请求探测：
-                # 所有可用账号耗尽时轮询限流账号发请求，成功（代理层调
-                # clear_disabled）才解除，失败继续保持限流。宁可多等，不盲目信任。
+                # quota（额度耗尽）/ transient（超时/DNS）：无限期限流（until=None），
+                # 探测制恢复 —— 所有可用账号耗尽时轮询限流账号发请求，
+                # 成功（代理层调 clear_disabled）才解除，失败继续保持限流。
                 self._disabled[account_id] = {
                     "reason": reason,
                     "until": None,

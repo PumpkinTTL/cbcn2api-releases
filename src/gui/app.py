@@ -278,7 +278,7 @@ class GuiApi:
     def list_accounts(self, platform: str) -> str:
         accounts = store.list_accounts(platform)
         out = [a.to_dict() for a in accounts]
-        # 叠加 transient 限流状态。数据源两处合一：
+        # 叠加探测制冷却状态（transient=限流 / quota=额度耗尽）。数据源两处合一：
         #   1) 进程内存 token_rotator._disabled（运行期标记）
         #   2) settings 表 cooldowns（持久化记录，含外部写入/上次运行遗留）
         # 直接读库而不只信内存 —— 否则外部写入的限流记录要等重启才能看到。
@@ -287,26 +287,23 @@ class GuiApi:
             from src.proxy.token_rotator import token_rotator, _COOLDOWN_SETTING_KEY
             token_rotator.ensure_loaded(platform)
             now = time.time()
-            cooldown_ids = set()
-            # 进程内存里的 transient 记录
-            for aid, s in (token_rotator._disabled or {}).items():
-                if s.get("reason") == "transient":
+            cooldown_ids, quota_ids = set(), set()
+            for src in ((token_rotator._disabled or {}),
+                        (json.loads(store.get_setting(_COOLDOWN_SETTING_KEY, "")) if store.get_setting(_COOLDOWN_SETTING_KEY, "") else {})):
+                for aid, s in src.items():
                     until = s.get("until")
-                    if until is None or until > now:
+                    if until is not None and until <= now:
+                        continue  # 已过期
+                    if s.get("reason") == "transient":
                         cooldown_ids.add(aid)
-            # settings 表持久化的 transient 记录（内存没有的补上）
-            try:
-                raw = store.get_setting(_COOLDOWN_SETTING_KEY, "")
-                if raw:
-                    for aid, s in json.loads(raw).items():
-                        if s.get("reason") == "transient":
-                            until = s.get("until")
-                            if until is None or until > now:
-                                cooldown_ids.add(aid)
-            except Exception:
-                pass
+                    elif s.get("reason") == "quota":
+                        quota_ids.add(aid)
             for a in out:
-                if a.get("id") in cooldown_ids and a.get("status") == "normal":
+                if a.get("status") != "normal":
+                    continue
+                if a.get("id") in quota_ids:
+                    a["status"] = "quota"
+                elif a.get("id") in cooldown_ids:
                     a["status"] = "cooldown"
         except Exception:
             pass
@@ -1318,7 +1315,7 @@ class GuiApi:
         return json.dumps({"success": success, "total": len(accounts)})
 
     def detect_cooldown_accounts(self, platform: str) -> str:
-        """一键探测限流账号：对当前处于 transient 限流的账号逐个发真实 chat 请求，
+        """一键探测限流/额度耗尽账号：对处于 transient 限流或 quota 耗尽的账号逐个发真实 chat 请求，
         上游有响应 = 限流已解除（clear_disabled，内存+库同步清）；
         仍超时/报错 = 继续限流。复用验活的探测内核（probe_chat_available），
         但只清限流标记、不动账号 status。后台线程跑，前端轮询 detect_enable_status。"""
@@ -1334,13 +1331,13 @@ class GuiApi:
             saved = {}
         now = time.time()
         cooldown_ids = {aid for aid, s in saved.items()
-                        if s.get("reason") == "transient"
+                        if s.get("reason") in ("transient", "quota")
                         and (s.get("until") is None or s.get("until", 0) > now)}
         # 内存里的也合并进来（运行期标记还没落库的极端情况）
         try:
             with token_rotator._lock:
                 for aid, s in token_rotator._disabled.items():
-                    if s.get("reason") == "transient":
+                    if s.get("reason") in ("transient", "quota"):
                         until = s.get("until")
                         if until is None or until > now:
                             cooldown_ids.add(aid)
@@ -1368,8 +1365,8 @@ class GuiApi:
             except Exception as e:
                 return ("failed", name, f"探测异常: {e}")
             if result == "ok":
-                token_rotator.clear_disabled(acc.id)  # 内存+库同步清限流
-                return ("enabled", name, "限流已解除（上游响应正常）")
+                token_rotator.clear_disabled(acc.id)  # 内存+库同步清限流/耗尽
+                return ("enabled", name, "已恢复（上游响应正常）")
             if result == "banned":
                 return ("banned", name, "探测被拒（封号特征），限流保持")
             return ("failed", name, "上游仍无响应，限流保持")

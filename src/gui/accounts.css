@@ -878,3 +878,6 @@ input[type="number"] { -moz-appearance: textfield; }
   border-radius: 6px; cursor: pointer;
 }
 .banner-action-btn:hover { background: rgba(245, 158, 11, 0.28); }
+
+/* 额度耗尽（quota，探测制——买加量包/结算后探测恢复） */
+.badge-status-quota { font-size: 10px; height: 18px; line-height: 16px; padding: 0 6px; border-radius: 4px; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.25); box-sizing: border-box; flex-shrink: 0; }
