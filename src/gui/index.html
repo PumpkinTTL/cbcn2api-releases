@@ -1451,20 +1451,20 @@
         <ul class="changelog-list">
           <li>文件导入支持 TXT：可直接拖拽 txt / json 文件到导入框批量导入，导入时可填写批次备注标签，批次管理更清晰</li>
           <li>ZCode 客户端兼容：ZCode 现可正常接入网关使用</li>
-          <li>额度横条双端注入：除 WorkBuddy 外新增 ZCode 注入，横条贴附在输入框卡片内部顶端（零缝隙融合），账号数与剩余额度实时刷新</li>
+          <li>额度横条双端注入：除 WorkBuddy 外新增 ZCode 注入，横条与输入框一体贴合，账号数与剩余额度实时刷新</li>
           <li>额度横条主题跟随：横条配色跟随 WorkBuddy / ZCode 深浅色主题实时切换，深色模式不再突兀</li>
-          <li>对话日志增强：请求日志记录 system prompt 摘要与消息概览，拦截 / 拒绝类短响应全文落日志，排查上游问题不用抓包</li>
+          <li>运行日志优化：对话请求与异常响应完整记录，遇到问题可直接在日志页查看详情</li>
         </ul>
 
         <div class="changelog-section-title">体验优化</div>
         <ul class="changelog-list">
           <li>签到体验优化：签到执行期间显示等待弹窗不再静默后台跑，完成后自动关闭菜单，提示与加载状态同步</li>
-          <li>文件导入前端预检：格式不对直接提示，不再误弹批次弹窗；导入过程增加 loading 提示，并收紧裸 token 判定减少误识别</li>
+          <li>文件导入体验优化：格式不对直接提示，不再误弹批次弹窗；导入过程增加进度提示，识别更准确</li>
         </ul>
 
         <div class="changelog-section-title">问题修复</div>
         <ul class="changelog-list">
-          <li>修复账号导出后重新导入丢失客户端指纹的问题：导出文件现包含指纹、账号类型等完整信息，重新导入后完整还原</li>
+          <li>修复账号导出后重新导入丢失配置的问题：导出文件包含完整账号信息，重新导入后完整还原</li>
         </ul>
 
         <div class="changelog-version" style="margin-top:24px">v1.1.1</div>
