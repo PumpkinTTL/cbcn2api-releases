@@ -4373,9 +4373,10 @@ const vApp = createApp({
               hideLicenseOverlay();startApp();
               // 公告：config 启动第一跳已带回（不依赖 verify 成功），启动即弹
               if (r.announcement) showAnnouncement(r.announcement);
-              if (r.update_required) {
-                showToast(`当前版本过低，请升级到 ${r.latest_version || '最新版本'}`, 'warning');
-                checkForUpdate();
+              // 授权临期（3 天内到期）：启动警示续期
+              if (r.expiry_soon) {
+                const d = r.expiry_days;
+                showToast(d <= 0 ? '授权已到期，请联系管理员续期' : `授权将在 ${d} 天后到期，请及时联系管理员续期`, d <= 1 ? 'error' : 'warning');
               }
             } else if (r.version_blocked) {
               showVersionBlocked(r.message);

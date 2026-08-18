@@ -216,8 +216,7 @@ def verify(code: str):
 
 def _verify_online(code: str):
     """在线激活码验证。返回 (ok, expiry, msg, extras)；
-    extras 含服务端附加能力：announcement（公告）/ update_required +
-    latest_version（版本软门槛提示），无则空 dict。"""
+    extras 含服务端附加能力：announcement（公告），无则空 dict。"""
     try:
         nonce = secrets.token_hex(16)
         s, body = _http_json("POST", "/api/v1/verify",
@@ -228,11 +227,13 @@ def _verify_online(code: str):
             extras = {}
             if body.get("announcement"):
                 extras["announcement"] = body["announcement"]
-            if body.get("update_required"):
-                extras["update_required"] = True
-                extras["latest_version"] = body.get("latest_version")
             if body.get("ok"):
                 exp = body.get("expires_at")
+                remain_days = None
+                if exp:
+                    import time as _t
+                    remain_days = int((int(exp) - _t.time()) // 86400)
+                    extras["expiry_days"] = remain_days
                 return True, int(exp) if exp else None, "授权有效", extras
             return False, None, "授权校验失败", extras
         return False, None, body.get("message") or body.get("detail") or "授权校验失败", {}
@@ -325,12 +326,16 @@ def load_code() -> str:
 
 def status() -> dict:
     """当前授权状态（读 license.dat 缓存的在线码，联网校验）。
-    附加字段（有才带）：announcement（服务端公告）、update_required +
-    latest_version（低于产品最低版本的升级提示）。"""
+    附加字段（有才带）：announcement（服务端公告）、expiry_days（剩余天数）、
+    expiry_soon（3 天内到期，前端启动警示）。"""
     code = load_code()
     if not code:
         return {"licensed": False, "expiry": None, "message": "未激活"}
     ok, exp, msg, extras = _verify_online(code)
     st = {"licensed": ok, "expiry": exp, "message": msg}
     st.update(extras)
+    # 临期标记：3 天内到期，前端启动时警示
+    days = extras.get("expiry_days")
+    if ok and days is not None and days <= 3:
+        st["expiry_soon"] = True
     return st
