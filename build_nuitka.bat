@@ -42,7 +42,7 @@ echo [2/3] 开始 Nuitka 编译（首次 5~15 分钟）...
     --include-module=win32com.client ^
     --enable-plugin=pywebview ^
     --enable-plugin=multiprocessing ^
-    --include-data-dir=src\gui=src\gui ^
+    --include-data-dir=src\gui=src\gui --noinclude-data-files=src/gui/__pycache__/* --noinclude-data-files=*.pyc ^
     --include-data-files=gateway.ico=gateway.ico ^
     --include-data-files=.venv\Lib\site-packages\pywin32_system32\pythoncom312.dll=pywin32_system32\pythoncom312.dll ^
     --include-data-files=.venv\Lib\site-packages\pywin32_system32\pywintypes312.dll=pywin32_system32\pywintypes312.dll ^

@@ -316,16 +316,9 @@ class GuiApi:
         return json.dumps({"error": "账号不存在"})
 
     def delete_account(self, platform: str, account_id: str, soft: str = "1", note: str = "") -> str:
-        # 最后号保护：删完若池中没有任何可用账号，拒绝删除。
-        # 与 set_account_status 的禁用保护同一套判定（has_usable_besides）。
+        # 允许删除所有账号（含最后一个）：清空重导是正常运营操作，
+        # 导入完成后 reload 会自动挑选可用账号（get_next 兜底），无需保护。
         is_soft = str(soft).lower() not in ("0", "false", "no")
-        try:
-            from src.proxy.token_rotator import token_rotator
-            token_rotator.ensure_loaded(platform)
-            if not token_rotator.has_usable_besides(account_id):
-                return json.dumps({"success": False, "error": "这是最后一个可用账号，删除后网关将无法工作，已拒绝操作"})
-        except Exception:
-            pass
         if is_soft:
             # 软删除：status='deleted'，数据保留在库（回收站可见），可随时恢复
             # 每次删除动作生成一个批次号（同一次批量删除共用），回收站按批次整组操作
@@ -346,17 +339,8 @@ class GuiApi:
 
     def delete_accounts(self, platform: str, account_ids_json: str, soft: str = "1", note: str = "") -> str:
         ids = json.loads(account_ids_json)
-        # 最后号保护：批量删完后若池中没有任何可用账号，拒绝整批删除。
-        # 注意是「删完整批之后」而不是「每删一个查一次」—— 用户批量选中
-        # 多个号时，只要删完还剩至少一个可用号就放行。
-        if ids:
-            try:
-                from src.proxy.token_rotator import token_rotator
-                token_rotator.ensure_loaded(platform)
-                if not token_rotator.has_usable_besides(ids):
-                    return json.dumps({"success": False, "error": "这是最后一个可用账号，删除后网关将无法工作，已拒绝操作"})
-            except Exception:
-                pass
+        # 允许全部删除（含清空池子）：清空重导是正常运营操作，
+        # 导入完成后 reload 自动挑选可用账号（get_next 兜底），无需保护。
         is_soft = str(soft).lower() not in ("0", "false", "no")
         # 同一次批量删除 = 同一批次号，回收站按批次整组恢复/彻底删除
         # 备注仅软删除可填（挂在本批次上），硬删除无批次忽略
