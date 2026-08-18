@@ -306,11 +306,21 @@ class TokenRotator:
             self._current_id = account_id
 
     def clear_disabled(self, account_id: str):
-        """清除指定账号的所有运行时冷却（手动启用时调用）。"""
+        """清除指定账号的所有运行时冷却（手动启用/验活通过/探测成功时调用）。
+        内存 + 库里该账号的记录一起删（_persist_cooldowns 是合并写，
+        单靠它会把库里旧记录捞回来，必须显式从库里删这条）。"""
         with self._lock:
             self._disabled.pop(account_id, None)
             self._banned_fail.pop(account_id, None)
-        self._persist_cooldowns()
+        try:
+            raw = store.get_setting(_COOLDOWN_SETTING_KEY, "")
+            if raw:
+                saved = json.loads(raw)
+                if account_id in saved:
+                    del saved[account_id]
+                    store.save_setting(_COOLDOWN_SETTING_KEY, json.dumps(saved, ensure_ascii=False))
+        except Exception:
+            pass
 
     def on_disable(self, account_id: str) -> bool:
         """手动禁用账号后，若它是当前号则切换到下一个可用号。
@@ -505,14 +515,31 @@ class TokenRotator:
                 self._estimate_valid.discard(acc.id)
 
     def _persist_cooldowns(self):
+        """合并写库：内存记录与 settings 表已有记录合并后写入，不整表覆盖。
+        多进程共用一个库（GUI + 外部脚本），各自内存可能只有部分记录，
+        整表覆盖会互相清掉对方写的记录。"""
         with self._lock:
             now = time.time()
             # until=None 是无限期限流（transient 探测制），也要持久化；过期的丢弃
-            active = {aid: s for aid, s in self._disabled.items()
-                      if s.get("until") is None or s.get("until", 0) > now}
-            payload = json.dumps(active, ensure_ascii=False)
+            mine = {aid: s for aid, s in self._disabled.items()
+                    if s.get("until") is None or s.get("until", 0) > now}
         try:
-            store.save_setting(_COOLDOWN_SETTING_KEY, payload)
+            # 锁外合并：库里的记录（可能是别的进程/外部写入的）不被本进程内存覆盖
+            raw = store.get_setting(_COOLDOWN_SETTING_KEY, "")
+            merged = {}
+            if raw:
+                try:
+                    for aid, s in json.loads(raw).items():
+                        if s.get("until") is None or s.get("until", 0) > now:
+                            merged[aid] = s
+                except Exception:
+                    pass
+            # 本进程刚 clear_disabled 的账号要真正从库里删掉：内存没有 = 不在 merged，
+            # 但库里可能有旧记录 → 用「内存明确清除过的」做差集。简单起见：
+            # 本进程知道的全量账号 ID 里，内存已无记录且库里有 → 删。
+            # （clear_disabled 已单独处理落库，这里只负责不覆盖别人的记录）
+            merged.update(mine)
+            store.save_setting(_COOLDOWN_SETTING_KEY, json.dumps(merged, ensure_ascii=False))
         except Exception:
             pass
 

@@ -279,15 +279,33 @@ class GuiApi:
     def list_accounts(self, platform: str) -> str:
         accounts = store.list_accounts(platform)
         out = [a.to_dict() for a in accounts]
-        # 叠加 transient 冷却状态（内存级，不落库）——调度器 _disabled 里
-        # reason=transient 且未过期的账号，响应里临时标记为 cooldown，
-        # 前端显示「冷却中」而非「正常」，用户能看到账号在临时不可用。
+        # 叠加 transient 限流状态。数据源两处合一：
+        #   1) 进程内存 token_rotator._disabled（运行期标记）
+        #   2) settings 表 cooldowns（持久化记录，含外部写入/上次运行遗留）
+        # 直接读库而不只信内存 —— 否则外部写入的限流记录要等重启才能看到。
+        # until=None 是无限期限流（探测制），必须算进来（falsy 陷阱）。
         try:
-            from src.proxy.token_rotator import token_rotator
+            from src.proxy.token_rotator import token_rotator, _COOLDOWN_SETTING_KEY
             token_rotator.ensure_loaded(platform)
-            st = token_rotator.status()
-            cooldown_ids = {d["id"] for d in st.get("disabled", [])
-                            if d.get("reason") == "transient" and d.get("until") and d["until"] > time.time()}
+            now = time.time()
+            cooldown_ids = set()
+            # 进程内存里的 transient 记录
+            for aid, s in (token_rotator._disabled or {}).items():
+                if s.get("reason") == "transient":
+                    until = s.get("until")
+                    if until is None or until > now:
+                        cooldown_ids.add(aid)
+            # settings 表持久化的 transient 记录（内存没有的补上）
+            try:
+                raw = store.get_setting(_COOLDOWN_SETTING_KEY, "")
+                if raw:
+                    for aid, s in json.loads(raw).items():
+                        if s.get("reason") == "transient":
+                            until = s.get("until")
+                            if until is None or until > now:
+                                cooldown_ids.add(aid)
+            except Exception:
+                pass
             for a in out:
                 if a.get("id") in cooldown_ids and a.get("status") == "normal":
                     a["status"] = "cooldown"
