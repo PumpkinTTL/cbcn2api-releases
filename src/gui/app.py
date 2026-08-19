@@ -153,7 +153,7 @@ class GuiApi:
         self._detect_lock = threading.Lock()
         self._detect_state = {
             "running": False, "finished": False, "total": 0, "done": 0,
-            "enabled": 0, "skipped": 0, "banned": 0, "failed": 0,
+            "enabled": 0, "skipped": 0, "banned": 0, "limited": 0, "failed": 0,
             "last_account": "", "summary": "",
         }
 
@@ -1027,6 +1027,49 @@ class GuiApi:
         token_rotator.set_enable_threshold(v)
         return json.dumps({"ok": True, "threshold": v})
 
+    def get_degrade_config(self) -> str:
+        """读取模型降级顺序配置。未保存过时返回内置默认顺序。"""
+        from src.proxy.api_client import DEFAULT_DEGRADE_ORDER, DEGRADE_CONFIG_KEY
+        raw = store.get_setting(DEGRADE_CONFIG_KEY, "")
+        if not raw:
+            return json.dumps({"enabled": True, "order": DEFAULT_DEGRADE_ORDER}, ensure_ascii=False)
+        try:
+            cfg = json.loads(raw)
+            if not isinstance(cfg, dict):
+                raise ValueError
+        except (ValueError, TypeError):
+            return json.dumps({"enabled": True, "order": DEFAULT_DEGRADE_ORDER}, ensure_ascii=False)
+        order = cfg.get("order")
+        if not isinstance(order, list):
+            order = DEFAULT_DEGRADE_ORDER
+        return json.dumps({
+            "enabled": bool(cfg.get("enabled", True)),
+            "order": order,
+        }, ensure_ascii=False)
+
+    def set_degrade_config(self, value: str) -> str:
+        """保存模型降级顺序配置。校验后落库。"""
+        from src.proxy.api_client import AVAILABLE_MODELS, DEGRADE_CONFIG_KEY
+        try:
+            cfg = json.loads(value)
+            if not isinstance(cfg, dict):
+                raise ValueError
+        except (ValueError, TypeError):
+            return json.dumps({"error": "无效的配置格式"})
+        enabled = bool(cfg.get("enabled", True))
+        order = cfg.get("order")
+        if not isinstance(order, list):
+            return json.dumps({"error": "order 必须是数组"})
+        # 过滤非法项：去重、只保留合法模型、排除 auto（auto 是路由模型，不可作为降级目标）
+        cleaned, seen = [], set()
+        for m in order:
+            if not isinstance(m, str) or m == "auto" or m not in AVAILABLE_MODELS or m in seen:
+                continue
+            seen.add(m)
+            cleaned.append(m)
+        store.save_setting(DEGRADE_CONFIG_KEY, json.dumps({"enabled": enabled, "order": cleaned}, ensure_ascii=False))
+        return json.dumps({"ok": True, "enabled": enabled, "order": cleaned}, ensure_ascii=False)
+
     def get_all_stats(self, platform: str) -> str:
         from src.storage.store import list_account_stats
         stats = list_account_stats(platform)
@@ -1258,6 +1301,116 @@ class GuiApi:
         except Exception as e:
             return json.dumps({"error": str(e)})
 
+    def probe_account_models(self, platform: str, account_id: str) -> str:
+        """单账号探测被限模型：对 model/queue 限流号逐个探测其被限模型，
+        transient/quota 号用默认 hy3/deepseek 探测。上游 200 即逐模型解除限流，
+        still-limited（6004/14018 等真实响应）保持限流，unknown（网络异常）保持限流。
+        同步返回（单号，不占批量验活的状态机）。"""
+        from src.proxy.token_rotator import token_rotator, _COOLDOWN_SETTING_KEY, _models_of
+        from src.proxy.probe import probe_chat_available
+
+        account = store.load_account(platform, account_id)
+        if not account:
+            return json.dumps({"error": "账号不存在"})
+
+        # 找出该号的限流记录：内存优先，库里兜底
+        st = None
+        try:
+            with token_rotator._lock:
+                st = token_rotator._disabled.get(account_id)
+        except Exception:
+            pass
+        if not st:
+            try:
+                raw = store.get_setting(_COOLDOWN_SETTING_KEY, "")
+                saved = json.loads(raw) if raw else {}
+                st = saved.get(account_id)
+            except Exception:
+                st = None
+        if not st:
+            return json.dumps({"ok": True, "status": "none", "message": "该账号当前不在限流池中"})
+
+        reason = st.get("reason")
+        if reason in ("model", "queue"):
+            probe_models = _models_of(st) or [None]
+        else:
+            probe_models = [None]
+
+        name = account.nickname or account.email or account.id
+        # 先 refresh 续期拿新 token 再探测（与批量探测/验活路径一致）：
+        # 否则库里 token 过期时 401 会被误判成「仍被限流」，实际是 token 失效。
+        try:
+            payload, quota_error = refresh_full_payload(account)
+        except Exception as e:
+            return json.dumps({"error": f"刷新失败: {e}"})
+        try:
+            self._persist_refreshed(platform, account, payload, quota_error, force_normal=False)
+        except Exception:
+            pass
+        fresh_token = payload.get("access_token") or account.access_token
+        recovered, limited = [], []
+        for m in probe_models:
+            label = m or "默认模型(hy3/deepseek)"
+            try:
+                result = probe_chat_available(account, fresh_token, model=m)
+            except Exception as e:
+                result = "unknown"
+            if result == "ok":
+                if m:
+                    token_rotator.clear_model_disabled(account_id, m)
+                else:
+                    token_rotator.clear_disabled(account_id)
+                recovered.append(label)
+            elif result == "limited":
+                limited.append(label)
+            elif result == "banned":
+                # 封号特征：不动限流标记，交给验活判定；这里只报被封
+                limited.append(label + "(封号特征)")
+            # unknown → 保持限流，网络异常
+        # 留痕
+        try:
+            from src.storage.store import add_log
+            add_log("upstream", platform, account_id, name, "",
+                    f"探测被限模型 → 恢复:{recovered or '无'} 仍限:{limited or '无'}", "")
+        except Exception:
+            pass
+        # 让调度池立即感知变更
+        try:
+            token_rotator.reload(platform, calibrate=False)
+        except Exception:
+            pass
+        if recovered:
+            return json.dumps({"ok": True, "status": "recovered", "recovered": recovered,
+                               "message": f"已恢复并回池：{', '.join(recovered)}"})
+        if limited:
+            return json.dumps({"ok": True, "status": "limited", "limited": limited,
+                               "message": f"仍被限流：{', '.join(limited)}"})
+        return json.dumps({"ok": True, "status": "unknown",
+                           "message": "网络异常，未拿到上游响应，限流保持"})
+
+    def force_return_account(self, platform: str, account_id: str) -> str:
+        """强制回池：清除该号所有冷却/限流标记，立即回到调度池。
+
+        供用户手动强制恢复 —— 不赌探测时间。若该号实际仍被限流，
+        下次真实请求会再次撞 6004/429 重新进限流池（无害，只会重标）。
+        """
+        from src.proxy.token_rotator import token_rotator
+        account = store.load_account(platform, account_id)
+        if not account:
+            return json.dumps({"error": "账号不存在"})
+        token_rotator.clear_disabled(account_id)
+        try:
+            token_rotator.reload(platform, calibrate=False)
+        except Exception:
+            pass
+        try:
+            from src.storage.store import add_log
+            add_log("upstream", platform, account_id, account.nickname or account.email or account_id,
+                    "", "强制回池：已清除限流标记", "")
+        except Exception:
+            pass
+        return json.dumps({"ok": True, "status": "returned", "message": "已强制回池，恢复调度"})
+
     def detect_accounts(self, platform: str, account_ids_json: str) -> str:
         """并发批量验活（线程池 8，单账号同款真实 chat 探测），统一 reload。
 
@@ -1363,13 +1516,24 @@ class GuiApi:
             self._detect_state = {
                 "running": True, "finished": False,
                 "total": len(targets), "done": 0,
-                "enabled": 0, "skipped": 0, "banned": 0, "checked": 0, "failed": 0,
+                "enabled": 0, "skipped": 0, "banned": 0, "limited": 0, "checked": 0, "failed": 0,
                 "last_account": "", "summary": "",
             }
 
         def worker(acc):
             name = acc.nickname or acc.email or acc.id
             st = cooldown_map.get(acc.id) or {}
+            # 先 refresh 续期拿新 token 再探测（与验活路径 _detect_one 对齐）：
+            # 否则库里 token 过期时 401 会被误判成「仍被限流」(limited)，实际是 token 失效。
+            try:
+                payload, quota_error = refresh_full_payload(acc)
+            except Exception as e:
+                return ("failed", name, f"刷新失败: {e}")
+            try:
+                self._persist_refreshed(platform, acc, payload, quota_error, force_normal=False)
+            except Exception:
+                pass
+            fresh_token = payload.get("access_token") or acc.access_token
             # 决定探测哪些模型：指定模型 > 被限模型列表 > 默认(hy3/deepseek)
             if model:
                 probe_models = [model]
@@ -1378,9 +1542,10 @@ class GuiApi:
             else:
                 probe_models = [None]
             recovered = 0
+            saw_limited = False
             for m in probe_models:
                 try:
-                    result = probe_chat_available(acc, acc.access_token, model=m)
+                    result = probe_chat_available(acc, fresh_token, model=m)
                 except Exception as e:
                     return ("failed", name, f"探测异常: {e}")
                 if result == "ok":
@@ -1391,12 +1556,18 @@ class GuiApi:
                     recovered += 1
                 elif result == "banned":
                     return ("banned", name, "探测被拒（封号特征），限流保持")
+                elif result == "limited":
+                    # 上游给了真实响应但非 200（6004/14018/403 等）= 仍被限流。
+                    # 这是正常结果，绝不能和网络故障（unknown）混成「无响应」。
+                    saw_limited = True
                 # unknown → 该模型仍限流，继续下一个
             if recovered:
                 if recovered == len(probe_models):
                     return ("enabled", name, "已恢复（上游响应正常）")
                 return ("enabled", name, f"部分恢复 {recovered}/{len(probe_models)}")
-            return ("failed", name, "上游仍无响应，限流保持")
+            if saw_limited:
+                return ("limited", name, "仍被限流（上游有响应）")
+            return ("failed", name, "网络异常，未拿到上游响应")
 
         def runner():
             released, kept = 0, 0
@@ -1418,7 +1589,11 @@ class GuiApi:
             with self._detect_lock:
                 self._detect_state["running"] = False
                 self._detect_state["finished"] = True
-                self._detect_state["summary"] = f"限流探测完成：解除 {released} 个，保持限流 {kept} 个"
+                limited = self._detect_state.get("limited", 0)
+                failed = self._detect_state.get("failed", 0)
+                self._detect_state["summary"] = (
+                    f"限流探测完成：解除 {released} 个，仍限流 {limited} 个，网络异常 {failed} 个"
+                )
 
         threading.Thread(target=runner, daemon=True).start()
         return json.dumps({"ok": True, "started": True, "total": len(targets)})
@@ -1454,7 +1629,7 @@ class GuiApi:
             self._detect_state = {
                 "running": True, "finished": False,
                 "total": len(targets), "done": 0,
-                "enabled": 0, "skipped": 0, "banned": 0, "checked": 0, "failed": 0,
+                "enabled": 0, "skipped": 0, "banned": 0, "limited": 0, "checked": 0, "failed": 0,
                 "last_account": "", "summary": "",
             }
 
@@ -1772,6 +1947,16 @@ class GuiApi:
 
             update_config(port_num, password, "workbuddy")
             token_rotator.reload("workbuddy")
+
+            # 空密码 = 局域网内任何设备都能直接调 /v1/chat/completions 消耗号池额度
+            # （authenticate 在密码为空时直接放行）。写一条日志提醒，不强制打断启动。
+            if not (password or "").strip():
+                try:
+                    store.add_log("warning", "workbuddy", "", "", "",
+                                  "网关已启动但未设置访问密码：局域网内任何设备都可调用消耗号池额度，"
+                                  "建议在网关设置中设置密码", "")
+                except Exception:
+                    pass
 
             config = uvicorn.Config(
                 app=proxy_app,

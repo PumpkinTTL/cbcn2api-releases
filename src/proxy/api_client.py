@@ -104,6 +104,52 @@ MODEL_SPECS = {
 }
 AVAILABLE_MODELS = list(MODEL_SPECS.keys())
 
+# 模型降级顺序（全局优先级链，跨厂商）。
+# 单模型限流（6004）与排队（6020）共用这一条顺序：
+# 请求的模型被限/排队时，在同一账号上按这条顺序往后降级到下一个模型，链尽才换号。
+# 例：kimi-k3-1 → glm-5.3 → deepseek-v4-pro → …（Kimi 可降 GLM，GLM 可降 DeepSeek）。
+# 用户可在设置面板调整顺序。
+DEFAULT_DEGRADE_ORDER = [
+    "kimi-k3-1",
+    "glm-5.3",
+    "deepseek-v4-pro",
+    "kimi-k2.7",
+    "glm-5.2",
+    "deepseek-v4-flash",
+    "kimi-k2.6",
+    "glm-5.1",
+    "minimax-m3",
+    "hy3",
+    "glm-5v-turbo",
+]
+
+# 降级配置在 settings 表里的 key（JSON: {"enabled": true, "order": [model...]}）
+DEGRADE_CONFIG_KEY = "model_degrade_order"
+
+
+def degrade_fallbacks(config: dict, model: str) -> list:
+    """返回 model 之后的全局降级顺序（不含 model 本身，已去重、只保留合法模型）。
+
+    config = {"enabled": bool, "order": [model...]}（全局优先级链，跨厂商）。
+    enabled=False、model 不在链中、或 model 已是链尾 → 返回空列表（= 不降级，保持现状切号）。
+    """
+    if not config or not config.get("enabled"):
+        return []
+    order = config.get("order") or DEFAULT_DEGRADE_ORDER
+    if not isinstance(order, (list, tuple)):
+        order = DEFAULT_DEGRADE_ORDER
+    try:
+        idx = order.index(model)
+    except ValueError:
+        return []
+    out, seen = [], {model}
+    for m in order[idx + 1:]:
+        if not m or m == "auto" or m in seen or m not in AVAILABLE_MODELS:
+            continue
+        seen.add(m)
+        out.append(m)
+    return out
+
 
 def resolve_base_url() -> str:
     return CHAT_API_BASE

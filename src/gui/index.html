@@ -19,6 +19,8 @@
 <!-- Vue 运行时:用本地 vue.prod.js(= vue.global.prod.js v3.5.40 同版本)。
      不走在线 CDN —— pywebview 以 file:// 加载,断网/被墙会导致整个前端白屏。 -->
 <script src="vue.prod.js"></script>
+<!-- WorkBuddy 配置模块（独立 JS）：模型降级链等可配置功能，后续新功能继续往这里加 -->
+<script src="workbuddy_config.js"></script>
 </head>
 <body>
 
@@ -420,6 +422,10 @@
           <span v-if="detecting" class="spinner-sm"></span>
           <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
         </button>
+        <!-- WorkBuddy 配置：模型降级顺序（单模型限流/排队时同号按全局顺序降级） -->
+        <button class="filter-icon-btn" :class="{ active: degradeOpen }" @click="openDegradeConfig" title="模型降级配置：请求模型被限流/排队时，按全局降级顺序往后换模型（跨厂商）">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+        </button>
         <div class="account-search">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
           <input v-model="accountSearch" type="text" placeholder="搜索昵称 / 邮箱 / ID" @input="onSearchInput">
@@ -594,7 +600,7 @@
         </div>
       <!-- 账号统计概览：一眼看全局健康度；状态项可点切换筛选，低积分告警为只读统计 -->
       <!-- 全部账号限流警示横幅：把用户引到探测按钮（正常号 >0 时不显示） -->
-      <div class="all-cooldown-banner" v-if="accounts.length && ((statusCount('cooldown') + statusCount('quota')) === accounts.length && statusCount('normal') === 0 || BANNER_PREVIEW)">
+      <div class="all-cooldown-banner" v-if="accounts.length && (statusCount('cooldown') + statusCount('quota')) === accounts.length && statusCount('normal') === 0">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L2 18a2 2 0 001.7 3h16.6a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
         <span>所有账号均处于限流保护（上游临时错误）。网关会在收到请求时自动探测恢复；</span>
         <button class="banner-action-btn" :disabled="detecting" @click="openProbeModal">{{ detecting ? '探测中…' : '立即探测' }}</button>
@@ -694,8 +700,8 @@
                   <span v-if="proxyRunning && a.id === proxyCurrentAccount" class="current-badge">
                     <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg>当前
                   </span>
-                  <span v-if="a.status === 'cooldown'" :class="getStatusBadgeClass(a)" title="触发限流保护（临时错误或单模型频率限制）。网关会在需要时自动探测恢复；也可点卡片「更多 → 验活」或概览栏「限流 → 探测」立即验证">{{ getCooldownText(a) }}</span>
-                  <span v-else-if="a.status === 'quota'" :class="getStatusBadgeClass(a)" title="上游返回额度已用尽（429/14018）。购买加量包或额度结算后，点验活/一键探测验证恢复">{{ getStatusText(a) }}</span>
+                  <span v-if="a.status === 'cooldown'" :class="getStatusBadgeClass(a)" :title="'触发限流保护' + cooldownAtText(a) + '。网关会在需要时自动探测恢复；也可点卡片「更多 → 验活」或概览栏「限流 → 探测」立即验证'">{{ getCooldownText(a) }}</span>
+                  <span v-else-if="a.status === 'quota'" :class="getStatusBadgeClass(a)" :title="'上游返回额度已用尽（429/14018）' + cooldownAtText(a) + '。购买加量包或额度结算后，点验活/一键探测验证恢复'">{{ getStatusText(a) }}</span>
                   <span v-else :class="getStatusBadgeClass(a)" :title="a.status === 'banned' ? '上游返回封号特征（11140），已隔离不参与调度；验活通过可恢复' : a.status === 'disabled' ? '手动禁用或阈值自动禁用，不参与调度' : ''">{{ getStatusText(a) }}</span>
                   <span class="badge" :class="a._planCls">{{ a._planText }}</span>
                   <span v-if="a.auth_type === 'apikey'" class="badge badge-apikey" title="API Key 账号：长期密钥凭证，无刷新">
@@ -799,6 +805,14 @@
                   <div class="more-dropdown-item" :class="{ busy: cardLoading[a.id + '_detect'] }" @click.stop="detectOne(a.id)" title="发真实请求验活是否封号">
                     <span v-if="cardLoading[a.id + '_detect']" class="spinner-sm"></span>
                     <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 7.2H22l-6 4.6 2.3 7.2-6.3-4.5-6.3 4.5L8 13.8 2 9.2h7.6z"/></svg> 验活
+                  </div>
+                  <div v-if="a.status === 'cooldown' || a.status === 'quota'" class="more-dropdown-item" :class="{ busy: cardLoading[a.id + '_probe'] }" @click.stop="probeModelsOne(a.id)" :title="a.status === 'cooldown' ? '发真实请求探测该号被限的模型（' + (a.cooldown_models || []).join('、') + '），上游已解除则自动回池' : '发真实请求探测额度是否恢复，恢复则自动回池'">
+                    <span v-if="cardLoading[a.id + '_probe']" class="spinner-sm"></span>
+                    <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg> {{ a.status === 'cooldown' ? '探测被限模型' : '探测恢复' }}
+                  </div>
+                  <div v-if="a.status === 'cooldown' || a.status === 'quota'" class="more-dropdown-item" :class="{ busy: cardLoading[a.id + '_force'] }" @click.stop="forceReturnOne(a.id)" title="强制清除限流标记，立即回到调度池（若实际仍被限流，下次请求会再次触发限流）">
+                    <span v-if="cardLoading[a.id + '_force']" class="spinner-sm"></span>
+                    <svg v-else viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> 强制回池
                   </div>
                   <div class="more-dropdown-item" @click.stop="editTags(a.id)" title="给账号打标签，便于分类管理">
                     <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.83z"/><circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none"/></svg> 标签
@@ -1168,6 +1182,60 @@
       <div class="modal-actions">
         <button class="btn btn-ghost" @click="activeModal = null">取消</button>
         <button class="btn btn-primary" @click="confirmProbe">开始探测</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Degrade Config Modal：模型降级顺序配置（单模型限流 6004 / 排队 6020 共用，跨厂商） -->
+  <div class="modal-overlay" id="degradeModal" :class="{ show: degradeOpen }">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header">
+        <h2>模型降级配置</h2>
+        <p>请求的模型被限流（6004）或排队（6020）时，网关在同一个账号上按下面这条全局顺序往后降级到下一个模型；走到链尾才换号。跨厂商、跨系列，顺序可自由调整。</p>
+      </div>
+      <div class="modal-body" style="max-height:60vh;overflow-y:auto">
+        <!-- 总开关 -->
+        <div class="degrade-toggle-row">
+          <label class="degrade-switch">
+            <input type="checkbox" v-model="degradeEnabled">
+            <span class="degrade-switch-slider"></span>
+            <span class="degrade-switch-label">启用模型降级</span>
+          </label>
+          <span class="degrade-chain-count" v-if="orderCount() > 0">降级顺序共 {{ orderCount() }} 个模型</span>
+        </div>
+
+        <p v-if="degradeError" class="degrade-error">{{ degradeError }}</p>
+        <p v-if="degradeLoading" class="degrade-hint">加载中…</p>
+
+        <!-- 全局降级顺序 -->
+        <div class="degrade-order" v-if="degradeOrder.length">
+          <div class="degrade-order-item" v-for="(m, i) in degradeOrder" :key="m">
+            <span class="degrade-order-idx">{{ i + 1 }}</span>
+            <span class="degrade-model-chip">{{ modelName(m) }}</span>
+            <button class="degrade-chip-nav" title="上移" :disabled="i === 0" @click="moveOrderModel(i, -1)">↑</button>
+            <button class="degrade-chip-nav" title="下移" :disabled="i === degradeOrder.length - 1" @click="moveOrderModel(i, 1)">↓</button>
+            <button class="degrade-chip-x" title="移除" @click="removeOrderModel(m)">×</button>
+          </div>
+        </div>
+        <p class="degrade-hint" v-else>尚未配置降级顺序，撞限流/排队时将直接换号。</p>
+
+        <!-- 添加模型到顺序 -->
+        <div class="degrade-add-row" v-if="unlistedModels().length">
+          <button class="btn btn-sm btn-ghost" @click="toggleDegradeAdd">{{ degradeAddOpen ? '收起' : '+ 添加模型到降级顺序' }}</button>
+          <div class="degrade-fallback-picker" v-if="degradeAddOpen">
+            <select v-model="degradeAddSel" class="degrade-select" @change="addOrderModel(degradeAddSel)">
+              <option value="" disabled selected>选择要加入顺序的模型…</option>
+              <option v-for="m in unlistedModels()" :key="m.id" :value="m.id">{{ m.name }}</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" @click="closeDegradeConfig">取消</button>
+        <button class="btn btn-primary" :disabled="degradeSaving" @click="saveDegradeConfig">
+          <span v-if="degradeSaving" class="spinner-sm"></span>
+          {{ degradeSaving ? '保存中…' : '保存' }}
+        </button>
       </div>
     </div>
   </div>
@@ -2232,7 +2300,6 @@ window.addEventListener('unhandledrejection', function(e) {
 const vApp = createApp({
   setup() {
     // ── 核心状态 ──
-    const BANNER_PREVIEW = true; // TODO 临时预览开关：true = 强制显示全限流横幅（看完改回 false 并删除）
     const currentPlatform = ref('workbuddy');
     const currentView = ref('console');
     const activeModal = ref(null);
@@ -2241,6 +2308,10 @@ const vApp = createApp({
     const licenseAuthorized = ref(false);
     const announcementContent = ref('');
     const announcementDismiss = ref(false);
+
+    // WorkBuddy 配置模块（模型降级顺序等）：独立 JS 提供状态/方法，这里注入模型列表
+    const wbConfig = window.WorkBuddyConfig.create();
+    wbConfig.setDegradeModels(PRESET_MODELS);
 
     // 服务端公告：同一内容只弹一次。
     // 未勾"不再提醒" → 关闭后记入 dismissed 列表，下次同内容不再弹（轻量去重）；
@@ -2346,7 +2417,7 @@ const vApp = createApp({
     const quotaThreshold = ref(0);
     const enableThreshold = ref(0);
     const detecting = ref(false);
-    const detectProgress = reactive({ done:0, total:0, enabled:0, skipped:0, banned:0, checked:0, failed:0, summary:'' });
+    const detectProgress = reactive({ done:0, total:0, enabled:0, skipped:0, banned:0, limited:0, checked:0, failed:0, summary:'' });
     const probeModel = ref('');
     const deletedAccounts = ref([]);
     const recycleBusy = ref(false);
@@ -2693,6 +2764,15 @@ const vApp = createApp({
 
     function getStatusBadgeClass(a) { const s=a.status||'normal'; if(s==='banned')return 'badge-status-banned'; if(s==='disabled')return 'badge-status-disabled'; if(s==='cooldown')return 'badge-status-cooldown'; if(s==='quota')return 'badge-status-quota'; return 'badge-status-normal'; }
     function getStatusText(a) { const s=a.status||'normal'; if(s==='banned')return '封禁'; if(s==='disabled')return '已禁用'; if(s==='cooldown')return '限流'; if(s==='quota')return '耗尽'; return '正常'; }
+    // 限流/耗尽的时间戳文案（cooldown_at 是进入限流池的毫秒时间戳）
+    function cooldownAtText(a) {
+      if (!a.cooldown_at) return '';
+      try {
+        const d = new Date(a.cooldown_at);
+        const p = n => String(n).padStart(2, '0');
+        return `（${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}）`;
+      } catch { return ''; }
+    }
     // 限流徽章附模型：显示该号被限的模型（如「限流·glm-5.3」），多个只显示前两个
     function getCooldownText(a) {
       const ms = a.cooldown_models;
@@ -2854,12 +2934,16 @@ const vApp = createApp({
       try {
         const raw = await pywebview.api.list_accounts(currentPlatform.value);
         const fresh = JSON.parse(raw);
+        // 保序合并：旧账号保持原顺序（避免轻量刷新时卡片跳位），
+        // 新增账号追加到末尾。用 Set 去重，O(n)，替代原来的 find O(n²)。
         const freshMap = {};
-        fresh.forEach(a => freshMap[a.id]=a);
-        const merged = accounts.value
-          .map(a => freshMap[a.id]||a)
-          .filter(a => freshMap[a.id]);
-        fresh.forEach(a => { if(!merged.find(x=>x.id===a.id)) merged.push(a); });
+        fresh.forEach(a => { freshMap[a.id]=a; });
+        const merged = [];
+        const have = new Set();
+        accounts.value.forEach(a => {
+          if (freshMap[a.id]) { merged.push(freshMap[a.id]); have.add(a.id); }
+        });
+        fresh.forEach(a => { if (!have.has(a.id)) merged.push(a); });
         accounts.value = merged;
         loadStats();
       } catch(e) {}
@@ -3103,7 +3187,7 @@ const vApp = createApp({
       detecting.value = true;
       detectProgress.done = 0; detectProgress.total = 0;
       detectProgress.enabled = 0; detectProgress.skipped = 0;
-      detectProgress.banned = 0; detectProgress.checked = 0; detectProgress.failed = 0; detectProgress.summary = '';
+      detectProgress.banned = 0; detectProgress.limited = 0; detectProgress.checked = 0; detectProgress.failed = 0; detectProgress.summary = '';
       try {
         const r = JSON.parse(await pywebview.api.detect_cooldown_accounts(currentPlatform.value, model || ''));
         if (r.error) { showToast(r.error, 'error'); detecting.value = false; return; }
@@ -3119,7 +3203,7 @@ const vApp = createApp({
       detecting.value = true;
       detectProgress.done = 0; detectProgress.total = 0;
       detectProgress.enabled = 0; detectProgress.skipped = 0;
-      detectProgress.banned = 0; detectProgress.checked = 0; detectProgress.failed = 0; detectProgress.summary = '';
+      detectProgress.banned = 0; detectProgress.limited = 0; detectProgress.checked = 0; detectProgress.failed = 0; detectProgress.summary = '';
       try {
         const r = JSON.parse(await pywebview.api.detect_and_enable_accounts(currentPlatform.value, enableThreshold.value));
         if (r.error) { showToast(r.error, 'error'); detecting.value = false; return; }
@@ -3134,18 +3218,18 @@ const vApp = createApp({
         const s = JSON.parse(await pywebview.api.detect_enable_status());
         detectProgress.done = s.done||0; detectProgress.total = s.total||0;
         detectProgress.enabled = s.enabled||0; detectProgress.skipped = s.skipped||0;
-        detectProgress.banned = s.banned||0; detectProgress.checked = s.checked||0; detectProgress.failed = s.failed||0;
+        detectProgress.banned = s.banned||0; detectProgress.limited = s.limited||0; detectProgress.checked = s.checked||0; detectProgress.failed = s.failed||0;
         if (s.finished) {
           if (detectTimer) { clearInterval(detectTimer); detectTimer = null; }
           detecting.value = false;
           detectProgress.summary = s.summary || '';
           if (detectProgress.enabled > 0) {
-            showToast(`验活完成：${s.summary}`, 'success');
-          } else if ((detectProgress.failed || 0) > 0 && (detectProgress.enabled || 0) === 0) {
-            // 全部失败且无一解除：大概率是本机网络/上游整体故障，不是单个账号问题
-            showToast(`探测完成：全部账号仍无响应。请先检查本机网络（能否打开网页），网络恢复后再探测`, 'warning');
+            showToast(s.summary, 'success');
+          } else if ((detectProgress.failed || 0) > 0 && (detectProgress.enabled || 0) === 0 && (detectProgress.limited || 0) === 0) {
+            // 全部失败且无一解除、也无一「仍限流」：这才是真网络/上游整体故障
+            showToast(`探测完成：全部账号网络异常无响应。请先检查本机网络（能否打开网页），网络恢复后再探测`, 'warning');
           } else {
-            showToast(`验活完成：${s.summary || '无账号被启用'}`, 'info');
+            showToast(s.summary || '限流账号仍被限流，暂未恢复', 'info');
           }
           await loadAccounts();
           await refreshProxyStatus();
@@ -3260,6 +3344,38 @@ const vApp = createApp({
         await refreshProxyStatus();
       } catch(e) { showToast('验活失败: '+e, 'error'); }
       finally { cardLoading[id+'_detect'] = false; moreOpenId.value = null; }
+    }
+
+    // 单账号探测被限模型：对 model/queue 限流号探测其被限模型，
+    // transient/quota 号用默认模型探测。恢复则自动回池（后端同步返回结果）。
+    async function probeModelsOne(id) {
+      if (cardLoading[id+'_probe']) return;
+      cardLoading[id+'_probe'] = true;
+      try {
+        const r = JSON.parse(await pywebview.api.probe_account_models(currentPlatform.value, id));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        if (r.status === 'recovered') showToast(r.message, 'success');
+        else if (r.status === 'limited') showToast(r.message, 'info');
+        else if (r.status === 'unknown') showToast(r.message || '网络异常，限流保持', 'warning');
+        else showToast(r.message || '该账号不在限流池中', 'info');
+        await loadAccountsLight();
+        await refreshProxyStatus();
+      } catch(e) { showToast('探测失败: '+e, 'error'); }
+      finally { cardLoading[id+'_probe'] = false; moreOpenId.value = null; }
+    }
+
+    // 强制回池：清除该号所有限流/冷却标记，立即回到调度池（不赌探测时间）
+    async function forceReturnOne(id) {
+      if (cardLoading[id+'_force']) return;
+      cardLoading[id+'_force'] = true;
+      try {
+        const r = JSON.parse(await pywebview.api.force_return_account(currentPlatform.value, id));
+        if (r.error) { showToast(r.error, 'error'); return; }
+        showToast(r.message || '已强制回池', 'success');
+        await loadAccountsLight();
+        await refreshProxyStatus();
+      } catch(e) { showToast('强制回池失败: '+e, 'error'); }
+      finally { cardLoading[id+'_force'] = false; moreOpenId.value = null; }
     }
 
     async function editTags(id) {
@@ -4257,10 +4373,51 @@ const vApp = createApp({
       proxyCurrentAccount.value = null;
       proxyActive.value = false;
     }
+    // 把后端 /proxy/info 的限流快照 diff 到前端账号列表：只更新状态变化的账号。
+    // 目的：进入限流池 / 探测恢复 / 额度耗尽都要实时反映到卡片标签，
+    // 不能只靠「当前号变了才 loadAccountsLight」——否则「数据变了 UI 没变」。
+    function syncCooldownStatus(cooldowns) {
+      if (!Array.isArray(cooldowns) || !accounts.value.length) return;
+      const map = {};
+      cooldowns.forEach(c => { if (c && c.id) map[c.id] = c; });
+      for (const a of accounts.value) {
+        // banned/disabled 是账号级状态，不参与限流快照覆盖
+        if (a.status === 'banned' || a.status === 'disabled') continue;
+        const c = map[a.id];
+        if (c) {
+          const reason = c.reason;
+          const models = Array.isArray(c.models) ? c.models : [];
+          const at = c.last_probe ? c.last_probe * 1000 : 0;
+          if (reason === 'quota') {
+            if (a.status !== 'quota') { a.status = 'quota'; a.cooldown_at = at; }
+            else if (at && a.cooldown_at !== at) a.cooldown_at = at;
+            if (a.cooldown_reason !== reason) a.cooldown_reason = reason;
+            if (a.cooldown_models) delete a.cooldown_models;
+          } else if (reason === 'model' || reason === 'queue' || reason === 'transient') {
+            if (a.status !== 'cooldown') { a.status = 'cooldown'; a.cooldown_at = at; }
+            else if (at && a.cooldown_at !== at) a.cooldown_at = at;
+            if (JSON.stringify(a.cooldown_models || []) !== JSON.stringify(models)) a.cooldown_models = models;
+            if (a.cooldown_reason !== reason) a.cooldown_reason = reason;
+          }
+        } else {
+          // 快照里没有 → 已恢复（只有之前是限流/耗尽态才需要改回 normal）
+          if (a.status === 'cooldown' || a.status === 'quota') {
+            a.status = 'normal';
+            delete a.cooldown_models;
+            delete a.cooldown_reason;
+            delete a.cooldown_at;
+          }
+        }
+      }
+    }
+
     async function pollProxyInfo() {
       if (!proxyRunning.value) return;
       try {
-        const info = await fetch(`${getProxyBaseUrl()}/proxy/info`).then(r=>r.json());
+        // /proxy/info 已挂鉴权：密码非空时必须带 Authorization，否则 403
+        const _infoResp = await fetch(`${getProxyBaseUrl()}/proxy/info`, { headers: { Authorization: `Bearer ${proxyKey.value||''}` } });
+        if (!_infoResp.ok) throw new Error(`proxy/info ${_infoResp.status}`);
+        const info = await _infoResp.json();
         _proxyFetchFailCount = 0;
         const newCurrent = info.current_account, newActive = info.active;
         if (newCurrent !== proxyCurrentAccount.value || newActive !== proxyActive.value) {
@@ -4278,6 +4435,8 @@ const vApp = createApp({
           }
           loadAccountsLight();
         }
+        // 每次轮询都 diff 限流快照：进入限流池 / 探测恢复 / 额度耗尽实时反映到卡片
+        syncCooldownStatus(info.cooldowns);
         if (++_statsRefreshCounter >= 5) { _statsRefreshCounter=0; refreshAccountStats(); }
         const usable = info.accounts_usable||0;
         if (usable===0 && !_noUsableWarned) { _noUsableWarned=true; showToast('警告：当前无可用账号！', 'warning'); }
@@ -4593,7 +4752,6 @@ const vApp = createApp({
 
     return {
       // State
-      BANNER_PREVIEW,
       currentPlatform, currentView, activeModal, hasUpdate, announcementContent, announcementDismiss, dismissAnnouncement,
       accounts, accountStats, statTotal, statQuota,
       statusFilter, filterDate, statusDropdownOpen, accountSearch, onSearchInput,
@@ -4629,7 +4787,7 @@ const vApp = createApp({
       filteredAccounts, enrichedAccounts, visibleAccounts, cooldownProbeList, detailResourcesTotal,
       // Methods
       fmt, fmtK, fmtL, _n, dateStr, friendlyDate, getHitRate,
-      getStatusBadgeClass, getStatusText, getCooldownText, getPlanBadgeClass, getPlanText,
+      getStatusBadgeClass, getStatusText, getCooldownText, cooldownAtText, getPlanBadgeClass, getPlanText,
       parseCheckin, getCardQuota,
       selectStatusFilter, getStatusDotClass, getStatusFilterLabel,
       showConsole, showLogs, showShopCards, showAbout, showSettings, closeActionPref, closeActionOpen, saveCloseAction, setCloseAction, themePref, themeOpen, setThemePref, licenseExpiry, licenseAuthorized, openShop, openShopExternal, openModal,
@@ -4638,7 +4796,7 @@ const vApp = createApp({
       probeModel, probeModelOptions, openProbeModal, confirmProbe, detectCooldown,
       exportAccounts, checkinAll, refreshAll, refreshAccounts, loadAccounts,
       loadUsageSummary,
-      doCheckin, refreshOne, detectOne, deleteOne, setPriorityAccount, toggleAccountStatus,
+      doCheckin, refreshOne, detectOne, probeModelsOne, forceReturnOne, deleteOne, setPriorityAccount, toggleAccountStatus,
       toggleSelectMode, toggleSelect, toggleSelectAll, toggleLowQuotaFilter, clearSelection, batchExport, batchDetect, batchDelete,
       batchEnable, batchDisable, batchRefresh, batchCheckin,
       openBatchFingerprint, batchRandomFingerprint, batchSaveFingerprints, randomOneFingerprint, saveOneFingerprint,
@@ -4656,6 +4814,8 @@ const vApp = createApp({
       refreshLogs, toggleLogEnabled, clearLogs, logExporting, exportLogs,
       checkForUpdate, doUpdate,
       startApp,
+      // WorkBuddy 配置模块（模型降级链面板）
+      ...wbConfig,
     };
   }
 });

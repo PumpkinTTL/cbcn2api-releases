@@ -132,7 +132,16 @@ class TokenRotator:
             if self._index >= len(self._accounts):
                 self._index = 0
 
-            self._restore_cooldowns()
+            # 清理孤儿冷却记录：账号已删除（不在 all_accs）后，其限流记录会
+            # 残留在内存 + settings 表，污染探测/限流统计。这里统一清掉内存侧，
+            # 库侧由 _restore_cooldowns 落库清理。
+            valid_ids = {a.id for a in all_accs}
+            for aid in list(self._disabled.keys()):
+                if aid not in valid_ids:
+                    self._disabled.pop(aid, None)
+                    self._banned_fail.pop(aid, None)
+
+            self._restore_cooldowns(valid_ids)
             self._restore_estimates()
             self._load_threshold()
             self._load_enable_threshold()
@@ -160,7 +169,16 @@ class TokenRotator:
                         self._current_id = acc.id
                         break
 
-    def _is_usable(self, acc: Account) -> bool:
+    def _is_usable(self, acc: Account, model: Optional[str] = None) -> bool:
+        """可用性判定：账号级限流（banned/quota/transient/auth/manual）一刀切；
+        模型级限流（model/queue）只锁被限的那个模型，其他模型照常调度。
+
+        model=None（无模型上下文：reload 选主号、删除前检查、可用计数等）时，
+        模型级限流的账号视为可用 —— 它还能服务其他模型。具体请求进来时
+        会带 model 精确判断。这修复了「一个模型被限整号退池、其他模型
+        额度跟着浪费」的问题：A 号 glm-5.3 被限后，glm-5.2 的请求照样
+        能调度到 A 号上。
+        """
         if not acc.access_token:
             return False
         if acc.status in ("disabled", "banned"):
@@ -170,10 +188,17 @@ class TokenRotator:
         st = self._disabled.get(acc.id)
         if st:
             until = st.get("until")
-            if until is None or until > time.time():
+            if until is not None and until <= time.time():
+                # 冷却到期，清除
+                self._disabled.pop(acc.id, None)
+                return True
+            if st.get("reason") in ("model", "queue"):
+                # 模型级限流：只有请求的模型在被限列表里才判不可用
+                if model is None or model not in _models_of(st):
+                    return True
                 return False
-            # 冷却到期，清除
-            self._disabled.pop(acc.id, None)
+            # 账号级限流（banned/quota/transient/auth/manual）：任何模型都不可用
+            return False
         return True
 
     def ensure_loaded(self, platform: str):
@@ -191,8 +216,11 @@ class TokenRotator:
         with self._lock:
             return len(self._accounts)
 
-    def get_next(self, platform: str) -> Optional[Account]:
-        """粘性优先：优先返回当前锁定账号；不可用时才找下一个可用账号。"""
+    def get_next(self, platform: str, model: Optional[str] = None) -> Optional[Account]:
+        """粘性优先：优先返回当前锁定账号；不可用时才找下一个可用账号。
+
+        model 用于按模型判断可用性：模型级限流只挡被限模型，其他模型照常调度。
+        """
         switch_row = None  # 锁外写 switch_log（store 是同步 sqlite，锁内写卡事件循环）
         with self._lock:
             if not self._accounts:
@@ -200,10 +228,10 @@ class TokenRotator:
             if not self._accounts:
                 return None
 
-            # 1. 当前锁定的账号仍可用 → 继续用它
+            # 1. 当前锁定的账号仍可用（对该模型）→ 继续用它
             if self._current_id:
                 cur = next((a for a in self._accounts if a.id == self._current_id), None)
-                if cur and self._is_usable(cur):
+                if cur and self._is_usable(cur, model):
                     return cur
 
             # 2. 找下一个可用账号
@@ -221,7 +249,7 @@ class TokenRotator:
                     self._index = 0
                 acc = self._accounts[self._index]
                 self._index = (self._index + 1) % n
-                if self._is_usable(acc):
+                if self._is_usable(acc, model):
                     self._current_id = acc.id
                     if prev_id and prev_id != acc.id and platform == self._platform:
                         # 收集参数，锁外再写库。原因优先取暂存的（on_disable 等不走
@@ -300,6 +328,7 @@ class TokenRotator:
         落库/reload 放到锁外 —— store 是同步 sqlite，锁内写库会卡住事件循环。
         """
         to_persist = None
+        to_clear_db = None
         with self._lock:
             now = time.time()
             if reason == "banned":
@@ -312,6 +341,9 @@ class TokenRotator:
                         to_persist = acc
                     self._disabled.pop(account_id, None)
                     self._banned_fail.pop(account_id, None)
+                    # 三振永封：库里还残留 strike1-2 的冷却记录（合并写不会删），
+                    # 不清掉的话 reload → _restore_cooldowns 又会把它捞回内存。
+                    to_clear_db = account_id
                 else:
                     cd = BANNED_COOLDOWNS[min(n - 1, len(BANNED_COOLDOWNS) - 1)]
                     self._disabled[account_id] = {"reason": "banned", "until": now + cd}
@@ -338,6 +370,9 @@ class TokenRotator:
                     self._pending_switch_from_nick = pa.nickname or ""
                 self._current_id = None
         self._persist_cooldowns()
+        if to_clear_db:
+            # 先于 reload：清掉库里残留，reload 时 _restore_cooldowns 才不会捞回
+            self._delete_cooldown_row(to_clear_db)
         if to_persist is not None:
             try:
                 store.upsert_account(self._platform, to_persist)
@@ -361,6 +396,24 @@ class TokenRotator:
         with self._lock:
             self._current_id = account_id
 
+    def _delete_cooldown_row(self, account_id: str):
+        """从 settings 表删除指定账号的冷却记录。
+
+        _persist_cooldowns 是合并写（库 ∪ 内存），单靠它无法删掉单条记录 ——
+        库里旧记录会被合并写保留，下次 _restore_cooldowns 又捞回内存。
+        清除/封禁路径必须显式删这一行。
+        """
+        try:
+            raw = store.get_setting(_COOLDOWN_SETTING_KEY, "")
+            if not raw:
+                return
+            saved = json.loads(raw)
+            if account_id in saved:
+                del saved[account_id]
+                store.save_setting(_COOLDOWN_SETTING_KEY, json.dumps(saved, ensure_ascii=False))
+        except Exception:
+            pass
+
     def clear_disabled(self, account_id: str):
         """清除指定账号的所有运行时冷却（手动启用/验活通过/探测成功时调用）。
         内存 + 库里该账号的记录一起删（_persist_cooldowns 是合并写，
@@ -368,15 +421,7 @@ class TokenRotator:
         with self._lock:
             self._disabled.pop(account_id, None)
             self._banned_fail.pop(account_id, None)
-        try:
-            raw = store.get_setting(_COOLDOWN_SETTING_KEY, "")
-            if raw:
-                saved = json.loads(raw)
-                if account_id in saved:
-                    del saved[account_id]
-                    store.save_setting(_COOLDOWN_SETTING_KEY, json.dumps(saved, ensure_ascii=False))
-        except Exception:
-            pass
+        self._delete_cooldown_row(account_id)
 
     def clear_model_disabled(self, account_id: str, model: str):
         """逐模型清除：model/queue 限流号只移除指定模型，仍有其他被限模型则保留限流；
@@ -633,18 +678,27 @@ class TokenRotator:
         except Exception:
             pass
 
-    def _restore_cooldowns(self):
+    def _restore_cooldowns(self, valid_ids=None):
         try:
             raw = store.get_setting(_COOLDOWN_SETTING_KEY, "")
             if not raw:
                 return
             saved = json.loads(raw)
             now = time.time()
+            if valid_ids is None:
+                valid_ids = {a.id for a in self._accounts}
+            cleaned = {}
             for aid, s in saved.items():
+                if aid not in valid_ids:
+                    # 孤儿记录：账号已删除，丢弃，不再进内存也不再落库
+                    continue
+                cleaned[aid] = s
                 until = s.get("until")
                 # until=None 是无限期限流（transient 探测制），照常恢复
                 if until is None or until > now:
                     self._disabled[aid] = s
+            if len(cleaned) != len(saved):
+                store.save_setting(_COOLDOWN_SETTING_KEY, json.dumps(cleaned, ensure_ascii=False))
         except Exception:
             pass
 
@@ -699,7 +753,8 @@ class TokenRotator:
                 "threshold_switch": sw,
                 "disabled": [
                     {"id": aid, "reason": s.get("reason"), "until": s.get("until"),
-                     "last_probe": s.get("last_probe")}
+                     "last_probe": s.get("last_probe"),
+                     "models": _models_of(s) if s.get("reason") in ("model", "queue") else []}
                     for aid, s in self._disabled.items()
                     if s.get("until") is None or s.get("until") > now
                 ],

@@ -14,8 +14,11 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from .token_rotator import token_rotator
-from .api_client import build_headers, build_chat_payload, resolve_base_url, AVAILABLE_MODELS
-from src.storage.store import add_log, update_account_stats
+from .api_client import (
+    build_headers, build_chat_payload, resolve_base_url, AVAILABLE_MODELS,
+    DEGRADE_CONFIG_KEY, DEFAULT_DEGRADE_ORDER, degrade_fallbacks,
+)
+from src.storage.store import add_log, update_account_stats, get_setting
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +208,19 @@ def _safe_log(*args, **kwargs):
         logger.warning("[调度] 写日志失败: %r", e)
 
 
+def _load_degrade_config() -> dict:
+    """读取模型降级顺序配置；读不到/损坏时回退内置默认。"""
+    try:
+        raw = get_setting(DEGRADE_CONFIG_KEY, "")
+        if raw:
+            cfg = json.loads(raw)
+            if isinstance(cfg, dict):
+                return cfg
+    except Exception as e:
+        logger.warning("[调度] 读取降级配置失败: %r", e)
+    return {"enabled": True, "order": DEFAULT_DEGRADE_ORDER}
+
+
 def _first_event_kind(text: str):
     """扫描文本中的首个 SSE data 事件。
     返回 ('error', payload_str) | ('data', None) | ('none', None)。
@@ -353,7 +369,11 @@ async def _stream_inner(
     max_attempts = max(token_rotator.count_total(), 1)
     tried_ids: set = set()
     last_msg = "无可用账号"
-    model = payload.get("model", "")
+    requested_model = payload.get("model", "")
+    # 降级链：requested_model 打头，后接配置的降级模型。
+    # 降级只在「单个账号内」走链；换号时 model 复位回 requested_model（见下方链索引）。
+    # 配置读取一次：降级链是请求作用域的，跨请求无状态。
+    degrade_chain = [requested_model] + degrade_fallbacks(_load_degrade_config(), requested_model)
     deadline = time.monotonic() + STREAM_DEADLINE
     sent_any = False   # 是否已经向客户端 yield 过正文；一旦为 True 就不能再重试换号
 
@@ -361,7 +381,9 @@ async def _stream_inner(
         if time.monotonic() > deadline:
             last_msg = "请求超过总时长上限"
             break
-        acc = token_rotator.get_next(platform) or token_rotator.get_next(fallback)
+        # 带模型取号：模型级限流只挡被限模型，其他模型照常调度该号（见 _is_usable）。
+        # 换号时总是用用户透传的原模型 —— 降级链只在单个账号内走，跨账号必须复位。
+        acc = token_rotator.get_next(platform, requested_model) or token_rotator.get_next(fallback, requested_model)
         if not acc:
             break
         if acc.id in tried_ids:
@@ -370,172 +392,190 @@ async def _stream_inner(
             break
         tried_ids.add(acc.id)
 
-        # add_log 是同步 sqlite 写，GUI 线程并发写库时可能抛 "database is locked"。
-        # 这里裸调会让异常从生成器里穿出去，把一次本来能成功的请求打成 500。
-        # request 日志只记模型 + 消息数，不保存消息内容/会话记录 ——
-        # 全量会话会让单条 details 膨胀到几百 KB，日志页一次拉 200 条即内存爆炸。
-        # （要排查「客户端注入提示词导致上游拦截」时，看 error 事件的详情即可）
-        req_detail = ""
-        try:
-            msgs = payload.get("messages", []) or []
-            req_detail = json.dumps(
-                {"model": model, "msgs": len(msgs)}, ensure_ascii=False)
-        except Exception:
-            pass
-        _safe_log("request", platform, acc.id, acc.nickname, model, f"开始请求 model={model}", req_detail)
+        # ── 单个账号内的降级链循环：6004/6020 时同号换下一个模型，链尽才换号 ──
+        model = requested_model
+        for chain_model in degrade_chain:
+            model = chain_model
+            payload["model"] = model
 
-        base_url = resolve_base_url()
-        api_url = f"{base_url}/v2/chat/completions"
-        headers = build_headers(acc.access_token, acc.uid, conversation_id,
-                                fingerprint=acc.fingerprint,
-                                enterprise_id=acc.enterprise_id, domain=acc.domain)
-        client = _get_http_client()
-
-        try:
-            resp = await client.send(
-                client.build_request("POST", api_url, json=payload, headers=headers),
-                stream=True,
-            )
-        except httpx.ConnectError as e:
-            logger.warning("[调度] 账号=%s 连接失败: %s", acc.nickname, e)
-            _safe_log("error", platform, acc.id, acc.nickname, model, f"连接失败: {e}", "")
-            last_msg = f"无法连接上游: {e}"
-            # 原先是 break 且不标记冷却 —— 单个账号连不上就放弃整轮，没有故障转移。
-            # 连接失败按 transient 处理并继续换号，全部失败时循环自然走完。
-            token_rotator.mark_disabled(acc.id, "transient")
-            continue
-        except httpx.TimeoutException as e:
-            logger.warning("[调度] 账号=%s 超时, 标记transient: %s", acc.nickname, e)
-            _safe_log("error", platform, acc.id, acc.nickname, model, f"请求超时", "")
-            token_rotator.mark_disabled(acc.id, "transient")
-            last_msg = f"上游超时: {e}"
-            continue
-
-        try:
-            # 非 200：解析错误体，可重试则切号
-            if resp.status_code != 200:
-                body = (await resp.aread()).decode("utf-8", errors="ignore")
-                await resp.aclose()
-                kind = _classify_upstream_error(resp.status_code, body)
-                logger.warning("[调度] 账号=%s 上游返回 %d, kind=%s, body=%s", acc.nickname, resp.status_code, kind, body[:200])
-                if kind:
-                    token_rotator.mark_disabled(acc.id, kind, model=model)
-                    _safe_log("error", platform, acc.id, acc.nickname, model, f"HTTP {resp.status_code} → {kind}", body[:500])
-                    last_msg = body[:300]
-                    continue
-                _safe_log("error", platform, acc.id, acc.nickname, model, f"HTTP {resp.status_code} (不可重试)", body[:500])
-                yield f"data: {json.dumps({'error': {'message': body, 'type': 'upstream_error', 'status': resp.status_code}}, ensure_ascii=False)}\n\n"
-                yield "data: [DONE]\n\n"
-                return
-
-            # 200：peek 首个事件，检测内联错误，确认无误后再向客户端输出
-            # 只创建一个迭代器，peek 和后续共用（httpx 不允许重复 aiter_text）
-            text_iter = resp.aiter_text(chunk_size=8192)
-            buffered = []
-            buffered_len = 0
-            decision = "none"
-            inline_err = None
-            peek_deadline = min(time.monotonic() + PEEK_TIMEOUT, deadline)
-            async for chunk in text_iter:
-                buffered.append(chunk)
-                buffered_len += len(chunk)
-                # 必须对**累积文本**解析：一个 SSE 错误事件可能被切在 8KB chunk
-                # 边界上，两半各自 json.loads 都失败，于是 14018/429 检测不到、
-                # 不触发换号，错误体直接透传给客户端，故障转移形同虚设。
-                kind, err = _first_event_kind("".join(buffered))
-                if kind == "error":
-                    decision = "error"
-                    inline_err = err
-                    break
-                if kind == "data":
-                    decision = "data"
-                    break
-                if buffered_len > PEEK_BYTE_LIMIT:
-                    decision = "data"
-                    break
-                # 只收到心跳/注释时，退出条件全是字节量的话会一直卡在这里，
-                # 而响应头已经发出去了，客户端表现为「连上了但一个字都没有」。
-                if time.monotonic() > peek_deadline:
-                    logger.warning("[调度] 账号=%s peek 超时，按正常数据放行", acc.nickname)
-                    decision = "data"
-                    break
-
-            if decision == "none":
-                # peek 全程只收到心跳/注释，无实质数据 → 上游假死，按 transient 换号
-                await resp.aclose()
-                token_rotator.mark_disabled(acc.id, "transient")
-                _safe_log("error", platform, acc.id, acc.nickname, model, "peek 无实质内容，疑似上游假死", "")
-                last_msg = "上游无实质响应"
-                continue
-
-            if decision == "error" and inline_err:
-                await resp.aclose()
-                kind = _classify_upstream_error(200, inline_err)
-                logger.warning("[调度] 账号=%s 200内联错误, kind=%s, err=%s", acc.nickname, kind, inline_err[:200])
-                if kind:
-                    token_rotator.mark_disabled(acc.id, kind, model=model)
-                    _safe_log("error", platform, acc.id, acc.nickname, model, f"200内联错误 → {kind}", inline_err[:500])
-                    last_msg = inline_err[:300]
-                    continue
-                _safe_log("error", platform, acc.id, acc.nickname, model, "200内联错误(不可重试)", inline_err[:500])
-                # 不可重试的内联错误
-                try:
-                    eobj = json.loads(inline_err)
-                    err_payload = eobj.get("error", {"message": inline_err})
-                except (ValueError, TypeError):
-                    err_payload = {"message": inline_err}
-                yield f"data: {json.dumps({'error': err_payload, 'type': 'upstream_error'}, ensure_ascii=False)}\n\n"
-                yield "data: [DONE]\n\n"
-                return
-
-            # 成功：重放已缓冲内容 + 剩余流（用同一个迭代器）
-            async def _combined():
-                for c in buffered:
-                    yield c
-                async for c in text_iter:
-                    yield c
-
-            logger.info("[调度] 账号=%s 请求成功", acc.nickname)
-            # 限流探测成功：真实请求通了 = 上游已解除，逐模型清除限流标记
-            # （model 限流号只清本次请求的模型；transient/quota 号整体恢复）
+            # add_log 是同步 sqlite 写，GUI 线程并发写库时可能抛 "database is locked"。
+            # 这里裸调会让异常从生成器里穿出去，把一次本来能成功的请求打成 500。
+            # request 日志只记模型 + 消息数，不保存消息内容/会话记录 ——
+            # 全量会话会让单条 details 膨胀到几百 KB，日志页一次拉 200 条即内存爆炸。
+            # （要排查「客户端注入提示词导致上游拦截」时，看 error 事件的详情即可）
+            req_detail = ""
             try:
-                token_rotator.clear_model_disabled(acc.id, model)
+                msgs = payload.get("messages", []) or []
+                req_detail = json.dumps(
+                    {"model": model, "msgs": len(msgs)}, ensure_ascii=False)
             except Exception:
                 pass
-            usage_box = {}
+            _safe_log("request", platform, acc.id, acc.nickname, model, f"开始请求 model={model}", req_detail)
+
+            base_url = resolve_base_url()
+            api_url = f"{base_url}/v2/chat/completions"
+            headers = build_headers(acc.access_token, acc.uid, conversation_id,
+                                    fingerprint=acc.fingerprint,
+                                    enterprise_id=acc.enterprise_id, domain=acc.domain)
+            client = _get_http_client()
+
             try:
-                async for piece in _normalize_text_stream(_combined(), usage_box, deadline):
-                    sent_any = True
-                    yield piece
-            finally:
-                await resp.aclose()
-                if usage_box.get("usage"):
-                    u = usage_box["usage"]
-                    consumed = _extract_consumed(u)
-                    if consumed > 0:
-                        token_rotator.deduct_quota(acc.id, consumed)
-                    update_account_stats(platform, acc.id, u)
-                    _safe_log("success", platform, acc.id, acc.nickname, model, f"消耗 {consumed}" if consumed > 0 else "请求成功", "")
-            return
-        except httpx.TimeoutException as e:
-            await resp.aclose()
-            last_msg = f"上游超时: {e}"
-            token_rotator.mark_disabled(acc.id, "transient")
-            # 已经吐给客户端的内容收不回来了。此时再换号重发会让流式客户端收到
-            # 「半个回答 + 一个完整回答」，非流式更糟：两次正文会被拼进同一条
-            # message。所以只能就地收尾，不能 continue。
-            if sent_any:
-                logger.warning("[调度] 账号=%s 流中途超时，已发出内容，不再重试", acc.nickname)
-                _safe_log("error", platform, acc.id, acc.nickname, model, "流中途超时，已发出部分内容", "")
-                yield ("data: " + json.dumps(
-                    {"error": {"message": last_msg, "type": "upstream_timeout"}},
-                    ensure_ascii=False) + "\n\n")
-                yield "data: [DONE]\n\n"
+                resp = await client.send(
+                    client.build_request("POST", api_url, json=payload, headers=headers),
+                    stream=True,
+                )
+            except httpx.ConnectError as e:
+                logger.warning("[调度] 账号=%s 连接失败: %s", acc.nickname, e)
+                _safe_log("error", platform, acc.id, acc.nickname, model, f"连接失败: {e}", "")
+                last_msg = f"无法连接上游: {e}"
+                # 连接失败按 transient 处理（账号级，非模型级）→ 换号，不降级。
+                token_rotator.mark_disabled(acc.id, "transient")
+                break
+            except httpx.TimeoutException as e:
+                logger.warning("[调度] 账号=%s 超时, 标记transient: %s", acc.nickname, e)
+                _safe_log("error", platform, acc.id, acc.nickname, model, f"请求超时", "")
+                token_rotator.mark_disabled(acc.id, "transient")
+                last_msg = f"上游超时: {e}"
+                break
+
+            try:
+                # 非 200：解析错误体，可重试则切号
+                if resp.status_code != 200:
+                    body = (await resp.aread()).decode("utf-8", errors="ignore")
+                    await resp.aclose()
+                    kind = _classify_upstream_error(resp.status_code, body)
+                    logger.warning("[调度] 账号=%s 上游返回 %d, kind=%s, body=%s", acc.nickname, resp.status_code, kind, body[:200])
+                    if kind:
+                        token_rotator.mark_disabled(acc.id, kind, model=model)
+                        _safe_log("error", platform, acc.id, acc.nickname, model, f"HTTP {resp.status_code} → {kind}", body[:500])
+                        last_msg = body[:300]
+                        # 模型级限流（6004/6020）→ 同号降级继续走链；其余 → 换号
+                        if kind in ("model", "queue"):
+                            continue
+                        break
+                    _safe_log("error", platform, acc.id, acc.nickname, model, f"HTTP {resp.status_code} (不可重试)", body[:500])
+                    yield f"data: {json.dumps({'error': {'message': body, 'type': 'upstream_error', 'status': resp.status_code}}, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+
+                # 200：peek 首个事件，检测内联错误，确认无误后再向客户端输出
+                # 只创建一个迭代器，peek 和后续共用（httpx 不允许重复 aiter_text）
+                text_iter = resp.aiter_text(chunk_size=8192)
+                buffered = []
+                buffered_len = 0
+                decision = "none"
+                inline_err = None
+                peek_deadline = min(time.monotonic() + PEEK_TIMEOUT, deadline)
+                async for chunk in text_iter:
+                    buffered.append(chunk)
+                    buffered_len += len(chunk)
+                    # 必须对**累积文本**解析：一个 SSE 错误事件可能被切在 8KB chunk
+                    # 边界上，两半各自 json.loads 都失败，于是 14018/429 检测不到、
+                    # 不触发换号，错误体直接透传给客户端，故障转移形同虚设。
+                    kind, err = _first_event_kind("".join(buffered))
+                    if kind == "error":
+                        decision = "error"
+                        inline_err = err
+                        break
+                    if kind == "data":
+                        decision = "data"
+                        break
+                    if buffered_len > PEEK_BYTE_LIMIT:
+                        decision = "data"
+                        break
+                    # 只收到心跳/注释时，退出条件全是字节量的话会一直卡在这里，
+                    # 而响应头已经发出去了，客户端表现为「连上了但一个字都没有」。
+                    if time.monotonic() > peek_deadline:
+                        logger.warning("[调度] 账号=%s peek 超时，按正常数据放行", acc.nickname)
+                        decision = "data"
+                        break
+
+                if decision == "none":
+                    # peek 全程只收到心跳/注释，无实质数据 → 上游假死，按 transient 换号
+                    await resp.aclose()
+                    token_rotator.mark_disabled(acc.id, "transient")
+                    _safe_log("error", platform, acc.id, acc.nickname, model, "peek 无实质内容，疑似上游假死", "")
+                    last_msg = "上游无实质响应"
+                    break
+
+                if decision == "error" and inline_err:
+                    await resp.aclose()
+                    kind = _classify_upstream_error(200, inline_err)
+                    logger.warning("[调度] 账号=%s 200内联错误, kind=%s, err=%s", acc.nickname, kind, inline_err[:200])
+                    if kind:
+                        token_rotator.mark_disabled(acc.id, kind, model=model)
+                        _safe_log("error", platform, acc.id, acc.nickname, model, f"200内联错误 → {kind}", inline_err[:500])
+                        last_msg = inline_err[:300]
+                        # 模型级限流（6004/6020）→ 同号降级继续走链；其余 → 换号
+                        if kind in ("model", "queue"):
+                            continue
+                        break
+                    # 不可重试的内联错误：只在确认是 error 事件时才走到这里
+                    # （缩进必须保持在 if decision=="error" 块内，否则成功路径
+                    #  decision=="data" 也会落进来，inline_err 是 None 直接 TypeError）
+                    _safe_log("error", platform, acc.id, acc.nickname, model, "200内联错误(不可重试)", inline_err[:500])
+                    try:
+                        eobj = json.loads(inline_err)
+                        err_payload = eobj.get("error", {"message": inline_err})
+                    except (ValueError, TypeError):
+                        err_payload = {"message": inline_err}
+                    yield f"data: {json.dumps({'error': err_payload, 'type': 'upstream_error'}, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+
+                # 成功（decision == "data"）：重放已缓冲内容 + 剩余流（用同一个迭代器）
+                async def _combined():
+                    for c in buffered:
+                        yield c
+                    async for c in text_iter:
+                        yield c
+
+                logger.info("[调度] 账号=%s 请求成功 model=%s", acc.nickname, model)
+                # 限流探测成功：真实请求通了 = 上游已解除，逐模型清除限流标记
+                # （model 限流号只清本次请求的模型；transient/quota 号整体恢复）
+                try:
+                    token_rotator.clear_model_disabled(acc.id, model)
+                except Exception:
+                    pass
+                usage_box = {}
+                try:
+                    async for piece in _normalize_text_stream(_combined(), usage_box, deadline):
+                        sent_any = True
+                        yield piece
+                finally:
+                    await resp.aclose()
+                    if usage_box.get("usage"):
+                        u = usage_box["usage"]
+                        consumed = _extract_consumed(u)
+                        if consumed > 0:
+                            token_rotator.deduct_quota(acc.id, consumed)
+                        try:
+                            update_account_stats(platform, acc.id, u)
+                        except Exception:
+                            # 统计落库失败不能影响已成功发出的响应（流已完整发给客户端）：
+                            # sqlite 偶发 locked 时只丢一次统计，绝不掐断已完成的流。
+                            pass
+                        _safe_log("success", platform, acc.id, acc.nickname, model, f"消耗 {consumed}" if consumed > 0 else "请求成功", "")
                 return
-            continue
-        except Exception:
-            await resp.aclose()
-            raise
+            except httpx.TimeoutException as e:
+                await resp.aclose()
+                last_msg = f"上游超时: {e}"
+                token_rotator.mark_disabled(acc.id, "transient")
+                # 已经吐给客户端的内容收不回来了。此时再换号重发会让流式客户端收到
+                # 「半个回答 + 一个完整回答」，非流式更糟：两次正文会被拼进同一条
+                # message。所以只能就地收尾，不能 continue。
+                if sent_any:
+                    logger.warning("[调度] 账号=%s 流中途超时，已发出内容，不再重试", acc.nickname)
+                    _safe_log("error", platform, acc.id, acc.nickname, model, "流中途超时，已发出部分内容", "")
+                    yield ("data: " + json.dumps(
+                        {"error": {"message": last_msg, "type": "upstream_timeout"}},
+                        ensure_ascii=False) + "\n\n")
+                    yield "data: [DONE]\n\n"
+                    return
+                break
+            except Exception:
+                await resp.aclose()
+                raise
 
     # 全部账号耗尽：透传给客户端，提示无号可用请查看日志（last_msg 是最后一条失败原因）。
     # 日志里附各限流原因统计（排队几个/耗尽几个/临时几个/封号几个），一眼看出
@@ -720,7 +760,7 @@ async def health():
 
 
 @router.get("/proxy/info")
-async def proxy_info():
+async def proxy_info(_auth=Depends(authenticate)):
     st = token_rotator.status()
     return {
         "platform": _platform,
@@ -733,6 +773,9 @@ async def proxy_info():
         "active": st["active"],
         "threshold_switch": st.get("threshold_switch"),
         "models": AVAILABLE_MODELS,
+        # 每个限流/耗尽号的快照：前端轮询据此 diff 更新卡片状态标签
+        # （进入限流池/探测恢复都要及时反映到 UI，否则「数据变了 UI 没变」）
+        "cooldowns": st["disabled"],
     }
 
 

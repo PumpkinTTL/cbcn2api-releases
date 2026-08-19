@@ -126,8 +126,9 @@ from src.models.account import Account
 
 # 让 build_headers 带上账号标识，方便假 client 按账号回放
 _orig_build_headers = ps.build_headers
-def tagged_headers(token, uid, conv, fingerprint=None):
-    h = dict(_orig_build_headers(token, uid, conv, fingerprint=fingerprint))
+def tagged_headers(token, uid, conv, fingerprint=None, enterprise_id=None, domain=None):
+    h = dict(_orig_build_headers(token, uid, conv, fingerprint=fingerprint,
+                                 enterprise_id=enterprise_id, domain=domain))
     h["__acct__"] = token          # token 里塞的是 account id
     return h
 ps.build_headers = tagged_headers
