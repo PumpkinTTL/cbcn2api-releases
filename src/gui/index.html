@@ -601,10 +601,6 @@
         <span>或稍后重试。</span>
       </div>
       <div class="accounts-overview" v-show="accounts.length">
-        <div class="overview-item" :class="{ active: statusFilter==='all' }" @click="selectStatusFilter('all')" title="全部账号">
-          <span class="overview-num">{{ accounts.length }}</span>
-          <span class="overview-label">总数</span>
-        </div>
         <div class="overview-item overview-normal" :class="{ active: statusFilter==='normal' }" @click="selectStatusFilter('normal')" title="点击只看正常账号；再点关闭">
           <span class="overview-num">{{ statusCount('normal') }}</span>
           <span class="overview-label">正常</span>
@@ -627,6 +623,10 @@
         <div class="overview-item overview-warn" :class="{ active: dangerOnly }" @click="toggleDangerOnly" title="点击只看低积分告警账号（使用率 ≥80%）；再点关闭">
           <span class="overview-num">{{ lowQuotaCount }}</span>
           <span class="overview-label">低积分告警</span>
+        </div>
+        <div class="overview-item" :class="{ active: statusFilter==='all' }" @click="selectStatusFilter('all')" title="全部账号">
+          <span class="overview-num">{{ accounts.length }}</span>
+          <span class="overview-label">总数</span>
         </div>
         <!-- 排序：复用 status-dropdown 组件，推到概览栏最右 -->
         <div class="status-dropdown overview-sort" :class="{ open: sortOpen }" @click.stop="sortOpen = !sortOpen" title="账号列表排序方式">
@@ -2446,8 +2446,10 @@ const vApp = createApp({
     const chatSending = ref(false);
     const modelList = ref(PRESET_MODELS);
     const probeModelOptions = computed(() => modelList.value.filter(m => m.id !== 'auto'));
-    // 探测面板要列的账号：限流 + 额度耗尽（带各自被限模型，便于按号按模型探测）
-    const cooldownProbeList = computed(() => enrichedAccounts.value.filter(a => a.status === 'cooldown' || a.status === 'quota'));
+    // 探测面板要列的账号：限流 + 额度耗尽（带各自被限模型，便于按号按模型探测）。
+    // 必须从完整账号列表算（不是 filteredAccounts/enrichedAccounts）——否则当前状态筛选
+    // 在「正常」时弹出层会看到空列表（筛选后只剩正常号），切到「限流」才出现，用户会懵。
+    const cooldownProbeList = computed(() => accounts.value.filter(a => a.status === 'cooldown' || a.status === 'quota'));
     const currentModel = ref(PRESET_MODELS[0]);
     const modelDropdownOpen = ref(false);
     const syncLoading = ref(false);
@@ -2730,10 +2732,16 @@ const vApp = createApp({
       if(a.enterprise_id||a.enterprise_name)return '企业版';
       if(isPro)return 'Pro'; if(isTrial)return 'Free'; return 'Free';
     }
+    // parseQuota 结果缓存：同一份 quota_raw（对象引用不变）只解析一次。
+    // 筛选/排序路径会对每张卡反复调 getCardQuota → parseQuota，企业号
+    // 的 Accounts 数组可能很长，缓存后这些重复解析全部 O(1)。
+    const _parseQuotaCache = new WeakMap();
     function parseQuota(a) {
       try {
         const qr=a.quota_raw; if(!qr)return null;
         const ur=qr.userResource||a.usage_raw; if(!ur)return null;
+        const cached=_parseQuotaCache.get(qr);
+        if (cached && cached.usage===ur) return cached.value;
         const accts=ur.data?.Response?.Data?.Accounts||[]; if(!accts.length)return null;
         let total=0,used=0;
         for(const r of accts){
@@ -2745,8 +2753,9 @@ const vApp = createApp({
           const remain=_pickN(r,['CycleCapacityRemainPrecise','CycleCapacityRemain','CapacityRemainPrecise','CapacityRemain']);
           if(t<=0)continue; total+=t; used+=Math.max(0,t-remain);
         }
-        if(total===0)return null;
-        return {total,used,pct:Math.round(used/total*100)};
+        const value= total===0 ? null : {total,used,pct:Math.round(used/total*100)};
+        _parseQuotaCache.set(qr, { usage: ur, value });
+        return value;
       } catch{return null;}
     }
     function getCardQuota(a) {
@@ -2912,8 +2921,17 @@ const vApp = createApp({
     async function refreshAccountStats() {
       try {
         const sd = JSON.parse(await pywebview.api.get_all_stats(currentPlatform.value));
-        Object.keys(accountStats).forEach(k => delete accountStats[k]);
-        (sd.stats||[]).forEach(s => { accountStats[s.account_id]=s; });
+        // diff 式更新：只改实际变化的行。delete-all + re-add 会逐个触发响应式，
+        // 让所有卡片的额度重算 + 重渲染 —— 首页 48+ 号时每 10 秒白烧一次主线程。
+        // 逐行比对后，闲时（无请求、无变化）零触发。
+        const fresh = new Map((sd.stats||[]).map(s => [s.account_id, s]));
+        for (const k of Object.keys(accountStats)) {
+          if (!fresh.has(k)) delete accountStats[k];
+        }
+        for (const [id, s] of fresh) {
+          const old = accountStats[id];
+          if (!old || JSON.stringify(old) !== JSON.stringify(s)) accountStats[id] = s;
+        }
       } catch {}
     }
 
