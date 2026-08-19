@@ -38,6 +38,7 @@ security = HTTPBearer(auto_error=False)
 # 上游错误分类
 QUOTA_ERROR_CODES = {14018}                # 额度耗尽（账号级，body code）
 MODEL_RATE_LIMIT_CODES = {6004}            # 单个模型每日额度/频率限制（body code）
+QUEUE_ERROR_CODES = {6020}                 # 排队等待（模型级队列，queue.waiting.title，body code）
 QUOTA_STATUS_CODES = {429}                 # HTTP 429 兜底：body code 未识别时归 quota
 TRANSIENT_STATUS_CODES = {401, 502, 503, 504}  # 临时错误
 
@@ -154,11 +155,13 @@ def parse_sse_line(line: str) -> Optional[dict]:
 
 
 def _classify_upstream_error(status_code: int, body: str) -> Optional[str]:
-    """解析上游错误体，返回可重试类型：'banned' | 'quota' | 'auth' | 'transient' | None(不可重试)。
+    """解析上游错误体，返回可重试类型：
+    'banned' | 'quota' | 'model' | 'queue' | 'auth' | 'transient' | None(不可重试)。
 
     11140（封号）的响应体是顶层 {"code":11140,"msg":"request illegal"}，无 error 包裹，
     与普通错误的嵌套结构不同，须单独识别 —— 只有真正的封号才返回 'banned'，
     普通 403 仍归 'auth'（临时鉴权，渐进冷却，不封号）。
+    6020（queue.waiting.title）= 模型级排队，属限流的一种，返回 'queue'。
     """
     if "request illegal" in body.lower():
         return "banned"
@@ -183,6 +186,8 @@ def _classify_upstream_error(status_code: int, body: str) -> Optional[str]:
         return "quota"
     if code in MODEL_RATE_LIMIT_CODES:
         return "model"
+    if code in QUEUE_ERROR_CODES:
+        return "queue"
     if status_code in QUOTA_STATUS_CODES:
         return "quota"
     if status_code == 403:
@@ -532,10 +537,23 @@ async def _stream_inner(
             await resp.aclose()
             raise
 
-    # 全部账号耗尽
-    logger.warning("[调度] 所有账号不可用, last_msg=%s", last_msg)
-    _safe_log("error", platform, "", "", model, f"所有账号不可用: {last_msg}", "")
-    yield f"data: {json.dumps({'error': {'message': last_msg, 'type': 'no_account'}}, ensure_ascii=False)}\n\n"
+    # 全部账号耗尽：透传给客户端，提示无号可用请查看日志（last_msg 是最后一条失败原因）。
+    # 日志里附各限流原因统计（排队几个/耗尽几个/临时几个/封号几个），一眼看出
+    # 调度停在哪类原因上，不用翻细节。
+    reason_stats = {}
+    try:
+        with token_rotator._lock:
+            for _aid, _s in (token_rotator._disabled or {}).items():
+                _r = _s.get("reason")
+                if _r:
+                    reason_stats[_r] = reason_stats.get(_r, 0) + 1
+    except Exception:
+        pass
+    stats_txt = "、".join(f"{k}={v}" for k, v in sorted(reason_stats.items())) if reason_stats else "无"
+    logger.warning("[调度] 所有账号不可用, last_msg=%s, 限流分布: %s", last_msg, stats_txt)
+    _safe_log("error", platform, "", "", model, f"所有账号不可用: {last_msg}（限流分布: {stats_txt}）", "")
+    hint = f"无号可用，请查看日志（最后原因: {last_msg}）" if last_msg else "无号可用，请查看日志"
+    yield f"data: {json.dumps({'error': {'message': hint, 'type': 'no_account'}}, ensure_ascii=False)}\n\n"
     yield "data: [DONE]\n\n"
 
 

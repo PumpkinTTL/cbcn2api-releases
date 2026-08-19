@@ -27,6 +27,19 @@ _COOLDOWNS = {
     "transient": TRANSIENT_COOLDOWN,
 }
 
+# 探测制最小间隔（秒）：限流号被 get_next 拉出来实发请求后，间隔内不再尝试。
+# 防止全池无正常号时，每个客户端请求都把所有限流号拉出来白撞一轮
+# （探测风暴），排队场景尤其有害 —— 每次探测都重新排队尾，越排越后。
+# 按 reason 分级：transient 恢复快间隔短；quota/model 约小时级间隔居中；
+# queue（6020 排队）探测有害且无意义（排队的模型必然失败），间隔最长。
+PROBE_MIN_INTERVAL = {
+    "transient": 300,   # 5 分钟
+    "quota": 600,       # 10 分钟
+    "model": 600,       # 10 分钟
+    "queue": 900,       # 15 分钟（排队自恢复，探测反而重新排队尾）
+}
+_DEFAULT_PROBE_INTERVAL = 300
+
 
 def _snapshot_usable(quota_raw: Optional[dict], usage_raw: Optional[dict]) -> bool:
     """快照形状可用：能解析出至少一个套餐包的额度字段（total/remain 任一可转数字）。
@@ -222,24 +235,33 @@ class TokenRotator:
                     result = acc
                     break
             if result is None:
-                # 所有可用账号耗尽：轮转探测 transient 限流账号。
+                # 所有可用账号耗尽：轮转探测限流账号。
                 # until=None 无限期，上游解除与否未知 —— 用真实请求试：
                 # 成功（代理层收到数据后调 clear_disabled）解除限流，
                 # 失败（又超时/报错）mark_disabled 重新标记，继续限流。
                 # 从当前轮转位置开始扫（不是固定第一个）—— 多个限流号时
                 # 每次请求探测不同号，配合代理层 tried_ids 去重，单请求内
                 # 所有号各试一次，不会重复轰炸同一个号。
+                # 最小探测间隔（PROBE_MIN_INTERVAL）：每个号被拉出来实发请求后，
+                # 间隔内不再尝试 —— 防止跨请求的探测风暴（全池无正常号时，
+                # 每个客户端请求都把限流号拉出来白撞一轮）。queue（排队）探测
+                # 有害且必然失败，间隔最长；手动探测（验活/一键探测）不受此限。
                 n2 = len(self._accounts)
+                now2 = time.time()
                 for i in range(n2):
                     acc = self._accounts[(self._index + i) % n2]
                     st = self._disabled.get(acc.id)
-                    # 探测制两类：transient（限流）+ quota（额度耗尽，买了加量包即恢复）
-                    if (st and st.get("reason") in ("transient", "quota", "model")
+                    if not (st and st.get("reason") in ("transient", "quota", "model", "queue")
                             and acc.status == "normal"):
-                        self._current_id = acc.id
-                        self._index = (self._index + i + 1) % n2
-                        result = acc
-                        break
+                        continue
+                    last_probe = st.get("last_probe") or 0
+                    interval = PROBE_MIN_INTERVAL.get(st.get("reason"), _DEFAULT_PROBE_INTERVAL)
+                    if now2 - last_probe < interval:
+                        continue  # 间隔内不探测，等下一个号
+                    self._current_id = acc.id
+                    self._index = (self._index + i + 1) % n2
+                    result = acc
+                    break
             if result is None:
                 self._pending_switch_from = None
                 self._pending_switch_from_nick = ""
@@ -256,11 +278,13 @@ class TokenRotator:
         st = self._disabled.get(account_id)
         if st:
             r = st.get("reason")
-            if r == "model":
+            if r in ("model", "queue"):
                 models = _models_of(st)
                 label = "、".join(models) if models else "未知"
                 prefix = "单模型" if len(models) <= 1 else "多模型"
-                return f"{prefix}被限制频率-{label}-已移入限流池"
+                if r == "model":
+                    return f"{prefix}被限制频率-{label}-已移入限流池"
+                return f"{prefix}排队等待-{label}-已移入限流池"
             if r:
                 return {"quota": "额度耗尽", "auth": "非法请求", "transient": "临时错误", "banned": "封号", "manual": "手动禁用"}.get(r, r)
         return ""
@@ -277,6 +301,7 @@ class TokenRotator:
         """
         to_persist = None
         with self._lock:
+            now = time.time()
             if reason == "banned":
                 n = self._banned_fail.get(account_id, 0) + 1
                 self._banned_fail[account_id] = n
@@ -289,20 +314,21 @@ class TokenRotator:
                     self._banned_fail.pop(account_id, None)
                 else:
                     cd = BANNED_COOLDOWNS[min(n - 1, len(BANNED_COOLDOWNS) - 1)]
-                    self._disabled[account_id] = {"reason": "banned", "until": time.time() + cd}
+                    self._disabled[account_id] = {"reason": "banned", "until": now + cd}
             else:
-                # quota（额度耗尽）/ transient（超时/DNS）：无限期限流（until=None），
+                # quota（额度耗尽）/ transient（超时/DNS）/ queue（排队）：无限期限流（until=None），
                 # 探测制恢复 —— 所有可用账号耗尽时轮询限流账号发请求，
                 # 成功（代理层调 clear_model_disabled/clear_disabled）才解除，失败继续保持限流。
-                if reason == "model" and model:
-                    # 单模型限流：累积多个被限模型（一个号可能先后撞 glm-5.3 和 glm-5.2）
+                # last_probe：被标记的这一刻 = 刚被真实请求探测过，探测风暴的最小间隔从此刻起算。
+                if reason in ("model", "queue") and model:
+                    # 单模型限流/排队：累积多个被限模型（一个号可能先后撞 glm-5.3 和 glm-5.2）
                     existing = self._disabled.get(account_id)
-                    models = _models_of(existing) if existing and existing.get("reason") == "model" else []
+                    models = _models_of(existing) if existing and existing.get("reason") in ("model", "queue") else []
                     if model not in models:
                         models.append(model)
-                    self._disabled[account_id] = {"reason": "model", "until": None, "models": models}
+                    self._disabled[account_id] = {"reason": reason, "until": None, "models": models, "last_probe": now}
                 else:
-                    self._disabled[account_id] = {"reason": reason, "until": None}
+                    self._disabled[account_id] = {"reason": reason, "until": None, "last_probe": now}
             if account_id == self._current_id:
                 # 当前号被标记不可用：暂存原号与原因，供 get_next 换号时写切号日志
                 self._pending_switch_from = account_id
@@ -353,14 +379,14 @@ class TokenRotator:
             pass
 
     def clear_model_disabled(self, account_id: str, model: str):
-        """逐模型清除：model 限流号只移除指定模型，仍有其他被限模型则保留限流；
-        非 model 冷却（transient/quota）任何模型成功都算整体恢复。内存+库同步。"""
+        """逐模型清除：model/queue 限流号只移除指定模型，仍有其他被限模型则保留限流；
+        非 model/queue 冷却（transient/quota）任何模型成功都算整体恢复。内存+库同步。"""
         removed_all = False
         with self._lock:
             st = self._disabled.get(account_id)
             if not st:
                 return
-            if st.get("reason") != "model":
+            if st.get("reason") not in ("model", "queue"):
                 self._disabled.pop(account_id, None)
                 self._banned_fail.pop(account_id, None)
                 removed_all = True
@@ -672,7 +698,8 @@ class TokenRotator:
                 "active": self._active_count > 0,
                 "threshold_switch": sw,
                 "disabled": [
-                    {"id": aid, "reason": s.get("reason"), "until": s.get("until")}
+                    {"id": aid, "reason": s.get("reason"), "until": s.get("until"),
+                     "last_probe": s.get("last_probe")}
                     for aid, s in self._disabled.items()
                     if s.get("until") is None or s.get("until") > now
                 ],

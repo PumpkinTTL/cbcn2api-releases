@@ -284,27 +284,38 @@ class GuiApi:
         # 直接读库而不只信内存 —— 否则外部写入的限流记录要等重启才能看到。
         # until=None 是无限期限流（探测制），必须算进来（falsy 陷阱）。
         try:
-            from src.proxy.token_rotator import token_rotator, _COOLDOWN_SETTING_KEY
+            from src.proxy.token_rotator import token_rotator, _COOLDOWN_SETTING_KEY, _models_of
             token_rotator.ensure_loaded(platform)
             now = time.time()
-            cooldown_ids, quota_ids = set(), set()
+            # aid → {"reason":..., "models":[...]}：附带每个号被限的模型，
+            # 前端卡片/探测面板据此显示（如「限流·glm-5.3」）并做按号按模型的探测
+            cooldown_info = {}
+            raw_cooldowns = store.get_setting(_COOLDOWN_SETTING_KEY, "")
             for src in ((token_rotator._disabled or {}),
-                        (json.loads(store.get_setting(_COOLDOWN_SETTING_KEY, "")) if store.get_setting(_COOLDOWN_SETTING_KEY, "") else {})):
+                        (json.loads(raw_cooldowns) if raw_cooldowns else {})):
                 for aid, s in src.items():
                     until = s.get("until")
                     if until is not None and until <= now:
                         continue  # 已过期
-                    if s.get("reason") in ("transient", "model"):
-                        cooldown_ids.add(aid)
-                    elif s.get("reason") == "quota":
-                        quota_ids.add(aid)
+                    reason = s.get("reason")
+                    if reason not in ("transient", "model", "quota", "queue"):
+                        continue
+                    info = cooldown_info.setdefault(aid, {"reason": reason, "models": []})
+                    info["reason"] = reason
+                    if reason in ("model", "queue"):
+                        for m in _models_of(s):
+                            if m and m not in info["models"]:
+                                info["models"].append(m)
             for a in out:
-                if a.get("status") != "normal":
+                info = cooldown_info.get(a.get("id"))
+                if not info or a.get("status") != "normal":
                     continue
-                if a.get("id") in quota_ids:
+                if info["reason"] == "quota":
                     a["status"] = "quota"
-                elif a.get("id") in cooldown_ids:
+                else:
                     a["status"] = "cooldown"
+                    a["cooldown_models"] = info["models"]
+                    a["cooldown_reason"] = info["reason"]
         except Exception:
             pass
         return json.dumps(out)
@@ -1163,13 +1174,14 @@ class GuiApi:
         except Exception as e:
             return {"id": account.id, "name": name, "status": "unknown", "reason": f"探测异常: {e}"}
 
-        # 验活结果留痕（受统一日志开关控制）：ok/banned/unknown + 判定依据
+        # 验活结果留痕（受统一日志开关控制）：ok/banned/limited/unknown + 判定依据
         try:
             from src.storage.store import add_log
             detail = {
                 "banned": "真实 chat 请求 3 次均被拒(11140)",
                 "ok": "真实 chat 请求成功",
-                "unknown": "网络/接口异常，不算封号证据",
+                "limited": "上游有响应但非封号（限流/额度等）",
+                "unknown": "网络异常，未拿到上游响应",
             }.get(result, "")
             add_log("upstream", platform, account.id, name, "", f"验活 → {result}", detail)
         except Exception:
@@ -1220,8 +1232,19 @@ class GuiApi:
             except Exception:
                 pass
             return {"id": account.id, "name": name, "status": "normal", "reason": "验活通过"}
+        if result == "limited":
+            # 明确非封号：上游给了真实响应但非 11140（限流 6004/额度 14018/其他）。
+            # 封禁号恢复为 normal —— 它不是封号，只是被限；限流标记不主动清，
+            # 由网关后续请求撞 6004 后按模型进限流池，走正常探测恢复流程。
+            if account.status == "banned":
+                account.status = "normal"
+                store.upsert_account(platform, account)
+                return {"id": account.id, "name": name, "status": "normal",
+                        "reason": "上游响应非封号（限流/额度等），已从封禁恢复为正常"}
+            return {"id": account.id, "name": name, "status": account.status,
+                    "reason": "上游响应非封号（限流/额度等），保持当前状态"}
         return {"id": account.id, "name": name, "status": "unknown",
-                "reason": "非封号错误，未判定（限流/额度/网络等）"}
+                "reason": "网络异常，未拿到上游响应，无法判定"}
 
     def detect_account(self, platform: str, account_id: str) -> str:
         from src.proxy.token_rotator import token_rotator
@@ -1309,7 +1332,7 @@ class GuiApi:
         from src.proxy.token_rotator import token_rotator, _COOLDOWN_SETTING_KEY, _models_of
         from src.proxy.probe import probe_chat_available
 
-        # 限流账号 = settings 表里 reason ∈ transient/quota/model 且未过期（含 until=None 无限期）
+        # 限流账号 = settings 表里 reason ∈ transient/quota/model/queue 且未过期（含 until=None 无限期）
         try:
             raw = store.get_setting(_COOLDOWN_SETTING_KEY, "")
             saved = json.loads(raw) if raw else {}
@@ -1317,13 +1340,13 @@ class GuiApi:
             saved = {}
         now = time.time()
         cooldown_map = {aid: s for aid, s in saved.items()
-                        if s.get("reason") in ("transient", "quota", "model")
+                        if s.get("reason") in ("transient", "quota", "model", "queue")
                         and (s.get("until") is None or s.get("until", 0) > now)}
         # 内存里的也合并进来（运行期标记还没落库的极端情况）
         try:
             with token_rotator._lock:
                 for aid, s in token_rotator._disabled.items():
-                    if s.get("reason") in ("transient", "quota", "model"):
+                    if s.get("reason") in ("transient", "quota", "model", "queue"):
                         until = s.get("until")
                         if until is None or until > now:
                             cooldown_map[aid] = s
@@ -1350,7 +1373,7 @@ class GuiApi:
             # 决定探测哪些模型：指定模型 > 被限模型列表 > 默认(hy3/deepseek)
             if model:
                 probe_models = [model]
-            elif st.get("reason") == "model":
+            elif st.get("reason") in ("model", "queue"):
                 probe_models = _models_of(st) or [None]
             else:
                 probe_models = [None]
@@ -2184,6 +2207,52 @@ class GuiApi:
     def set_log_enabled(self, enabled: bool) -> str:
         store.save_setting("log_enabled", "1" if enabled else "0")
         return json.dumps({"ok": True, "enabled": enabled})
+
+    def export_logs(self, platform: str = "workbuddy", event: str = "") -> str:
+        """导出运行日志为 JSON（可选事件类型），弹原生保存对话框，返回落盘路径。
+
+        event 为空 = 全部类型，否则只导该类型（request/success/error/switch/upstream…）。
+        大小有保障：每条 details 写入时已截断（upstream 响应体 ≤600 字符、单条详情
+        ≤1000 字符），且库里上限 MAX_LOG_ROWS，导出全量也就几 MB，不会出现超大文件。
+        """
+        from src.storage.store import list_logs, MAX_LOG_ROWS
+        rows = list_logs(platform, limit=MAX_LOG_ROWS, offset=0, event=event)
+        if not rows:
+            return json.dumps({"error": "没有可导出的日志"})
+        data = []
+        for r in rows:
+            data.append({
+                "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r.get("timestamp", 0))),
+                "event": r.get("event", ""),
+                "account": r.get("account_name") or r.get("account_id") or "",
+                "model": r.get("model", ""),
+                "message": r.get("message", ""),
+                "details": r.get("details", ""),
+            })
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+        if not self._window:
+            return json.dumps({"error": "窗口未就绪"})
+        default_name = f"logs_{platform}_{event or 'all'}_{time.strftime('%Y-%m-%d')}.json"
+        try:
+            import webview
+            result = self._window.create_file_dialog(
+                webview.FileDialog.SAVE,
+                directory=str(Path.home() / "Downloads"),
+                save_filename=default_name,
+                file_types=("JSON 文件 (*.json)",),
+            )
+        except Exception as e:
+            return json.dumps({"error": f"打开保存对话框失败: {e}"})
+        if not result:
+            return json.dumps({"cancelled": True})
+        path = result if isinstance(result, str) else result[0]
+        if not path.lower().endswith(".json"):
+            path += ".json"
+        try:
+            Path(path).write_text(payload, encoding="utf-8")
+        except Exception as e:
+            return json.dumps({"error": f"写入失败: {e}"})
+        return json.dumps({"ok": True, "path": path, "count": len(data)})
 
     def export_diagnostics(self) -> str:
         """打包诊断信息为 txt：版本/机器码/系统/授权/事件日志/运行日志，弹保存对话框。

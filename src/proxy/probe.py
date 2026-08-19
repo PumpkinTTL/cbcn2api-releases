@@ -10,7 +10,7 @@
   其他错误/网络异常 → "unknown"（不算封号证据，不判定）
 
 指定 model 时：只探该模型，用于「单模型限流」的恢复判定——
-  200 → ok（该模型已恢复）；6004/其他 → unknown（仍限流）；11140 → banned。
+  200 → ok（该模型已恢复）；6004/其他 → limited（仍限流，明确非封号）；11140 → banned。
 """
 import logging
 
@@ -22,7 +22,14 @@ _PROBE_MODELS = ("hy3", "hy3", "deepseek-v4-flash")
 
 
 def probe_chat_available(account, access_token: str, model: str = None) -> str:
-    """返回 'ok' | 'banned' | 'unknown'。"""
+    """返回 'ok' | 'banned' | 'limited' | 'unknown'。
+
+    - ok:      任意一次 200（账号/模型可用）
+    - banned:  所有尝试都是 11140 / request illegal（封号证据确凿）
+    - limited: 拿到上游真实响应但非 11140（限流 6004 / 额度 14018 / 403 / 5xx 等）
+               → 明确「非封号」，只是受限；封禁判定不能只看状态码，必须看 body code
+    - unknown: 只有网络异常（没拿到任何上游响应），无法判定
+    """
     from src.api.client import get_session
 
     headers = build_headers(access_token, user_id=account.uid or None, fingerprint=account.fingerprint)
@@ -55,7 +62,7 @@ def probe_chat_available(account, access_token: str, model: str = None) -> str:
                 if "11140" in body or "request illegal" in body.lower():
                     fail_count += 1
                 else:
-                    return "unknown"
+                    return "limited"
         except Exception:
-            return "unknown"
+            continue  # 网络异常 → 换下一个模型再试
     return "banned" if fail_count >= len(models) else "unknown"

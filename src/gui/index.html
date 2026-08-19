@@ -563,6 +563,9 @@
               <div class="status-dropdown-item" :class="{ active: statusFilter === 'cooldown' }" @click.stop="selectStatusFilter('cooldown')">
                 <span class="status-dot dot-disabled"></span>限流
               </div>
+              <div class="status-dropdown-item" :class="{ active: statusFilter === 'quota' }" @click.stop="selectStatusFilter('quota')">
+                <span class="status-dot dot-disabled"></span>耗尽
+              </div>
               <div class="status-dropdown-item" :class="{ active: statusFilter === 'disabled' }" @click.stop="selectStatusFilter('disabled')">
                 <span class="status-dot dot-disabled"></span>已禁用
               </div>
@@ -582,6 +585,12 @@
               <div class="status-dropdown-item" :class="{ active: regionFilter === 'cn' }" @click.stop="regionFilter='cn'; regionFilterOpen=false">中国号</div>
             </div>
           </div>
+          <!-- 清除全部筛选：多条件叠加时一键复原，避免逐个撤销 -->
+          <button v-if="activeFilterCount" class="btn btn-sm filter-clear-btn" @click="resetAllFilters"
+            :title="`清除全部 ${activeFilterCount} 个筛选条件（状态/日期/搜索/标签/地区/积分/告警/排序）`">
+            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            清除筛选<template v-if="activeFilterCount > 1"> ({{ activeFilterCount }})</template>
+          </button>
         </div>
       <!-- 账号统计概览：一眼看全局健康度；状态项可点切换筛选，低积分告警为只读统计 -->
       <!-- 全部账号限流警示横幅：把用户引到探测按钮（正常号 >0 时不显示） -->
@@ -596,22 +605,22 @@
           <span class="overview-num">{{ accounts.length }}</span>
           <span class="overview-label">总数</span>
         </div>
-        <div class="overview-item overview-normal" :class="{ active: statusFilter==='normal' }" @click="selectStatusFilter('normal')" title="点击只看正常账号">
+        <div class="overview-item overview-normal" :class="{ active: statusFilter==='normal' }" @click="selectStatusFilter('normal')" title="点击只看正常账号；再点关闭">
           <span class="overview-num">{{ statusCount('normal') }}</span>
           <span class="overview-label">正常</span>
         </div>
-        <div class="overview-item overview-cooldown" :class="{ active: statusFilter==='cooldown' }" @click="selectStatusFilter('cooldown')" title="点击只看限流账号（临时错误，探测/验活通过自动恢复）">
+        <div class="overview-item overview-cooldown" :class="{ active: statusFilter==='cooldown' }" @click="selectStatusFilter('cooldown')" title="点击只看限流账号（临时错误，探测/验活通过自动恢复）；再点关闭">
           <span class="overview-num">{{ statusCount('cooldown') }}</span>
           <span class="overview-label">限流</span>
           <button class="overview-action-btn" v-if="(statusCount('cooldown') + statusCount('quota')) > 0 && !detecting" @click.stop="openProbeModal" title="一键探测限流账号：发真实请求验证，上游已解除的自动恢复">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg> 探测
           </button>
         </div>
-        <div class="overview-item overview-disabled" :class="{ active: statusFilter==='disabled' }" @click="selectStatusFilter('disabled')" title="点击只看已禁用账号">
+        <div class="overview-item overview-disabled" :class="{ active: statusFilter==='disabled' }" @click="selectStatusFilter('disabled')" title="点击只看已禁用账号；再点关闭">
           <span class="overview-num">{{ statusCount('disabled') }}</span>
           <span class="overview-label">已禁用</span>
         </div>
-        <div class="overview-item overview-banned" :class="{ active: statusFilter==='banned' }" @click="selectStatusFilter('banned')" title="点击只看封禁账号">
+        <div class="overview-item overview-banned" :class="{ active: statusFilter==='banned' }" @click="selectStatusFilter('banned')" title="点击只看封禁账号；再点关闭">
           <span class="overview-num">{{ statusCount('banned') }}</span>
           <span class="overview-label">封禁</span>
         </div>
@@ -645,7 +654,8 @@
           <template v-if="accounts.length">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
             <h3>无匹配账号</h3>
-            <p>尝试调整日期筛选条件</p>
+            <p>当前 {{ activeFilterCount }} 个筛选条件叠加导致无结果</p>
+            <button v-if="activeFilterCount" class="btn btn-sm filter-clear-btn" @click="resetAllFilters" style="margin-top:6px">清除全部筛选条件</button>
           </template>
           <template v-else>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0A17.933 17.933 0 0 1 12 21.75c-2.676 0-5.216-.584-7.499-1.632Z"/></svg>
@@ -684,7 +694,7 @@
                   <span v-if="proxyRunning && a.id === proxyCurrentAccount" class="current-badge">
                     <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 13l4 4L19 7"/></svg>当前
                   </span>
-                  <span v-if="a.status === 'cooldown'" :class="getStatusBadgeClass(a)" title="触发限流保护（临时错误或单模型频率限制）。网关会在需要时自动探测恢复；也可点卡片「更多 → 验活」或概览栏「限流 → 探测」立即验证">{{ getStatusText(a) }}</span>
+                  <span v-if="a.status === 'cooldown'" :class="getStatusBadgeClass(a)" title="触发限流保护（临时错误或单模型频率限制）。网关会在需要时自动探测恢复；也可点卡片「更多 → 验活」或概览栏「限流 → 探测」立即验证">{{ getCooldownText(a) }}</span>
                   <span v-else-if="a.status === 'quota'" :class="getStatusBadgeClass(a)" title="上游返回额度已用尽（429/14018）。购买加量包或额度结算后，点验活/一键探测验证恢复">{{ getStatusText(a) }}</span>
                   <span v-else :class="getStatusBadgeClass(a)" :title="a.status === 'banned' ? '上游返回封号特征（11140），已隔离不参与调度；验活通过可恢复' : a.status === 'disabled' ? '手动禁用或阈值自动禁用，不参与调度' : ''">{{ getStatusText(a) }}</span>
                   <span class="badge" :class="a._planCls">{{ a._planText }}</span>
@@ -825,6 +835,7 @@
             <option value="error">错误</option>
             <option value="switch">切号</option>
           </select>
+          <button class="btn btn-ghost btn-sm" :disabled="logExporting" @click="exportLogs" title="导出当前筛选类型的日志为 JSON 文件">{{ logExporting ? '导出中…' : '导出' }}</button>
           <button class="btn btn-ghost btn-sm" @click="clearLogs" title="清空日志">清空</button>
           <button class="btn btn-ghost btn-sm" @click="refreshLogs" title="刷新">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
@@ -1137,9 +1148,21 @@
               @click="probeModel = m.id">{{ m.name }}</button>
           </div>
         </div>
+        <div class="form-group" v-if="cooldownProbeList.length">
+          <label>将探测的账号（{{ cooldownProbeList.length }}）</label>
+          <div class="probe-account-list">
+            <div v-for="a in cooldownProbeList" :key="a.id" class="probe-account-row">
+              <span class="probe-account-name">{{ a.nickname || a.email || a.id }}</span>
+              <span class="probe-account-model" :class="a.status === 'quota' ? 'probe-q' : 'probe-c'">
+                {{ a.status === 'quota' ? '额度耗尽'
+                   : (a.cooldown_models && a.cooldown_models.length ? a.cooldown_models.join('、') : '临时限流') }}
+              </span>
+            </div>
+          </div>
+        </div>
         <p style="font-size:12px;color:var(--text-muted);line-height:1.7;margin:0">
-          自动：单模型限流号用其被限模型逐个探测（一个号多个模型被限会逐个测），其余限流号用 hy3/deepseek 验活。
-          指定模型：所有限流号都用该模型探测。
+          自动：每个号按各自被限模型分别探测（A 号被 glm-5.3 限流就用 glm-5.3 测、B 号被 kimi 限流就用 kimi 测），一个号多个模型被限会逐个测；临时限流/额度耗尽号用默认模型验活。
+          指定模型：所有限流号统一用该模型探测。
         </p>
       </div>
       <div class="modal-actions">
@@ -2291,22 +2314,26 @@ const vApp = createApp({
     function onSearchInput() { /* 触发响应式即可，过滤在 filteredAccounts 里做 */ }
 
     function selectStatusFilter(val) {
-      statusFilter.value = val;
+      // 点击当前已激活的状态项 = 复原（回到全部），避免多条件叠加时"点了没反应"
+      statusFilter.value = (val === statusFilter.value) ? 'all' : val;
       statusDropdownOpen.value = false;
     }
     function getStatusDotClass(val) {
       if (val === 'normal') return 'dot-normal';
       if (val === 'disabled') return 'dot-disabled';
       if (val === 'banned') return 'dot-banned';
+      if (val === 'cooldown' || val === 'quota') return 'dot-disabled';
       return 'dot-all';
     }
     function getStatusFilterLabel(val) {
       if (val === 'normal') return '正常';
+      if (val === 'cooldown') return '限流';
+      if (val === 'quota') return '耗尽';
       if (val === 'disabled') return '已禁用';
       if (val === 'banned') return '已封禁';
       return '全部状态';
     }
-    document.addEventListener('click', () => { statusDropdownOpen.value = false; regionFilterOpen.value = false; });
+    document.addEventListener('click', () => { statusDropdownOpen.value = false; regionFilterOpen.value = false; tagFilterOpen.value = false; dateFilterOpen.value = false; sortOpen.value = false; calOpen.value = false; });
     document.addEventListener('click', () => { deletedDateFilterOpen.value = false; rCalOpen.value = false; });
 
     // ── 代理 ──
@@ -2419,6 +2446,8 @@ const vApp = createApp({
     const chatSending = ref(false);
     const modelList = ref(PRESET_MODELS);
     const probeModelOptions = computed(() => modelList.value.filter(m => m.id !== 'auto'));
+    // 探测面板要列的账号：限流 + 额度耗尽（带各自被限模型，便于按号按模型探测）
+    const cooldownProbeList = computed(() => enrichedAccounts.value.filter(a => a.status === 'cooldown' || a.status === 'quota'));
     const currentModel = ref(PRESET_MODELS[0]);
     const modelDropdownOpen = ref(false);
     const syncLoading = ref(false);
@@ -2611,8 +2640,16 @@ const vApp = createApp({
       }, { rootMargin: '800px 0px' });
       _accountObserver.observe(el);
     }
-    // 列表内容/顺序变化（筛选/搜索/排序/刷新）：回到第一屏重新渲染
+    // 列表内容/顺序变化（筛选/搜索/排序/刷新）：回到第一屏重新渲染。
+    // 单卡刷新/签到/验活后的数据更新也会触发顺序重算（如积分排序），
+    // 但用户正在看当前列表，不应跳回第一屏 —— 这些路径置 _suppressListReset 跳过。
+    let _suppressListReset = false;
     watch(() => enrichedAccounts.value.map(a => a.id).join('\u0001'), () => {
+      if (_suppressListReset) {
+        _suppressListReset = false;
+        nextTick(setupAccountInfiniteScroll);
+        return;
+      }
       accountVisibleCount.value = Math.min(ACCOUNT_PAGE, enrichedAccounts.value.length);
       nextTick(setupAccountInfiniteScroll);
     }, { immediate: true });
@@ -2654,6 +2691,14 @@ const vApp = createApp({
 
     function getStatusBadgeClass(a) { const s=a.status||'normal'; if(s==='banned')return 'badge-status-banned'; if(s==='disabled')return 'badge-status-disabled'; if(s==='cooldown')return 'badge-status-cooldown'; if(s==='quota')return 'badge-status-quota'; return 'badge-status-normal'; }
     function getStatusText(a) { const s=a.status||'normal'; if(s==='banned')return '封禁'; if(s==='disabled')return '已禁用'; if(s==='cooldown')return '限流'; if(s==='quota')return '耗尽'; return '正常'; }
+    // 限流徽章附模型：显示该号被限的模型（如「限流·glm-5.3」），多个只显示前两个
+    function getCooldownText(a) {
+      const ms = a.cooldown_models;
+      if (Array.isArray(ms) && ms.length) {
+        return ms.length > 2 ? `限流·${ms.slice(0, 2).join('、')}等${ms.length}` : `限流·${ms.join('、')}`;
+      }
+      return '限流';
+    }
 
     // 账号统计概览：按状态计数（可点切换筛选）+ 低积分告警计数（cls=danger，只读）
     function statusCount(s) { return accounts.value.filter(a => (a.status||'normal') === s).length; }
@@ -3166,9 +3211,20 @@ const vApp = createApp({
       try {
         const r = JSON.parse(await pywebview.api.refresh_token(currentPlatform.value, id));
         if (r.error) { showToast(r.error, 'error'); return; }
+        // 只更新被刷账号的数据：整表替换会让其他卡片的值/位置跟着重算，
+        // 开着积分排序时列表还会跳回第一屏 —— 看起来就像「刷A变B」。
+        // 这里按 id 局部替换该账号 + 只刷它自己的 stats，其余卡片零变化。
+        _suppressListReset = true;
+        const idx = accounts.value.findIndex(x => x.id === id);
+        if (idx >= 0) accounts.value.splice(idx, 1, { ...accounts.value[idx], ...r });
+        else accounts.value.push(r);
+        try {
+          const sd = JSON.parse(await pywebview.api.get_all_stats(currentPlatform.value));
+          const s = (sd.stats||[]).find(x => x.account_id === id);
+          if (s) accountStats[id] = s; else delete accountStats[id];
+        } catch {}
+        loadStats();
         showToast('账号刷新成功', 'success');
-        await loadAccountsLight();
-        await refreshAccountStats();
       } catch(e) { showToast('刷新失败: '+e, 'error'); }
       finally { cardLoading[id+'_refresh'] = false; }
     }
@@ -3357,6 +3413,33 @@ const vApp = createApp({
     const lowQuotaActive = ref(false);
     function toggleLowQuotaFilter() {
       lowQuotaActive.value = !lowQuotaActive.value;
+    }
+
+    // 当前生效的筛选条件数（用于“清除筛选”按钮的显示与计数）
+    const activeFilterCount = computed(() => {
+      let n = 0;
+      if (statusFilter.value !== 'all') n++;
+      if (filterDate.value) n++;
+      if (accountSearch.value) n++;
+      if (tagFilter.value) n++;
+      if (regionFilter.value !== 'all') n++;
+      if (lowQuotaActive.value) n++;
+      if (dangerOnly.value) n++;
+      if (sortKey.value !== 'default') n++;
+      return n;
+    });
+    // 一键复原：清掉全部筛选条件（含输入值），回到完整列表
+    function resetAllFilters() {
+      statusFilter.value = 'all';
+      filterDate.value = '';
+      accountSearch.value = '';
+      tagFilter.value = '';
+      regionFilter.value = 'all';
+      lowQuotaActive.value = false;
+      lowQuotaMin.value = '';
+      lowQuotaMax.value = '';
+      dangerOnly.value = false;
+      sortKey.value = 'default';
     }
 
     async function batchExport() {
@@ -4351,6 +4434,18 @@ const vApp = createApp({
       if (!await showConfirm('确定清空所有运行日志？')) return;
       try { await pywebview.api.clear_logs('workbuddy'); logs.value = []; } catch {}
     }
+    // 导出当前筛选类型的日志（全部/上游/请求/成功/警告/错误/切号）为 JSON
+    const logExporting = ref(false);
+    async function exportLogs() {
+      if (logExporting.value) return;
+      logExporting.value = true;
+      try {
+        const r = JSON.parse(await pywebview.api.export_logs('workbuddy', logEventFilter.value || ''));
+        if (r.error) showToast(r.error, 'error');
+        else if (!r.cancelled) showToast(`已导出 ${r.count} 条日志：${r.path}`, 'success');
+      } catch(e) { showToast('日志导出失败: '+e, 'error'); }
+      finally { logExporting.value = false; }
+    }
 
     // ─── Update ───
     async function checkForUpdate() {
@@ -4502,7 +4597,7 @@ const vApp = createApp({
       deletedFilter, deletedKeyword, deletedFilters, deletedDateFilter, deletedDateFilterOpen, deletedDateFilters, deletedCustomDate, rCalOpen, rCalPickDay, rCalIsSelected, filteredDeletedAccounts, groupedDeletedAccounts, deletedFilterCounts,
       allSelected, someSelected, selectedCount, lowQuotaMin, lowQuotaMax, lowQuotaActive,
       statusCount, lowQuotaCount,
-      dangerOnly, toggleDangerOnly,
+      dangerOnly, toggleDangerOnly, activeFilterCount, resetAllFilters,
       sortKey, sortOpen, sortLabel, setSort,
       usageSummary, usageCacheRate,
       oauthUrlText, oauthStatusHtml,
@@ -4513,10 +4608,10 @@ const vApp = createApp({
       resultModalTitle, resultModalText, resultModalVariant, resultModalStats,
       logs, logEnabled, logEventFilter,
       // Computed
-      filteredAccounts, enrichedAccounts, visibleAccounts, detailResourcesTotal,
+      filteredAccounts, enrichedAccounts, visibleAccounts, cooldownProbeList, detailResourcesTotal,
       // Methods
       fmt, fmtK, fmtL, _n, dateStr, friendlyDate, getHitRate,
-      getStatusBadgeClass, getStatusText, getPlanBadgeClass, getPlanText,
+      getStatusBadgeClass, getStatusText, getCooldownText, getPlanBadgeClass, getPlanText,
       parseCheckin, getCardQuota,
       selectStatusFilter, getStatusDotClass, getStatusFilterLabel,
       showConsole, showLogs, showShopCards, showAbout, showSettings, closeActionPref, closeActionOpen, saveCloseAction, setCloseAction, themePref, themeOpen, setThemePref, licenseExpiry, licenseAuthorized, openShop, openShopExternal, openModal,
@@ -4540,7 +4635,7 @@ const vApp = createApp({
       showImportModal, doImport, handleFileImport,
       toggleProxy, copyEndpoint, copyLanEndpoint,
       selectModel, syncModels, exportToIDE, exportToWorkBuddy, exportToCodeBuddy, sendTestChat,
-      refreshLogs, toggleLogEnabled, clearLogs,
+      refreshLogs, toggleLogEnabled, clearLogs, logExporting, exportLogs,
       checkForUpdate, doUpdate,
       startApp,
     };

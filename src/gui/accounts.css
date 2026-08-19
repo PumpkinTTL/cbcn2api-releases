@@ -307,6 +307,38 @@ input[type="number"] { -moz-appearance: textfield; }
   grid-column: 1 / -1;
   height: 1px;
 }
+
+/* 探测限流账号面板：将探测的账号列表（各号带被限模型） */
+.probe-account-list {
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 10px;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.probe-account-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+.probe-account-row:last-child { border-bottom: none; }
+.probe-account-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.probe-account-model {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+.probe-account-model.probe-c { color: var(--warning); }
+.probe-account-model.probe-q { color: var(--danger); }
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -563,6 +595,22 @@ input[type="number"] { -moz-appearance: textfield; }
 
 /* 过滤工具行里的状态下拉：flex:1 撑开已够，去掉 margin-left:auto 避免双重推挤 */
 .filter-tools .status-dropdown { margin-left: 0; }
+
+/* 清除全部筛选按钮：多条件叠加时一键复原；红色调提示当前有筛选生效 */
+.filter-clear-btn.btn {
+  color: var(--danger);
+  border-color: rgba(217, 83, 79, 0.35);
+  background: transparent;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.filter-clear-btn.btn:hover {
+  background: var(--danger-light);
+  border-color: var(--danger);
+  color: var(--danger);
+}
 
 /* 自定义日历弹层（贴合主题，替代原生日历控件） */
 .cal-panel {
