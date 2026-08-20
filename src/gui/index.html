@@ -2285,8 +2285,12 @@ function showActivateError(message, code) {
     hint = '请核对输入是否正确；若确认无误，该码可能已被删除，请联系管理员';
   } else if (/不匹配/.test(m)) {
     title = '激活码与产品不匹配'; hint = '该码不属于本产品，请使用对应的激活码';
+  } else if (/频繁|稍后再试|429/.test(m)) {
+    title = '操作过于频繁';
+    hint = '服务器限流保护，请等待约 1 分钟后重试';
+    subText = '稍等片刻再点激活';
   } else if (/连接|网络|不可达/.test(m)) {
-    title = '无法连接授权服务器'; hint = '请检查网络后重试';
+    title = '无法连接授权服务器'; hint = '请检查网络（或本机防火墙）后，点「重新激活」重试';
     subText = '网络恢复后重试';
   } else {
     title = '激活失败'; hint = m || '请重试';
@@ -4905,7 +4909,14 @@ const vApp = createApp({
       if (!e || !e.type) return;
       if (e.type === 'revoked') {
         licenseAuthorized.value = false;
-        showLicenseOverlay(e.message || '授权已失效，请重新激活');
+        // 版本门槛拒绝 ≠ 授权失效：中途上线的 min_version/黑名单把本版本拦下时，
+        // 正确动作是更新客户端而不是重新输激活码 —— 走版本弃用界面
+        const m = e.message || '';
+        if (/版本过旧|请升级至|已被停用/.test(m)) {
+          showVersionBlocked(m);
+        } else {
+          showLicenseOverlay(m || '授权已失效，请重新激活');
+        }
         startApp();  // 确保首屏框架就绪（若还没进主界面），再被 overlay 盖住
       } else if (e.type === 'announcement') {
         showAnnouncement(e.content);

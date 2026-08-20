@@ -318,7 +318,11 @@ def heartbeat(code: str):
             if body.get("ok"):
                 return "ok", "OK", body.get("announcement") or None
         return "rejected", body.get("message") or body.get("detail") or "授权已失效", None
-    except ConnectionError:
+    except ConnectionError as e:
+        # 验签失败 ≠ 网络问题：服务端轮换了签名密钥（旧客户端验不过）——按明确拒绝
+        # 处理并引导更新，否则永远 unreachable 重试，用户看着"网络正常却连不上"懵住
+        if "验签失败" in str(e):
+            return "rejected", "签名异常，请更新到最新版本客户端", None
         return "unreachable", "授权服务器不可达", None
 
 
