@@ -462,7 +462,10 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
-  z-index: 9999;
+  /* 高于 modal-overlay(10500)：OAuth 等弹窗内复制链接的提示不能被弹窗盖住；
+     也高于 license-overlay(10000)。toast 无交互、不拦截拖拽（pointer-events:none），
+     提层级不影响激活屏拖拽 */
+  z-index: 10800;
   opacity: 0;
   pointer-events: none;
   /* 退场离开：顺滑向上收缩 (0.28s) */

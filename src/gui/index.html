@@ -3081,17 +3081,22 @@ const vApp = createApp({
       try {
         const raw = await pywebview.api.list_accounts(currentPlatform.value);
         const fresh = JSON.parse(raw);
-        // 保序合并：旧账号保持原顺序（避免轻量刷新时卡片跳位），
-        // 新增账号追加到末尾。用 Set 去重，O(n)，替代原来的 find O(n²)。
+        // 保序合并 + 原地更新：旧账号保持原顺序（避免轻量刷新时卡片跳位），
+        // 且沿用旧对象引用只覆盖字段 —— 整表换成新对象会让 Vue 判定所有卡片
+        // 都变了而整卡重渲染（肉眼可见的闪烁）。新增账号追加到末尾；
+        // 消失的账号（删除/转移）原地移除。
         const freshMap = {};
         fresh.forEach(a => { freshMap[a.id]=a; });
-        const merged = [];
-        const have = new Set();
-        accounts.value.forEach(a => {
-          if (freshMap[a.id]) { merged.push(freshMap[a.id]); have.add(a.id); }
+        // 原地覆盖：旧对象上逐字段赋值，引用不变、仅变化字段触发最小渲染
+        accounts.value.forEach((a, i) => {
+          const f = freshMap[a.id];
+          if (f) { Object.assign(a, f); delete freshMap[a.id]; }
         });
-        fresh.forEach(a => { if (!have.has(a.id)) merged.push(a); });
-        accounts.value = merged;
+        // 移除已消失的（删除/软删的账号）
+        const alive = new Set(fresh.map(f => f.id));
+        accounts.value = accounts.value.filter(a => alive.has(a.id));
+        // 新账号追加到末尾
+        Object.values(freshMap).forEach(f => accounts.value.push(f));
         loadStats();
       } catch(e) {}
     }
@@ -3468,6 +3473,7 @@ const vApp = createApp({
         else showToast(r.message||'签到完成(已签到)', 'info');
         // 签到后自动刷新该账号额度（用量），失败静默不影响签到结果
         try { await pywebview.api.refresh_token(currentPlatform.value, id); } catch(e) {}
+        _suppressListReset = true;
         await loadAccounts();
       } catch(e) {
         showToast('签到失败: '+e, 'error');
@@ -3512,6 +3518,7 @@ const vApp = createApp({
         if (r.status === 'banned') showToast(`账号已封禁：${r.reason}`, 'error');
         else if (r.status === 'normal') showToast(r.reason || '验活通过', 'success');
         else showToast(r.reason || '验活未判定', 'info');
+        _suppressListReset = true;
         await loadAccountsLight();
         await refreshProxyStatus();
       } catch(e) { showToast('验活失败: '+e, 'error'); }
@@ -3883,6 +3890,7 @@ const vApp = createApp({
       try {
         const r = JSON.parse(await pywebview.api.set_account_statuses(currentPlatform.value, JSON.stringify(ids), 'normal'));
         if (r.error) { showToast(r.error, 'error'); return; }
+        _suppressListReset = true;
         await loadAccountsLight();
         await refreshProxyStatus();
         // 筛选感知：在"已禁用"视图下启用 → 整批行离开当前筛选（变正常账号），说明去向
@@ -3917,6 +3925,7 @@ const vApp = createApp({
         const r = JSON.parse(await pywebview.api.set_account_statuses(currentPlatform.value, JSON.stringify(ids), 'disabled'));
         if (r.error) { showToast(r.error, 'error'); return; }
         showToast(`已禁用 ${r.done} 个${r.failed ? '，失败 '+r.failed+' 个' : ''}`, 'success');
+        _suppressListReset = true;
         await loadAccountsLight();
         await refreshProxyStatus();
         // 筛选感知：在"正常"视图下禁用 → 行离开当前筛选，说明去向
@@ -4139,6 +4148,7 @@ const vApp = createApp({
         if (r.ok) {
           acc.status = newStatus;
           await refreshProxyStatus();
+          _suppressListReset = true;
           await loadAccounts();
           if (newStatus === 'disabled') {
             showToast('已禁用', 'success');

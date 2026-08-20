@@ -239,7 +239,7 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
   border-radius: var(--radius);
   box-shadow: var(--shadow-lg);
   font-size: 13px; font-weight: 500; color: var(--text);
-  z-index: 9999; opacity: 0; pointer-events: none;
+  z-index: 10800; opacity: 0; pointer-events: none;
   transition: opacity 0.18s cubic-bezier(0.4,0,0.2,1),
               transform 0.18s cubic-bezier(0.4,0,0.2,1);
 }
