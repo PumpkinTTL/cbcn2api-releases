@@ -525,8 +525,16 @@ class GuiApi:
         if not items:
             return json.dumps({"error": "导入列表为空"})
 
-        results = []
-        for idx, item in enumerate(items):
+        # 10 并发导入：每条独立 _payload_to_account → upsert → fingerprint → refresh
+        import concurrent.futures as _cf
+        import threading as _th
+        n = len(items)
+        results = [None] * n
+        errors: dict[int, str] = {}
+        _err_lock = _th.Lock()
+
+        def _import_worker(idx_item):
+            idx, item = idx_item
             try:
                 account = self._payload_to_account(item, platform)
                 if batch_tag:
@@ -534,8 +542,6 @@ class GuiApi:
                     if batch_tag not in tags:
                         tags.append(batch_tag)
                     account.tags = tags
-                # 显式导入 = 恢复意图：清硬删 tombstone + 软删号回原状态，
-                # 并清调度器残留冷却/封禁计数
                 try:
                     if store.revive_account(platform, account.id):
                         from src.proxy.token_rotator import token_rotator
@@ -543,22 +549,30 @@ class GuiApi:
                 except Exception:
                     pass
                 saved = store.upsert_account(platform, account)
-                # 指纹是独立列，不走 upsert；导入时若有指纹需单独落库，否则导出→导入会丢指纹。
                 if account.fingerprint:
                     store.save_fingerprint(platform, saved.id, account.fingerprint)
-                # 导入即刷新额度：复用 refresh_token 的完整逻辑（拉 dosage/payment/
-                # userResource）。否则裸 token 走 build_payload_from_token 拉额度可能
-                # 失败/不全，导致额度条不显示，用户还要手动点一次刷新。
-                # refresh_token 失败不影响账号已导入，只是那个号额度暂缺。
                 try:
                     refreshed = json.loads(self.refresh_token(platform, saved.id))
-                    results.append(refreshed if "error" not in refreshed else saved.to_dict())
+                    results[idx] = refreshed if "error" not in refreshed else saved.to_dict()
                 except Exception:
-                    results.append(saved.to_dict())
+                    results[idx] = saved.to_dict()
             except Exception as e:
-                return json.dumps({"error": f"第 {idx + 1} 条解析失败: {e}"})
+                with _err_lock:
+                    errors[idx] = f"第 {idx + 1} 条解析失败: {e}"
+                results[idx] = None
 
-        # 新账号已落库，同步调度器内存池，否则要等下次 proxy_start/refresh 才进池。
+        with _cf.ThreadPoolExecutor(max_workers=10) as ex:
+            futs = [ex.submit(_import_worker, (i, it)) for i, it in enumerate(items)]
+            for fut in _cf.as_completed(futs):
+                try:
+                    fut.result()
+                except Exception:
+                    pass
+        if errors:
+            first = min(errors)
+            return json.dumps({"error": errors[first]})
+        # 过滤 None（理论上不应有），保持原顺序
+        results = [r for r in results if r is not None]
         try:
             from src.proxy.token_rotator import token_rotator
             token_rotator.reload(platform, calibrate=True)
@@ -579,8 +593,16 @@ class GuiApi:
         与 OAuth 导入共用导入后动作（revive → upsert → 刷额度 → reload 池）；
         refresh_token=None 使刷新流程自动跳过换 token、只拉额度。
         """
-        results = []
-        for phone, key in entries:
+        # 10 并发导入 API Key：每条独立去重 → upsert → 刷新 → 补 Uin
+        import concurrent.futures as _cf2
+        import threading as _th2
+        n2 = len(entries)
+        results2: list = [None] * n2
+        errors2: dict[int, str] = {}
+        _err_lock2 = _th2.Lock()
+
+        def _apikey_worker(idx_phone_key):
+            idx, (phone, key) = idx_phone_key
             try:
                 account_id = (
                     store.find_account_by_token(platform, key)
@@ -589,7 +611,6 @@ class GuiApi:
                 new_account = account_id is None
                 if new_account:
                     account_id = Account.generate_id(phone or key)
-                # 批次标签：重导入已有号时合并原标签，不覆盖；新号直接打上
                 tags = None
                 if batch_tag:
                     existing = None if new_account else store.load_account(platform, account_id)
@@ -617,22 +638,33 @@ class GuiApi:
                 try:
                     refreshed = json.loads(self.refresh_token(platform, saved.id))
                     if isinstance(refreshed, dict) and "error" not in refreshed:
-                        # 纯 key 无手机号：用额度接口返回的腾讯账号 Uin 补显示名
-                        # （uid/email 空值不会覆盖已有值，upsert COALESCE 保护）
                         if not phone:
                             uin = self._apikey_uin(refreshed)
                             if uin:
                                 saved.nickname = uin
                                 saved.email = uin
                                 saved = store.upsert_account(platform, saved)
-                        results.append(refreshed)
+                        results2[idx] = refreshed
                     else:
-                        results.append(saved.to_dict())
+                        results2[idx] = saved.to_dict()
                 except Exception:
-                    results.append(saved.to_dict())
+                    results2[idx] = saved.to_dict()
             except Exception as e:
-                return json.dumps({"error": f"账号 {phone or key[:12]} 导入失败: {e}"})
+                with _err_lock2:
+                    errors2[idx] = f"账号 {phone or key[:12]} 导入失败: {e}"
+                results2[idx] = None
 
+        with _cf2.ThreadPoolExecutor(max_workers=10) as ex:
+            futs = [ex.submit(_apikey_worker, (i, pk)) for i, pk in enumerate(entries)]
+            for fut in _cf2.as_completed(futs):
+                try:
+                    fut.result()
+                except Exception:
+                    pass
+        if errors2:
+            first = min(errors2)
+            return json.dumps({"error": errors2[first]})
+        results = [r for r in results2 if r is not None]
         try:
             from src.proxy.token_rotator import token_rotator
             token_rotator.reload(platform, calibrate=True)
@@ -1217,18 +1249,18 @@ class GuiApi:
         except Exception as e:
             return {"id": account.id, "name": name, "status": "unknown", "reason": f"探测异常: {e}"}
 
-        # 验活结果留痕（受统一日志开关控制）：ok/banned/limited/unknown + 判定依据
-        try:
-            from src.storage.store import add_log
-            detail = {
-                "banned": "真实 chat 请求 3 次均被拒(11140)",
-                "ok": "真实 chat 请求成功",
-                "limited": "上游有响应但非封号（限流/额度等）",
-                "unknown": "网络异常，未拿到上游响应",
-            }.get(result, "")
-            add_log("upstream", platform, account.id, name, "", f"验活 → {result}", detail)
-        except Exception:
-            pass
+        # 验活仅错误落库：ok 为正常不记，banned/limited/unknown 才记（ upstream 已冗余 ）
+        if result != "ok":
+            try:
+                from src.storage.store import add_log
+                detail = {
+                    "banned": "真实 chat 请求 3 次均被拒(11140)",
+                    "limited": "上游有响应但非封号（限流/额度等）",
+                    "unknown": "网络异常，未拿到上游响应",
+                }.get(result, "")
+                add_log("upstream", platform, account.id, name, "", f"验活 → {result}", detail)
+            except Exception:
+                pass
 
         if result == "banned":
             account.status = "banned"
@@ -1367,13 +1399,14 @@ class GuiApi:
                 # 封号特征：不动限流标记，交给验活判定；这里只报被封
                 limited.append(label + "(封号特征)")
             # unknown → 保持限流，网络异常
-        # 留痕
-        try:
-            from src.storage.store import add_log
-            add_log("upstream", platform, account_id, name, "",
-                    f"探测被限模型 → 恢复:{recovered or '无'} 仍限:{limited or '无'}", "")
-        except Exception:
-            pass
+        # 仅错误落库：完全恢复不记，仍限流/网络异常才记
+        if limited or not recovered:
+            try:
+                from src.storage.store import add_log
+                add_log("upstream", platform, account_id, name, "",
+                        f"探测被限模型 → 恢复:{recovered or '无'} 仍限:{limited or '无'}", "")
+            except Exception:
+                pass
         # 让调度池立即感知变更
         try:
             token_rotator.reload(platform, calibrate=False)
@@ -1403,12 +1436,7 @@ class GuiApi:
             token_rotator.reload(platform, calibrate=False)
         except Exception:
             pass
-        try:
-            from src.storage.store import add_log
-            add_log("upstream", platform, account_id, account.nickname or account.email or account_id,
-                    "", "强制回池：已清除限流标记", "")
-        except Exception:
-            pass
+        # 强制回池为用户主动操作，成功不记 upstream（仅错误落库策略）
         return json.dumps({"ok": True, "status": "returned", "message": "已强制回池，恢复调度"})
 
     def detect_accounts(self, platform: str, account_ids_json: str) -> str:
@@ -1460,13 +1488,27 @@ class GuiApi:
 
     def refresh_all(self, platform: str) -> str:
         accounts = store.list_accounts(platform)
+        if not accounts:
+            return json.dumps({"success": 0, "total": 0})
+        # 10 并发：I/O 密集，每账号独立 refresh_token(_reload=False)，最后统一 reload
+        import concurrent.futures
+
+        def _worker(a):
+            try:
+                r = json.loads(self.refresh_token(platform, a.id, _reload=False))
+                return "error" not in r
+            except Exception:
+                return False
+
         success = 0
-        # 批量刷新：循环内不 reload（避免 N 个账号触发 N 次持锁重建池阻塞网关），
-        # 全部刷完统一 reload 一次。
-        for acc in accounts:
-            result = json.loads(self.refresh_token(platform, acc.id, _reload=False))
-            if "error" not in result:
-                success += 1
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+            futs = [ex.submit(_worker, a) for a in accounts]
+            for fut in concurrent.futures.as_completed(futs):
+                try:
+                    if fut.result():
+                        success += 1
+                except Exception:
+                    pass
         try:
             from src.proxy.token_rotator import token_rotator
             token_rotator.reload(platform, calibrate=True)
@@ -1787,9 +1829,16 @@ class GuiApi:
 
     def checkin_all(self, platform: str) -> str:
         accounts = store.list_accounts(platform)
-        results = {"success": 0, "failed": 0, "already": 0, "total": len(accounts)}
+        if not accounts:
+            return json.dumps({"success": 0, "failed": 0, "already": 0, "total": 0})
+        import concurrent.futures
+        import threading as _th
+
         now = int(time.time())
-        for acc in accounts:
+        lock = _th.Lock()
+        results = {"success": 0, "failed": 0, "already": 0, "total": len(accounts)}
+
+        def _worker(acc):
             try:
                 result = checkin_api.perform_checkin(
                     acc.access_token, acc.uid,
@@ -1808,15 +1857,26 @@ class GuiApi:
                     elif result.get("credit"):
                         acc.checkin_rewards = {"credit": result["credit"]}
                     store.upsert_account(platform, acc)
-                    results["success"] += 1
-                else:
-                    msg = (result.get("message") or "").lower()
+                    with lock:
+                        results["success"] += 1
+                    return
+                msg = (result.get("message") or "").lower()
+                with lock:
                     if "already" in msg or "checked" in msg:
                         results["already"] += 1
                     else:
                         results["failed"] += 1
             except Exception:
-                results["failed"] += 1
+                with lock:
+                    results["failed"] += 1
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+            futs = [ex.submit(_worker, acc) for acc in accounts]
+            for fut in concurrent.futures.as_completed(futs):
+                try:
+                    fut.result()
+                except Exception:
+                    pass
         return json.dumps(results)
 
     # ========== Quota ==========
@@ -2167,26 +2227,34 @@ class GuiApi:
         return _json.dumps({"ok": True, "done": done, "failed": failed, "total": len(ids)})
 
     def refresh_accounts(self, platform: str, account_ids_json: str) -> str:
-        """批量刷新选中账号额度（复用单号刷新逻辑）。"""
+        """批量刷新选中账号额度（复用单号刷新逻辑，10 并发）。"""
         import json as _json
+        import concurrent.futures
         try:
             ids = [str(i) for i in _json.loads(account_ids_json or "[]")]
         except (ValueError, TypeError):
             return _json.dumps({"error": "无效的账号列表"})
         if not ids:
             return _json.dumps({"error": "没有选中账号"})
-        success = 0
-        failed = 0
-        # 批量刷新不逐个 reload（避免 N 次持锁重建池阻塞网关），末尾统一 reload。
-        for aid in ids:
+
+        def _worker(aid: str) -> str:
             try:
                 r = _json.loads(self.refresh_token(platform, aid, _reload=False))
-                if "error" not in r:
-                    success += 1
-                else:
-                    failed += 1
+                return "ok" if "error" not in r else "fail"
             except Exception:
-                failed += 1
+                return "fail"
+
+        success = failed = 0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+            futs = [ex.submit(_worker, aid) for aid in ids]
+            for fut in concurrent.futures.as_completed(futs):
+                try:
+                    if fut.result() == "ok":
+                        success += 1
+                    else:
+                        failed += 1
+                except Exception:
+                    failed += 1
         try:
             from src.proxy.token_rotator import token_rotator
             token_rotator.reload(platform, calibrate=True)
@@ -2195,32 +2263,44 @@ class GuiApi:
         return _json.dumps({"ok": True, "success": success, "failed": failed, "total": len(ids)})
 
     def checkin_accounts(self, platform: str, account_ids_json: str) -> str:
-        """批量签到选中账号（复用单号签到逻辑）。"""
+        """批量签到选中账号（复用单号签到逻辑，10 并发）。"""
         import json as _json
+        import concurrent.futures
         try:
             ids = [str(i) for i in _json.loads(account_ids_json or "[]")]
         except (ValueError, TypeError):
             return _json.dumps({"error": "无效的账号列表"})
         if not ids:
             return _json.dumps({"error": "没有选中账号"})
-        success = 0
-        already = 0
-        failed = 0
-        for aid in ids:
+
+        def _worker(aid: str) -> str:
             try:
                 r = _json.loads(self.checkin(platform, aid))
                 if r.get("error"):
-                    failed += 1
-                elif r.get("success"):
-                    success += 1
-                else:
-                    msg = (r.get("message") or "").lower()
-                    if "already" in msg or "checked" in msg:
-                        already += 1
-                    else:
-                        failed += 1
+                    return "fail"
+                if r.get("success"):
+                    return "ok"
+                msg = (r.get("message") or "").lower()
+                if "already" in msg or "checked" in msg:
+                    return "already"
+                return "fail"
             except Exception:
-                failed += 1
+                return "fail"
+
+        success = already = failed = 0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
+            futs = [ex.submit(_worker, aid) for aid in ids]
+            for fut in concurrent.futures.as_completed(futs):
+                try:
+                    k = fut.result()
+                except Exception:
+                    k = "fail"
+                if k == "ok":
+                    success += 1
+                elif k == "already":
+                    already += 1
+                else:
+                    failed += 1
         return _json.dumps({"ok": True, "success": success, "already": already, "failed": failed, "total": len(ids)})
 
     def set_priority_account(self, platform: str, account_id: str) -> str:

@@ -630,10 +630,6 @@
           <span class="overview-num">{{ statusCount('banned') }}</span>
           <span class="overview-label">封禁</span>
         </div>
-        <div class="overview-item overview-warn" :class="{ active: dangerOnly }" @click="toggleDangerOnly" title="点击只看低积分告警账号（使用率 ≥80%）；再点关闭">
-          <span class="overview-num">{{ lowQuotaCount }}</span>
-          <span class="overview-label">低积分告警</span>
-        </div>
         <div class="overview-item" :class="{ active: statusFilter==='all' }" @click="selectStatusFilter('all')" title="全部账号">
           <span class="overview-num">{{ accounts.length }}</span>
           <span class="overview-label">总数</span>
