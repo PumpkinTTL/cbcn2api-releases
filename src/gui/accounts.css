@@ -714,6 +714,9 @@ input[type="number"] { -moz-appearance: textfield; }
   border-radius: var(--radius-sm);
   color: var(--text-muted);
   transition: var(--transition);
+  flex: 1 1 160px;
+  min-width: 140px;
+  max-width: 260px;
 }
 .account-search:focus-within {
   border-color: var(--border-hover);

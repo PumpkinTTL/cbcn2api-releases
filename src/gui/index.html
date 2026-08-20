@@ -475,11 +475,11 @@
             <span v-if="batchStatusLoading" class="spinner-sm"></span>
             <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg> 禁用</template>
           </button>
-          <button class="btn btn-sm btn-ghost" :disabled="selectedCount === 0 || batchRefreshLoading" @click="batchRefresh" title="刷新选中账号额度">
+          <button class="btn btn-sm btn-ghost" :disabled="selectedCount === 0 || batchRefreshLoading || refreshAllLoading" @click="batchRefresh" title="刷新选中账号额度">
             <span v-if="batchRefreshLoading" class="spinner-sm"></span>
             <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.5L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.5L3 16"/></svg> 刷新</template>
           </button>
-          <button class="btn btn-sm btn-ghost" :disabled="selectedCount === 0 || batchCheckinLoading" @click="batchCheckin" title="签到选中的账号">
+          <button class="btn btn-sm btn-ghost" :disabled="selectedCount === 0 || batchCheckinLoading || refreshAllLoading" @click="batchCheckin" title="签到选中的账号">
             <span v-if="batchCheckinLoading" class="spinner-sm"></span>
             <template v-else><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 13l4 4L19 7"/></svg> 签到</template>
           </button>
