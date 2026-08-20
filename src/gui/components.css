@@ -286,9 +286,9 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
 .confirm-check input { margin-top: 2px; accent-color: var(--primary); }
 
 /* License */
-.license-overlay { position: fixed; top: 36px; left: 0; right: 0; bottom: 0; z-index: 10000; display: none; align-items: center; justify-content: center; background: var(--bg); }
+.license-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 10000; display: none; align-items: center; justify-content: center; background: var(--bg); -webkit-app-region: drag; }
 .license-overlay.show { display: flex; }
-.license-card { width: 100%; max-width: 400px; padding: 36px 32px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); text-align: center; }
+.license-card { width: 100%; max-width: 400px; padding: 36px 32px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); text-align: center; -webkit-app-region: no-drag; }
 .license-icon { width: 52px; height: 52px; margin: 0 auto 16px; border-radius: 14px; display: flex; align-items: center; justify-content: center; background: var(--primary); color: #fff; box-shadow: 0 4px 12px rgba(218, 119, 86, 0.3); }
 .license-card h2 { font-size: 18px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.2px; }
 .license-card .license-sub { font-size: 13px; color: var(--text-secondary); margin: 0 0 16px; }

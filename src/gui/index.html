@@ -41,14 +41,14 @@
 
 <!-- License Overlay（Vue app 挂载前就要能显示，保持原生） -->
 <div class="license-overlay" id="licenseOverlay">
-  <div class="license-card">
+  <div class="license-card pywebview-drag-region" style="-webkit-app-region: drag">
     <div class="license-icon">
       <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
     </div>
     <h2>激活授权 <span class="license-ver-tag">v1.1.3</span></h2>
     <div class="license-sub" id="licenseSub">请输入激活码以完成授权</div>
-    <input id="licenseInput" placeholder="请输入激活码" onkeydown="if(event.key==='Enter')doActivate()">
-    <button class="btn btn-primary" id="licenseBtn" onclick="doActivate()">
+    <input id="licenseInput" placeholder="请输入激活码" onkeydown="if(event.key==='Enter')doActivate()" style="-webkit-app-region: no-drag">
+    <button class="btn btn-primary" id="licenseBtn" onclick="doActivate()" style="-webkit-app-region: no-drag">
       <span class="btn-spinner" id="licenseSpinner" style="display:none"></span>
       <span id="licenseBtnText">激活</span>
     </button>
@@ -656,7 +656,7 @@
       <div class="account-grid" id="accountGrid">
 
         <!-- Empty State -->
-        <div class="empty-state" v-if="!filteredAccounts.length">
+        <div class="empty-state" v-if="!(filteredAccounts||[]).length">
           <template v-if="accounts.length">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
             <h3>无匹配账号</h3>
@@ -827,7 +827,7 @@
         </div>
 
         <!-- 增量渲染哨兵：滚近时触发加载下一批卡片 -->
-        <div v-if="visibleAccounts.length < enrichedAccounts.length" ref="accountSentinel" class="account-grid-sentinel"></div>
+        <div v-if="(visibleAccounts||[]).length < (enrichedAccounts||[]).length" ref="accountSentinel" class="account-grid-sentinel"></div>
 
       </div>
     </div>
@@ -2650,7 +2650,7 @@ const vApp = createApp({
 
     // ── Computed ──
     const filteredAccounts = computed(() => {
-      let result = accounts.value;
+      let result = accounts.value || [];
       if (statusFilter.value !== 'all') result = result.filter(a => (a.status||'normal') === statusFilter.value);
       if (filterDate.value === 'last7' || filterDate.value === 'last30') {
         const n = filterDate.value === 'last7' ? 7 : 30;
@@ -2726,7 +2726,7 @@ const vApp = createApp({
     // 卡片渲染预计算：每张卡片的额度/签到/套餐徽章一次算好，模板直接读缓存字段。
     // 避免每次重渲染每张卡片重复调用 getCardQuota(5次)/parseCheckin(4次)/getPlan*(2次)，
     // 账号多时这是首页卡顿的主要 JS 开销。
-    const enrichedAccounts = computed(() => filteredAccounts.value.map(a => ({
+    const enrichedAccounts = computed(() => (filteredAccounts.value || []).map(a => ({
       ...a,
       _quota: getCardQuota(a),
       _checkin: parseCheckin(a),
@@ -2741,14 +2741,14 @@ const vApp = createApp({
     const accountVisibleCount = ref(ACCOUNT_PAGE);
     const accountSentinel = ref(null);
     let _accountObserver = null;
-    const visibleAccounts = computed(() => enrichedAccounts.value.slice(0, accountVisibleCount.value));
+    const visibleAccounts = computed(() => (enrichedAccounts.value || []).slice(0, accountVisibleCount.value));
     function setupAccountInfiniteScroll() {
       if (_accountObserver) { _accountObserver.disconnect(); _accountObserver = null; }
       const el = accountSentinel.value;
       if (!el) return;
       _accountObserver = new IntersectionObserver((entries) => {
         if (entries.some(e => e.isIntersecting)) {
-          const total = enrichedAccounts.value.length;
+          const total = (enrichedAccounts.value || []).length;
           if (accountVisibleCount.value < total) {
             accountVisibleCount.value = Math.min(total, accountVisibleCount.value + ACCOUNT_PAGE);
           }
@@ -2760,18 +2760,18 @@ const vApp = createApp({
     // 单卡刷新/签到/验活后的数据更新也会触发顺序重算（如积分排序），
     // 但用户正在看当前列表，不应跳回第一屏 —— 这些路径置 _suppressListReset 跳过。
     let _suppressListReset = false;
-    watch(() => enrichedAccounts.value.map(a => a.id).join('\u0001'), () => {
+    watch(() => (enrichedAccounts.value || []).map(a => a.id).join('\u0001'), () => {
       if (_suppressListReset) {
         _suppressListReset = false;
         // 兜底：若可见数被压制成了非法值（如 0 而列表非空），恢复第一屏，
         // 避免「列表有数据但网格空白且无空态提示」。
-        if (enrichedAccounts.value.length > 0 && accountVisibleCount.value < 1) {
-          accountVisibleCount.value = Math.min(ACCOUNT_PAGE, enrichedAccounts.value.length);
+        if ((enrichedAccounts.value || []).length > 0 && accountVisibleCount.value < 1) {
+          accountVisibleCount.value = Math.min(ACCOUNT_PAGE, (enrichedAccounts.value || []).length);
         }
         nextTick(setupAccountInfiniteScroll);
         return;
       }
-      accountVisibleCount.value = Math.min(ACCOUNT_PAGE, enrichedAccounts.value.length);
+      accountVisibleCount.value = Math.min(ACCOUNT_PAGE, (enrichedAccounts.value || []).length);
       nextTick(setupAccountInfiniteScroll);
     }, { immediate: true });
 
