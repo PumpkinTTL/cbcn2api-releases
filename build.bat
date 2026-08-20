@@ -33,7 +33,7 @@ echo [2/4] 开始 PyInstaller 打包...
     --workpath "%PYI_WORK%\build" ^
     --specpath "%PYI_WORK%" ^
     --distpath "dist" ^
-    --name "AI Gateway v1.1.3" ^
+    --name "AI Gateway v1.5.0" ^
     --icon "%CD%\gateway.ico" ^
     --add-data "%CD%\gateway.ico;." ^
     --add-data "%CD%\src\gui\index.html;src\gui" ^
@@ -52,7 +52,7 @@ if %errorlevel% neq 0 (
 
 if exist "%PYI_WORK%" rmdir /s /q "%PYI_WORK%"
 echo [3/4] 打包完成
-echo [4/4] 输出: dist\AI Gateway v1.1.3.exe
+echo [4/4] 输出: dist\AI Gateway v1.5.0.exe
 echo.
 echo exe 图标 = gateway.ico
 echo 窗口图标 = gateway.ico (运行时 ctypes 加载)

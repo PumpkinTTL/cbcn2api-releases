@@ -49,7 +49,7 @@ echo [2/3] 开始 Nuitka 编译（首次 5~15 分钟）...
     --mingw64 ^
     --assume-yes-for-downloads ^
     --output-dir=dist ^
-    --output-filename="AI Gateway v1.1.3.exe" ^
+    --output-filename="AI Gateway v1.5.0.exe" ^
     main.py
 
 if %errorlevel% neq 0 (
@@ -58,5 +58,5 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [3/3] 完成: dist\AI Gateway v1.1.3.exe
+echo [3/3] 完成: dist\AI Gateway v1.5.0.exe
 pause
