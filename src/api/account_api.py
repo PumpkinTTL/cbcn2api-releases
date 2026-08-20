@@ -143,8 +143,10 @@ def refresh_full_payload(account: Account) -> tuple:
             # token 失效的账号继续用旧 token，若旧 token 也失效会走 401/forbidden 兜底。
             refresh_error = f"token刷新失败: {str(e)[:120]}"
 
-    dosage = _fetch_dosage_notify(new_at, account.uid, account.enterprise_id, new_domain)
-    payment = _fetch_payment_type(new_at, account.uid, account.enterprise_id, new_domain)
+    # 批量性能：dosage/payment 仅展示用且串行增 2×RTT，批量刷新只拉 userResource（核心额度）
+    # 详情页按需再补，历史值通过 or account.* 兜底保留
+    dosage = None
+    payment = None
     user_resource = _fetch_user_resource(new_at, account.uid, account.enterprise_id, new_domain)
 
     is_forbidden = isinstance(user_resource, dict) and user_resource.get("_forbidden") is True
