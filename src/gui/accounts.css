@@ -516,6 +516,8 @@ input[type="number"] { -moz-appearance: textfield; }
 .card.more-open {
   z-index: 50;
   position: relative;
+  overflow: visible;
+  content-visibility: visible;
 }
 
 /* ── 勾选态 ── */
@@ -997,6 +999,8 @@ input[type="number"] { -moz-appearance: textfield; }
   bottom: calc(100% + 4px);
   right: 0;
   min-width: 128px;
+  max-height: 280px;
+  overflow-y: auto;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
