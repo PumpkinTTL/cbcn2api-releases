@@ -981,23 +981,19 @@ class GuiApi:
     def _account_export_dict(a):
         """账号 → 导出字典。全量导出和选中导出共用，保证字段一致。
 
-        导出完整字段（指纹/auth_type/tags/额度），保证「导出 → 重新导入」闭环
-        不丢信息：指纹是独立列、auth_type 区分 key/登录号，漏掉重导就失真。
+        只导「凭证 + 身份 + 用户资产」：token 四件套导入即可用；fingerprint 独立
+        落库、auth_type 区分 key/登录号、tags 是用户手工标签，漏掉重导就丢。
+        刻意不导：quota_raw/usage_raw（纯缓存，刷新一次就重建且导出时多半已过期）、
+        status（本机调度状态不是账号属性，新机器按自己的阈值重新判定）、
+        id/enterprise_*/plan_*/payment_*/token_type（导入端自生成或刷新时上游带回）。
         """
         return {
-            "id": a.id, "email": a.email, "uid": a.uid,
-            "nickname": a.nickname, "enterprise_id": a.enterprise_id,
-            "enterprise_name": a.enterprise_name,
+            "email": a.email, "uid": a.uid, "nickname": a.nickname,
             "access_token": a.access_token, "refresh_token": a.refresh_token,
-            "token_type": a.token_type, "expires_at": a.expires_at,
-            "domain": a.domain, "status": a.status,
+            "expires_at": a.expires_at, "domain": a.domain,
             "auth_type": a.auth_type,
             "fingerprint": a.fingerprint,
             "tags": a.tags,
-            "quota_raw": a.quota_raw,
-            "usage_raw": a.usage_raw,
-            "plan_type": a.plan_type,
-            "payment_type": a.payment_type,
             "last_checkin_time": a.last_checkin_time,
             "checkin_streak": a.checkin_streak,
         }
@@ -1943,12 +1939,15 @@ class GuiApi:
             return ""
 
     def check_license(self) -> str:
-        """每次调用都实时拉 config 公告（不缓存）—— 否则服务端删了公告，
-        客户端进程内存里的旧值会一直透传，弹个不停。授权开关仍用启动缓存
-        （开关变化要求重启生效，公告要实时）。"""
+        """每次调用都实时拉 config（公告 + 授权开关都不缓存）——公告服务端删了
+        就立即不弹；授权开关刷新界面（F5 重挂载会重调本方法）即生效，无需重启
+        客户端。服务器不可达时回退上次缓存值（首次不可达则保守按需授权）。"""
+        global _LICENSE_ENABLED
         announcement = None
         try:
-            announcement = lic_remote_config().get("announcement")
+            cfg = lic_remote_config()
+            announcement = cfg.get("announcement")
+            _LICENSE_ENABLED = bool(cfg.get("enabled"))
         except Exception:
             pass
         enabled = _LICENSE_ENABLED if _LICENSE_ENABLED is not None else _resolve_license_enabled()
@@ -2656,14 +2655,39 @@ class GuiApi:
     # ========== Auto Update ==========
 
     def check_update(self) -> str:
-        from src.updater import check_latest
-        return json.dumps(check_latest())
+        """检查更新（GitHub + 授权服务器双通道合并，见 updater.check_latest）。
 
-    def download_update(self, url: str) -> str:
-        from src.updater import download_update
+        版本被拦/激活引导界面的「立即更新」也走这里 —— 服务端 update 信息
+        在 GitHub 不可达或滞后时保底。"""
+        from src.updater import check_latest
+        return json.dumps(check_latest(), ensure_ascii=False)
+
+    def download_update(self, payload: str) -> str:
+        """下载更新（多源回退）。payload 兼容两种形式：
+          - 纯 URL 字符串：单源直下（老调用方式，向后兼容）
+          - JSON 对象 {"urls": [...], "sha256": "...", "tag": "v1.1.4"}：
+            按顺序逐源尝试，单源失败（超时/HTTP 错/sha256 不匹配）自动下一个，
+            全部失败返回汇总错误（前端再列网盘手动链接兜底）。"""
+        from src.updater import download_update_multi
+        urls, sha256, tag = [], "", None
+        raw = (payload or "").strip()
+        # 先按 JSON 解析（新前端传多源结构），失败当纯 URL（老调用方式）
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                urls = data.get("urls") or ([data.get("url")] if data.get("url") else [])
+                sha256 = str(data.get("sha256") or "")
+                tag = str(data.get("tag") or "").strip() or None
+            elif isinstance(data, str) and data.strip():
+                urls = [data.strip()]
+        except (ValueError, TypeError):
+            urls = [raw] if raw else []
         self._dl_progress = 0
-        result = download_update(url, progress_callback=lambda pct: setattr(self, "_dl_progress", pct))
-        return json.dumps(result)
+        result = download_update_multi(
+            urls, sha256=sha256, tag=tag,
+            progress_callback=lambda pct: setattr(self, "_dl_progress", pct),
+        )
+        return json.dumps(result, ensure_ascii=False)
 
     def get_download_progress(self) -> str:
         """前端轮询下载进度（0-100）。"""
