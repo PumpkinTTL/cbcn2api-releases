@@ -1,9 +1,12 @@
 import json
+import logging
 import os
 import time
 import threading
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from src.models.account import Account
 from src.storage import store
@@ -1490,14 +1493,16 @@ class GuiApi:
         accounts = store.list_accounts(platform)
         if not accounts:
             return json.dumps({"success": 0, "total": 0})
-        # 10 并发：I/O 密集，每账号独立 refresh_token(_reload=False)，最后统一 reload
         import concurrent.futures
+        t0 = time.monotonic()
+        logger.info("[诊断] refresh_all start total=%d workers=10", len(accounts))
 
         def _worker(a):
             try:
                 r = json.loads(self.refresh_token(platform, a.id, _reload=False))
                 return "error" not in r
-            except Exception:
+            except Exception as e:
+                logger.warning("[诊断] refresh_all worker %s 异常: %r", a.id, e)
                 return False
 
         success = 0
@@ -1509,6 +1514,13 @@ class GuiApi:
                         success += 1
                 except Exception:
                     pass
+        dt = time.monotonic() - t0
+        logger.info("[诊断] refresh_all done total=%d success=%d in %.2fs", len(accounts), success, dt)
+        try:
+            from src.storage.store import add_log as _add_log
+            _add_log("timing", platform, "", "", "", f"refresh_all {len(accounts)} in {dt:.1f}s", f"10并发 success={success}")
+        except Exception:
+            pass
         try:
             from src.proxy.token_rotator import token_rotator
             token_rotator.reload(platform, calibrate=True)
@@ -2241,9 +2253,12 @@ class GuiApi:
             try:
                 r = _json.loads(self.refresh_token(platform, aid, _reload=False))
                 return "ok" if "error" not in r else "fail"
-            except Exception:
+            except Exception as e:
+                logger.warning("[诊断] refresh_accounts worker %s 异常: %r", aid, e)
                 return "fail"
 
+        t0 = time.monotonic()
+        logger.info("[诊断] refresh_accounts start total=%d workers=10", len(ids))
         success = failed = 0
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as ex:
             futs = [ex.submit(_worker, aid) for aid in ids]
@@ -2255,6 +2270,13 @@ class GuiApi:
                         failed += 1
                 except Exception:
                     failed += 1
+        dt = time.monotonic() - t0
+        logger.info("[诊断] refresh_accounts done total=%d success=%d failed=%d in %.2fs (%.2fs/账号)", len(ids), success, failed, dt, dt/max(1, len(ids)))
+        try:
+            from src.storage.store import add_log as _add_log
+            _add_log("timing", platform, "", "", "", f"refresh_accounts {len(ids)} in {dt:.1f}s", f"10并发 success={success} failed={failed}")
+        except Exception:
+            pass
         try:
             from src.proxy.token_rotator import token_rotator
             token_rotator.reload(platform, calibrate=True)
