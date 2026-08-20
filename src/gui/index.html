@@ -54,10 +54,13 @@
     </button>
     <div class="license-error" id="licenseError"></div>
     <div class="license-info">激活码免费领取，为了防止转发滥用，仅供测试使用</div>
-    <button class="license-download-link" id="licenseDownloadBtn" style="display:none" onclick="window.__checkForUpdate && window.__checkForUpdate()">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
-      下载最新版本
-    </button>
+    <div class="license-update-row" id="licenseUpdateRow" style="display:none">
+      <span class="license-update-tag">发现新版本 <b id="licenseUpdateVer"></b></span>
+      <button class="license-download-link" id="licenseDownloadBtn" onclick="window.__checkForUpdate && window.__checkForUpdate()">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        下载最新版本
+      </button>
+    </div>
     <div class="license-mid-tag" title="当前机器标识"><span class="mid-tag-label">当前机器码</span><span id="licenseMachineId">—</span></div>
   </div>
 </div>
@@ -65,7 +68,7 @@
 <!-- Version Blocked Overlay（版本过旧被服务端拒绝，引导升级而非激活） -->
 <div class="license-overlay" id="versionBlockedOverlay">
   <div class="license-card">
-    <div class="license-icon" style="color:var(--warning,#f59e0b)">
+    <div class="license-icon warn">
       <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
     </div>
     <h2>版本已弃用 <span class="license-ver-tag">v1.1.3</span></h2>
@@ -744,8 +747,10 @@
           <!-- Quota：常驻占位（min-height 固定），避免有/无额度数据时卡片高度跳动 -->
           <div class="quota-section" :class="{ empty: !a._quota }">
             <template v-if="a._quota">
-              <div class="quota-header" title="本地估算值：按请求实时扣减 + 上游快照取小（上游结算有延迟，数字可能略滞后，不影响实际可用性）">
-                <span class="quota-used-remain">已用 {{ fmt(a._quota.adjUsed) }} · 剩余 <strong class="quota-remain-val">{{ fmt(a._quota.adjRemain) }}</strong></span>
+              <div class="quota-header" :title="a.quota_query_last_error
+                ? '上次额度拉取失败：' + a.quota_query_last_error + '（显示的是最后一次成功的数据，可能滞后）'
+                : '本地估算值：按请求实时扣减 + 上游快照取小（上游结算有延迟，数字可能略滞后，不影响实际可用性）'">
+                <span class="quota-used-remain">已用 {{ fmt(a._quota.adjUsed) }} · 剩余 <strong class="quota-remain-val">{{ fmt(a._quota.adjRemain) }}</strong><span v-if="a.quota_query_last_error" class="quota-stale-mark" title="上次额度拉取失败，这是旧数据">⚠</span></span>
                 <span class="quota-total-val" title="总额度">{{ fmt(a._quota.total) }}</span>
               </div>
               <div class="quota-bar">
@@ -1598,18 +1603,16 @@
         </button>
       </div>
       <div class="modal-body">
-        <div style="text-align:center;padding:24px 0" v-html="updateStatusHtml"></div>
-        <div v-show="updateProgressVisible" style="margin:12px 0">
-          <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
-            <div style="height:100%;background:var(--accent);border-radius:3px;transition:width .3s" :style="{ width: updateProgressPct + '%' }"></div>
-          </div>
-          <div style="text-align:center;font-size:12px;color:var(--text-muted);margin-top:4px">{{ updateProgressPct }}%</div>
+        <div class="upd-status" v-html="updateStatusHtml"></div>
+        <div class="upd-progress" v-show="updateProgressVisible">
+          <div class="upd-progress-bar"><div class="upd-progress-fill" :style="{ width: updateProgressPct + '%' }"></div></div>
+          <div class="upd-progress-pct">{{ updateProgressPct }}%</div>
         </div>
-        <div v-show="updateActionsVisible" style="display:flex;gap:8px;justify-content:center;margin-top:12px">
+        <div class="upd-notes" v-show="updateNotesVisible">{{ updateNotes }}</div>
+        <div class="upd-actions" v-show="updateActionsVisible">
           <button class="btn btn-primary" :disabled="updateBtnDisabled" @click="doUpdate">{{ updateBtnText }}</button>
           <button class="btn btn-ghost" @click="activeModal = null">稍后再说</button>
         </div>
-        <div v-show="updateNotesVisible" style="margin-top:12px;max-height:200px;overflow-y:auto;font-size:12px;color:var(--text-muted);white-space:pre-wrap">{{ updateNotes }}</div>
       </div>
     </div>
   </div>
@@ -2200,6 +2203,24 @@ function showLicenseOverlay(msg) {
       pywebview.api.get_machine_code().then(raw => { midEl.textContent = raw || '—'; }).catch(() => { midEl.textContent = '—'; });
     } catch(e) { midEl.textContent = '—'; }
   }
+  // 未激活客户端停在激活界面也要知道有新版本（盲区：不走 verify 就没有版本门槛反馈）
+  checkUpdateForLicenseScreen();
+}
+// 激活界面更新提醒：一次性的更新检查（GitHub+服务端双通道合并），
+// 有新版就亮「发现新版本 + 下载最新版本」行。失败静默——提醒是增值不是必需。
+let _licUpdChecked = false;
+async function checkUpdateForLicenseScreen() {
+  const row = document.getElementById('licenseUpdateRow');
+  if (!row || _licUpdChecked) return;
+  _licUpdChecked = true;  // 进程内只查一次（重开激活界面不重复打 GitHub/服务端）
+  try {
+    const r = JSON.parse(await pywebview.api.check_update());
+    if (r && r.has_update) {
+      const ver = document.getElementById('licenseUpdateVer');
+      if (ver) ver.textContent = r.latest_version || '';
+      row.style.display = '';
+    }
+  } catch(e) { /* 更新检查失败不影响激活流程 */ }
 }
 function showVersionBlocked(msg) {
   document.getElementById('licenseOverlay').classList.remove('show');
@@ -2235,22 +2256,53 @@ async function doActivate() {
 }
 // 激活失败展示：服务端原始 message 映射成用户能懂的分类文案，
 // 醒目错误框 + 副标题提示可重新输入，输入框聚焦全选旧值（改码无需先手动删）。
+// 分类必须覆盖全部真实拒绝原因（码/机器/版本/网络/签名），未匹配时透出原始
+// message 兜底 —— 不允许"什么都显示激活码无效"这种误导。
 function showActivateError(message, code) {
   const el = document.getElementById('licenseError');
   const sub = document.getElementById('licenseSub');
   const m = message || '';
   let title, hint;
-  if (/不存在/.test(m)) { title = '激活码无效'; hint = '请核对激活码是否输入正确后重新输入'; }
-  else if (/过期/.test(m)) { title = '激活码已过期'; hint = '该激活码已超过有效期，请联系管理员获取新码'; }
-  else if (/禁用|吊销/.test(m)) { title = '激活码已被禁用'; hint = '该码已被管理员停用，请联系管理员'; }
-  else if (/其他设备|其他机器/.test(m)) { title = '激活码已在其他设备使用'; hint = '一个激活码只能绑定一台设备，换机请联系管理员解绑'; }
-  else if (/版本过旧|请升级至/.test(m)) { title = '客户端版本过旧'; hint = m; }
-  else if (/连接|网络|不可达/.test(m)) { title = '无法连接授权服务器'; hint = '请检查网络后重试'; }
-  else { title = '激活失败'; hint = m || '请重试'; }
+  let subText = '请修正后重新输入';
+  if (/版本过旧|请升级至|已被停用/.test(m)) {
+    title = '客户端版本过旧';
+    hint = m;
+    subText = '请下载最新版本后再激活';
+  } else if (/签名异常|验签失败/.test(m)) {
+    title = '签名异常';
+    hint = '当前客户端与服务端安全策略不匹配，请更新到最新版本';
+    subText = '更新客户端后重试';
+  } else if (/其他设备|其他机器|设备数已达上限/.test(m)) {
+    title = /上限/.test(m) ? '设备数已达上限' : '激活码已在其他设备使用';
+    hint = m + '。换机或多设备请联系管理员解绑/调整';
+    subText = '或使用其他激活码';
+  } else if (/禁用|吊销/.test(m)) {
+    title = '激活码已被禁用'; hint = '该码已被管理员停用，请联系管理员';
+  } else if (/过期/.test(m)) {
+    title = '激活码已过期'; hint = '该激活码已超过有效期，请联系管理员获取新码';
+  } else if (/不存在/.test(m)) {
+    title = '激活码不存在';
+    hint = '请核对输入是否正确；若确认无误，该码可能已被删除，请联系管理员';
+  } else if (/不匹配/.test(m)) {
+    title = '激活码与产品不匹配'; hint = '该码不属于本产品，请使用对应的激活码';
+  } else if (/连接|网络|不可达/.test(m)) {
+    title = '无法连接授权服务器'; hint = '请检查网络后重试';
+    subText = '网络恢复后重试';
+  } else {
+    title = '激活失败'; hint = m || '请重试';
+  }
   el.innerHTML = '<div class="act-err-title">' + title + '</div>' +
                  (hint && hint !== title ? '<div class="act-err-hint">' + hint + '</div>' : '');
   el.classList.add('error-box');
-  sub.textContent = '激活码无效，请重新输入';
+  if (/版本过旧|请升级至|已被停用/.test(m)) {
+    // 版本被拦：直接亮下载行（比等 check_update 快，服务端已明确拒绝）
+    const row = document.getElementById('licenseUpdateRow');
+    const vm = m.match(/v[\d][\w.]*|\d+\.\d+[\w.]*/);
+    const ver = document.getElementById('licenseUpdateVer');
+    if (ver && !ver.textContent && vm) ver.textContent = vm[0];
+    if (row) row.style.display = '';
+  }
+  sub.textContent = subText;
   sub.classList.add('error');
   const btn = document.getElementById('licenseBtn');
   btn.disabled = false;
@@ -2915,6 +2967,9 @@ const vApp = createApp({
     }
     window.__goSettings = showSettings;  // 标题栏齿轮跳转入口
     window.__checkForUpdate = checkForUpdate;  // 版本弃用 overlay 的"立即更新"按钮入口
+    // v-html 注入的链接（更新失败兜底里的网盘地址等）走系统默认浏览器打开 ——
+    // WebView2 内导航会直接在窗口里加载网页，不是想要的行为
+    window.__openExternal = (u) => { try { pywebview.api.open_external(u); } catch(_) {} };
 
     // ─── 设置页数据：关闭行为 + 主题（自定义下拉，组件样式同状态筛选）───
     const closeActionPref = ref(localStorage.getItem('gw_closeAction') || '');
@@ -3784,9 +3839,28 @@ const vApp = createApp({
       try {
         const r = JSON.parse(await pywebview.api.set_account_statuses(currentPlatform.value, JSON.stringify(ids), 'normal'));
         if (r.error) { showToast(r.error, 'error'); return; }
-        showToast(`已启用 ${r.done} 个${r.failed ? '，失败 '+r.failed+' 个' : ''}`, 'success');
         await loadAccountsLight();
         await refreshProxyStatus();
+        // 筛选感知：在"已禁用"视图下启用 → 整批行离开当前筛选（变正常账号），说明去向
+        if (statusFilter.value === 'disabled') {
+          showToast(`已启用 ${r.done} 个（它们已变为正常账号，不在当前「已禁用」筛选中）`, 'info');
+        }
+        // 启用的号可能马上被自动保护打回（额度低于阈值/限流恢复失败）——
+        // 延迟复查一次，跳回的号明确点名，消灭"启用又自己弹回禁用"的无解释回跳
+        const back = [];
+        setTimeout(async () => {
+          try {
+            const raw = await pywebview.api.list_accounts(currentPlatform.value);
+            const now = JSON.parse(raw);
+            ids.forEach(id => {
+              const a = now.find(x => x.id === id);
+              if (a && a.status === 'disabled') back.push(a.nickname || a.email || id);
+            });
+            if (back.length) {
+              showToast(`${back.length} 个账号启用后被自动保护打回禁用（额度低于阈值或限流）: ${back.slice(0,3).join('、')}${back.length>3?' 等':''}—— 请先刷新额度或调低阈值`, 'warning', '', true);
+            }
+          } catch(_) {}
+        }, 3000);
       } catch(e) { showToast('批量启用失败: '+e, 'error'); }
       finally { batchStatusLoading.value = false; }
     }
@@ -3801,6 +3875,10 @@ const vApp = createApp({
         showToast(`已禁用 ${r.done} 个${r.failed ? '，失败 '+r.failed+' 个' : ''}`, 'success');
         await loadAccountsLight();
         await refreshProxyStatus();
+        // 筛选感知：在"正常"视图下禁用 → 行离开当前筛选，说明去向
+        if (statusFilter.value === 'normal') {
+          showToast('已禁用的账号移入「已禁用」分类（状态筛选可查看）', 'info');
+        }
       } catch(e) { showToast('批量禁用失败: '+e, 'error'); }
       finally { batchStatusLoading.value = false; }
     }
@@ -4010,6 +4088,7 @@ const vApp = createApp({
 
     async function toggleAccountStatus(id) {
       const acc = accounts.value.find(a=>a.id===id); if (!acc) return;
+      const name = acc.nickname || acc.email || id;
       const newStatus = (acc.status==='normal') ? 'disabled' : 'normal';
       try {
         const r = JSON.parse(await pywebview.api.set_account_status(currentPlatform.value, id, newStatus));
@@ -4017,7 +4096,24 @@ const vApp = createApp({
           acc.status = newStatus;
           await refreshProxyStatus();
           await loadAccounts();
-          showToast(newStatus==='disabled'?'已禁用':'已启用', 'success');
+          if (newStatus === 'disabled') {
+            showToast('已禁用', 'success');
+            // 在"正常"筛选下禁用：行会离开当前视图，说明去向
+            if (statusFilter.value === 'normal') showToast('已移入「已禁用」分类（状态筛选可查看）', 'info');
+          } else {
+            // 启用：额度低于阈值/限流的号可能被自动保护打回 —— 延迟复查点名，
+            // 消灭"启用又自己弹回禁用"的无解释回跳
+            showToast('已启用', 'success');
+            setTimeout(async () => {
+              try {
+                const now = JSON.parse(await pywebview.api.list_accounts(currentPlatform.value));
+                const a2 = now.find(x=>x.id===id);
+                if (a2 && a2.status === 'disabled') {
+                  showToast(`「${name}」启用后被自动保护打回禁用（额度低于阈值或限流）—— 请先刷新额度或调低阈值`, 'warning', '', true);
+                }
+              } catch(_) {}
+            }, 3000);
+          }
         } else {
           await loadAccountsLight();
           showToast(r.error||'操作失败', 'error');
@@ -4698,36 +4794,62 @@ const vApp = createApp({
     }
 
     // ─── Update ───
+    // 网盘手动下载兜底：所有自动源均失败（或服务端只配了网盘）时展示，
+    // 链接走系统默认浏览器打开（窗口内导航会吃掉整个界面）
+    function _escHtml(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function _safeOnclickUrl(u) {
+      // 两层转义：先 JS 字符串层（' 和 \），再 HTML 属性层（" 和 &）——
+      // 属性里的实体先被 HTML 解码回字符、再进 JS，顺序反了就防不住
+      return String(u || '')
+        .replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+        .replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+    }
+    function manualLinksHtml() {
+      const manual = _updateData?.manual_urls || [];
+      if (!manual.length) return '';
+      let html = '<div class="upd-manual"><div class="upd-manual-title">自动下载均失败？从网盘手动下载：</div>';
+      for (const m of manual) {
+        html += `<div class="upd-manual-row"><a href="javascript:void(0)" class="upd-manual-link" onclick="window.__openExternal('${_safeOnclickUrl(m.url)}')">${_escHtml(m.name || '手动下载')}</a>${m.code ? `<span class="upd-manual-code">提取码 ${_escHtml(m.code)}</span>` : ''}</div>`;
+      }
+      return html + '</div>';
+    }
     async function checkForUpdate() {
       activeModal.value = 'update';
-      updateTitle.value='检查更新'; updateStatusHtml.value='<div>检查中...</div>';
+      updateTitle.value='检查更新'; updateStatusHtml.value='<div class="upd-msg">检查中...</div>';
       updateProgressVisible.value=false; updateActionsVisible.value=false;
       updateNotesVisible.value=false; updateBtnText.value='下载更新';
       try {
         const r = JSON.parse(await pywebview.api.check_update());
-        if (r.error) { updateStatusHtml.value=`<div>${r.error}</div>`; return; }
+        if (r.error) { updateStatusHtml.value=`<div class="upd-msg upd-err">${r.error}</div>`; return; }
         _updateData = r;
         if (r.has_update) {
           hasUpdate.value=true;
           updateTitle.value=`发现新版本 ${r.latest_version}`;
-          updateStatusHtml.value=`<div>当前版本: ${r.current_version}<br>最新版本: ${r.latest_version}</div>`;
+          updateStatusHtml.value=`<div class="upd-vers"><span>当前</span><b>${_escHtml(r.current_version)}</b><span class="upd-vers-arrow">→</span><span>最新</span><b class="upd-vers-new">${_escHtml(r.latest_version)}</b></div>`;
           updateActionsVisible.value=true;
           if (r.release_body) { updateNotes.value=r.release_body; updateNotesVisible.value=true; }
         } else {
-          updateStatusHtml.value=`<div>已是最新版本 (${r.current_version})</div>`;
+          updateStatusHtml.value=`<div class="upd-msg">已是最新版本 <b>${_escHtml(r.current_version)}</b></div>`;
         }
-      } catch(e) { updateStatusHtml.value=`<div>检查更新失败: ${e.message}</div>`; }
+      } catch(e) { updateStatusHtml.value=`<div class="upd-msg upd-err">检查更新失败: ${_escHtml(e.message)}</div>`; }
     }
     async function doUpdate() {
-      if (!_updateData?.download_url) return;
+      // 多源列表优先（后端合并了 GitHub 直链 + 服务端 urls），老字段 download_url 兜底
+      const urls = _updateData?.download_urls || (_updateData?.download_url ? [_updateData.download_url] : []);
       if (_updateApplyPath) {
         try {
           const r=JSON.parse(await pywebview.api.apply_update(_updateApplyPath));
-          if(r.error){updateStatusHtml.value=`<div>${r.error}</div>`;return;}
+          if(r.error){updateStatusHtml.value=`<div class="upd-msg upd-err">${r.error}</div>`;return;}
           // 必须走后端 win_close（cleanup + destroy）真正退出进程，
           // 否则 JS window.close() 在 WebView2 里被忽略 → 主进程不退 → VBS 更新脚本等不到进程退出。
           await pywebview.api.win_close();
         } catch {}
+        return;
+      }
+      if (!urls.length) {
+        // 没有任何自动下载源（服务端只配了网盘 / GitHub 无 exe 资产）：直接亮网盘兜底
+        updateProgressVisible.value=false; updateActionsVisible.value=false;
+        updateStatusHtml.value='<div class="upd-msg">该版本暂无自动下载源</div>' + manualLinksHtml();
         return;
       }
       updateBtnDisabled.value=true; updateBtnText.value='下载中..';
@@ -4740,14 +4862,22 @@ const vApp = createApp({
         } catch {}
       }, 300);
       try {
-        const r=JSON.parse(await pywebview.api.download_update(_updateData.download_url));
+        // 传多源结构：后端按 urls 顺序逐源回退，sha256 非空时逐源校验完整性
+        const r=JSON.parse(await pywebview.api.download_update(JSON.stringify({
+          urls, sha256: _updateData.sha256 || '', tag: _updateData.latest_version || ''
+        })));
         clearInterval(pollTimer);
-        if(r.error){updateStatusHtml.value=`<div>${r.error}</div>`;updateBtnDisabled.value=false;updateBtnText.value='下载更新';return;}
-        updateStatusHtml.value='<div>下载完成，准备更新..</div>';
+        if(r.error){
+          // 全部自动源失败：错误汇总 + 网盘手动链接兜底（有配置才显示）
+          updateProgressVisible.value=false;
+          updateStatusHtml.value=`<div class="upd-msg upd-err">${_escHtml(r.error)}</div>` + manualLinksHtml();
+          updateBtnDisabled.value=false;updateBtnText.value='下载更新';return;
+        }
+        updateStatusHtml.value='<div class="upd-msg">下载完成，准备更新…</div>';
         updateProgressPct.value=100;
         updateBtnText.value='重启更新'; updateBtnDisabled.value=false;
         _updateApplyPath=r.path;
-      } catch(e) { clearInterval(pollTimer); updateStatusHtml.value=`<div>下载失败: ${e.message}</div>`; updateBtnDisabled.value=false; updateBtnText.value='下载更新'; }
+      } catch(e) { clearInterval(pollTimer); updateProgressVisible.value=false; updateStatusHtml.value=`<div class="upd-msg upd-err">下载失败: ${_escHtml(e.message)}</div>` + manualLinksHtml();updateBtnDisabled.value=false;updateBtnText.value='下载更新'; }
     }
 
     // ─── startApp ───

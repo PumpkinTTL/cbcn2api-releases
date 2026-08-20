@@ -17,6 +17,7 @@ import sys
 import urllib.error
 import urllib.request
 import uuid
+from typing import Optional
 
 from .build_flags import INTERNAL_BUILD
 from .ed25519 import verify as _ed25519_verify
@@ -163,13 +164,55 @@ def _check_sig(body, nonce: str) -> dict:
     return core
 
 
+def _normalize_update(raw) -> Optional[dict]:
+    """规范化服务端 update 更新分发信息（防御性：字段缺失/类型不对一律收敛为
+    安全默认值，不让畸形数据炸掉更新流程）。
+
+    返回 None 表示没有有效更新信息（老服务器不下发 update / 字段损坏），
+    调用方按「无服务端更新通道」处理，回退纯 GitHub 流程。"""
+    if not isinstance(raw, dict):
+        return None
+    ver = str(raw.get("latest_version") or "").strip()
+    if not ver:
+        return None  # 连版本号都没有 = 无效分发信息
+    # 下载直链列表：只收非空字符串，逐条去空白
+    urls = [u.strip() for u in (raw.get("urls") or [])
+            if isinstance(u, str) and u.strip()]
+    # sha256：严格要求 64 位十六进制（小写化）。格式非法视为未提供
+    # （跳过校验），而不是让所有源都因校验失败而判死
+    sha = str(raw.get("sha256") or "").strip().lower()
+    if len(sha) != 64 or any(c not in "0123456789abcdef" for c in sha):
+        sha = ""
+    # 网盘手动下载兜底：[{name, url, code}]，url 必须有，name/code 宽松
+    manual = []
+    for m in (raw.get("manual_urls") or []):
+        if isinstance(m, dict) and str(m.get("url") or "").strip():
+            manual.append({
+                "name": str(m.get("name") or "手动下载").strip(),
+                "url": str(m.get("url") or "").strip(),
+                "code": str(m.get("code") or "").strip(),
+            })
+    return {
+        "latest_version": ver,
+        "urls": urls,
+        "sha256": sha,
+        "notes": str(raw.get("notes") or "").strip() or None,
+        "manual_urls": manual,
+    }
+
+
 def remote_config() -> dict:
-    """查询远端 config：返回 {"enabled": bool, "announcement": str|None}。
+    """查询远端 config：返回 {"enabled": bool, "announcement": str|None}，
+    服务端下发 update 时额外带 "update" 键（见 _normalize_update 的结构；
+    没有 update 时返回结构与旧版完全一致，调用方无需感知）。
+
     公告随 config 下发，不依赖 verify/激活成功，启动第一跳即送达。
 
     验签只保护 enabled 字段（防 MITM 伪造 enabled=false 免授权）——公告是通知性
-    内容，不需要防伪，直接从原始响应体取，验签失败也照常下发。开发/内部豁免版
-    enabled 硬编码 False，但公告一样拉。"""
+    内容，不需要防伪，直接从原始响应体取，验签失败也照常下发。update 在签名
+    负载内：下载地址/哈希属于安全敏感数据（MITM 换个假 exe 地址就是任意代码
+    执行），必须验签通过才采信。开发/内部豁免版 enabled 硬编码 False，但公告
+    和 update 一样拉（开发豁免本来就不做防伪）。"""
     dev = _dev_bypass() or _internal_exempt()
     try:
         nonce = secrets.token_hex(16)
@@ -179,10 +222,19 @@ def remote_config() -> dict:
         # 公告直接取，不参与验签（通知性内容，不需要防伪）
         announcement = body.get("announcement")
         if dev:
-            return {"enabled": False, "announcement": announcement}
+            out = {"enabled": False, "announcement": announcement}
+            update = _normalize_update(body.get("update"))
+            if update:
+                out["update"] = update
+            return out
         # 正式版：验签 enabled（防 MITM 篡改授权开关），公告已取不受验签影响
         body = _check_sig(body, nonce)
-        return {"enabled": bool(body["enabled"]), "announcement": announcement}
+        out = {"enabled": bool(body["enabled"]), "announcement": announcement}
+        # update 取自验签后的响应体（未签名字段被 MITM 篡改也进不来）
+        update = _normalize_update(body.get("update"))
+        if update:
+            out["update"] = update
+        return out
     except ConnectionError:
         if dev:
             return {"enabled": False, "announcement": None}

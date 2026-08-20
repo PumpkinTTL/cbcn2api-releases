@@ -1107,3 +1107,6 @@ input[type="number"] { -moz-appearance: textfield; }
 
 /* 额度耗尽（quota，探测制——买加量包/结算后探测恢复） */
 .badge-status-quota { font-size: 10px; height: 18px; line-height: 16px; padding: 0 6px; border-radius: 4px; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.25); box-sizing: border-box; flex-shrink: 0; }
+
+/* 额度拉取失败标记：数字旁小警示符 + 悬浮显示后端记录的错误原因 */
+.quota-stale-mark { display: inline-block; margin-left: 5px; font-size: 11px; color: var(--warning, #f59e0b); cursor: help; vertical-align: 1px; }

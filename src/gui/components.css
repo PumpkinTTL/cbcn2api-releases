@@ -133,7 +133,9 @@
 /* Modal */
 .modal-overlay {
   display: flex; position: fixed; inset: 0; background: var(--modal-overlay, rgba(35,31,28,0.45));
-  z-index: 1000; align-items: center; justify-content: center; padding: 20px;
+  /* 必须高于 .license-overlay(10000)：版本弃用界面的「立即更新」要弹出更新弹窗，
+     被激活/弃用遮罩盖住 = 按钮看起来"点了没反应" */
+  z-index: 10500; align-items: center; justify-content: center; padding: 20px;
 }
 .modal-overlay.show { display: flex; }
 .modal {
@@ -153,6 +155,28 @@
 .modal-close:hover { background: var(--surface-hover); color: var(--text); }
 .modal-body { padding: 12px 24px 20px; overflow-y: auto; flex: 1; }
 .modal-actions { padding: 14px 24px; border-top: 1px solid var(--border); flex-shrink: 0; display: flex; gap: 8px; justify-content: flex-end; }
+
+/* ── 更新弹窗结构化排版（版本行 / 消息 / 说明 / 进度 / 网盘兜底）── */
+.upd-status { padding: 14px 0 4px; }
+.upd-vers { display: flex; align-items: baseline; justify-content: center; gap: 8px; font-size: 12.5px; color: var(--text-muted); }
+.upd-vers b { font-size: 15px; font-weight: 600; color: var(--text); }
+.upd-vers b.upd-vers-new { color: var(--accent); }
+.upd-vers-arrow { color: var(--text-muted); font-size: 13px; }
+.upd-msg { text-align: center; font-size: 13px; line-height: 1.6; color: var(--text-secondary); padding: 4px 0; }
+.upd-msg b { color: var(--text); }
+.upd-msg.upd-err { color: var(--danger); white-space: pre-wrap; word-break: break-all; }
+.upd-notes { margin-top: 14px; max-height: 200px; overflow-y: auto; font-size: 12px; line-height: 1.7; color: var(--text-muted); white-space: pre-wrap; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
+.upd-progress { margin-top: 14px; }
+.upd-progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.upd-progress-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width .3s; }
+.upd-progress-pct { text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 6px; }
+.upd-actions { display: flex; gap: 8px; justify-content: center; margin-top: 16px; }
+.upd-manual { margin-top: 14px; border: 1px dashed var(--border); border-radius: var(--radius-sm); padding: 10px 12px; }
+.upd-manual-title { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+.upd-manual-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.upd-manual-link { font-size: 13px; font-weight: 500; color: var(--accent); text-decoration: none; cursor: pointer; }
+.upd-manual-link:hover { text-decoration: underline; }
+.upd-manual-code { flex-shrink: 0; font-size: 11px; color: var(--text-secondary); background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; padding: 2px 7px; }
 
 /* Forms */
 textarea, input[type="text"], input[type="url"], select {
@@ -290,6 +314,7 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
 .license-overlay.show { display: flex; }
 .license-card { width: 100%; max-width: 400px; padding: 36px 32px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); text-align: center; -webkit-app-region: no-drag; }
 .license-icon { width: 52px; height: 52px; margin: 0 auto 16px; border-radius: 14px; display: flex; align-items: center; justify-content: center; background: var(--primary); color: #fff; box-shadow: 0 4px 12px rgba(218, 119, 86, 0.3); }
+.license-icon.warn { background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.35); box-shadow: none; }
 .license-card h2 { font-size: 18px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.2px; }
 .license-card .license-sub { font-size: 13px; color: var(--text-secondary); margin: 0 0 16px; }
 .license-card .license-sub.error { color: var(--danger); margin: 14px 0 18px; line-height: 1.6; }
@@ -350,9 +375,12 @@ label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; c
 }
 
 /* 激活界面下载最新版入口（签名异常/版本过旧时显示） */
+.license-update-row { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 10px; }
+.license-update-tag { font-size: 12px; color: var(--text-muted); }
+.license-update-tag b { color: var(--accent, #e68a6e); font-size: 12.5px; }
 .license-download-link {
   display: inline-flex; align-items: center; gap: 6px;
-  margin-top: 8px; padding: 6px 14px;
+  margin-top: 0; padding: 5px 12px;
   border: 1px solid rgba(59,130,246,0.4); background: rgba(59,130,246,0.08);
   color: #3b82f6; font-size: 13px; border-radius: 6px; cursor: pointer;
   transition: background 0.15s;

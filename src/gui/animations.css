@@ -499,7 +499,10 @@
   position: fixed;
   inset: 0;
   background: var(--modal-overlay, rgba(35, 31, 28, 0.45));
-  z-index: 1000;
+  /* 必须高于 .license-overlay(10000)：版本弃用界面的「立即更新」要弹出更新弹窗，
+     被激活/弃用遮罩盖住 = 按钮看起来"点了没反应"。components.css 的同名规则
+     会被本文件（后加载）覆盖，层级统一在这里改。 */
+  z-index: 10500;
   align-items: center;
   justify-content: center;
   padding: 20px;
