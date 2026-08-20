@@ -614,9 +614,13 @@
         <div class="overview-item overview-cooldown" :class="{ active: statusFilter==='cooldown' }" @click="selectStatusFilter('cooldown')" title="点击只看限流账号（临时错误，探测/验活通过自动恢复）；再点关闭">
           <span class="overview-num">{{ statusCount('cooldown') }}</span>
           <span class="overview-label">限流</span>
-          <button class="overview-action-btn" v-if="(statusCount('cooldown') + statusCount('quota')) > 0 && !detecting" @click.stop="openProbeModal" title="一键探测限流账号：发真实请求验证，上游已解除的自动恢复">
+          <button class="overview-action-btn" v-if="!detecting" @click.stop="openProbeModal" title="一键探测限流/额度耗尽账号：发真实请求验证，上游已解除的自动恢复">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg> 探测
           </button>
+        </div>
+        <div class="overview-item overview-quota" :class="{ active: statusFilter==='quota' }" @click="selectStatusFilter('quota')" title="点击只看额度耗尽账号（探测/验活通过自动恢复）；再点关闭">
+          <span class="overview-num">{{ statusCount('quota') }}</span>
+          <span class="overview-label">耗尽</span>
         </div>
         <div class="overview-item overview-disabled" :class="{ active: statusFilter==='disabled' }" @click="selectStatusFilter('disabled')" title="点击只看已禁用账号；再点关闭">
           <span class="overview-num">{{ statusCount('disabled') }}</span>
@@ -1147,7 +1151,7 @@
   <div class="modal-overlay" id="probeModal" :class="{ show: activeModal === 'probeCooldown' }">
     <div class="modal" style="max-width:480px">
       <div class="modal-header">
-        <h2>探测限流账号</h2>
+        <h2>探测限流/额度耗尽账号</h2>
         <p>发真实 chat 请求验证上游是否已恢复</p>
       </div>
       <div class="modal-body">
@@ -1163,14 +1167,29 @@
           </div>
         </div>
         <div class="form-group" v-if="cooldownProbeList.length">
-          <label>将探测的账号（{{ cooldownProbeList.length }}）</label>
+          <label>将探测的账号（{{ cooldownProbeList.length }}）· 可点每行「探测」单独验证，或「开始探测」全部验证</label>
           <div class="probe-account-list">
-            <div v-for="a in cooldownProbeList" :key="a.id" class="probe-account-row">
+            <div v-if="cooldownProbeCooldown.length" class="probe-group-head">限流账号（{{ cooldownProbeCooldown.length }}）</div>
+            <div v-for="a in cooldownProbeCooldown" :key="a.id" class="probe-account-row">
               <span class="probe-account-name">{{ a.nickname || a.email || a.id }}</span>
-              <span class="probe-account-model" :class="a.status === 'quota' ? 'probe-q' : 'probe-c'">
-                {{ a.status === 'quota' ? '额度耗尽'
-                   : (a.cooldown_models && a.cooldown_models.length ? a.cooldown_models.join('、') : '临时限流') }}
+              <span class="probe-account-model probe-c">
+                {{ (a.cooldown_models && a.cooldown_models.length ? a.cooldown_models.join('、') : '临时限流') }}
               </span>
+              <span class="probe-row-status" v-if="probeRowState[a.id] && probeRowState[a.id].done" :class="probeRowState[a.id].cls">{{ probeRowState[a.id].text }}</span>
+              <button class="probe-row-btn" :disabled="detecting || (probeRowState[a.id] && probeRowState[a.id].loading)" @click.stop="probeOne(a.id)">
+                <span v-if="probeRowState[a.id] && probeRowState[a.id].loading" class="spinner-sm"></span>
+                <template v-else>探测</template>
+              </button>
+            </div>
+            <div v-if="cooldownProbeQuota.length" class="probe-group-head">额度耗尽账号（{{ cooldownProbeQuota.length }}）</div>
+            <div v-for="a in cooldownProbeQuota" :key="a.id" class="probe-account-row">
+              <span class="probe-account-name">{{ a.nickname || a.email || a.id }}</span>
+              <span class="probe-account-model probe-q">额度耗尽</span>
+              <span class="probe-row-status" v-if="probeRowState[a.id] && probeRowState[a.id].done" :class="probeRowState[a.id].cls">{{ probeRowState[a.id].text }}</span>
+              <button class="probe-row-btn" :disabled="detecting || (probeRowState[a.id] && probeRowState[a.id].loading)" @click.stop="probeOne(a.id)">
+                <span v-if="probeRowState[a.id] && probeRowState[a.id].loading" class="spinner-sm"></span>
+                <template v-else>探测</template>
+              </button>
             </div>
           </div>
         </div>
@@ -2521,6 +2540,34 @@ const vApp = createApp({
     // 必须从完整账号列表算（不是 filteredAccounts/enrichedAccounts）——否则当前状态筛选
     // 在「正常」时弹出层会看到空列表（筛选后只剩正常号），切到「限流」才出现，用户会懵。
     const cooldownProbeList = computed(() => accounts.value.filter(a => a.status === 'cooldown' || a.status === 'quota'));
+    const cooldownProbeCooldown = computed(() => cooldownProbeList.value.filter(a => a.status === 'cooldown'));
+    const cooldownProbeQuota = computed(() => cooldownProbeList.value.filter(a => a.status === 'quota'));
+    // 单账号独立探测：面板每行一个「探测」按钮，逐个验证、各自显示结果，不干扰批量探测
+    const probeRowState = reactive({});
+    async function probeOne(id) {
+      if (detecting.value) return;
+      if (probeRowState[id] && probeRowState[id].loading) return;
+      probeRowState[id] = { loading: true };
+      try {
+        const r = JSON.parse(await pywebview.api.probe_account_models(currentPlatform.value, id));
+        if (r.error) probeRowState[id] = { done: true, cls: 'err', text: '失败' };
+        else if (r.status === 'recovered') {
+          probeRowState[id] = { done: true, cls: 'ok', text: '已恢复' };
+          await loadAccountsLight();  // 恢复的号移出限流池 → 从面板列表消失
+        } else if (r.status === 'limited') {
+          // 逐行提示具体被限的模型（后端返回 limited 标签列表）
+          const ms = Array.isArray(r.limited) && r.limited.length ? r.limited.join('、') : '';
+          probeRowState[id] = { done: true, cls: 'warn', text: ms ? `仍限流·${ms}` : '仍限流' };
+        } else if (r.status === 'none') {
+          probeRowState[id] = { done: true, cls: 'info', text: '已不在限流池' };
+          await loadAccountsLight();
+        } else {
+          probeRowState[id] = { done: true, cls: 'warn', text: '网络异常' };
+        }
+      } catch(e) {
+        probeRowState[id] = { done: true, cls: 'err', text: '失败' };
+      }
+    }
     const currentModel = ref(PRESET_MODELS[0]);
     const modelDropdownOpen = ref(false);
     const syncLoading = ref(false);
@@ -2720,6 +2767,11 @@ const vApp = createApp({
     watch(() => enrichedAccounts.value.map(a => a.id).join('\u0001'), () => {
       if (_suppressListReset) {
         _suppressListReset = false;
+        // 兜底：若可见数被压制成了非法值（如 0 而列表非空），恢复第一屏，
+        // 避免「列表有数据但网格空白且无空态提示」。
+        if (enrichedAccounts.value.length > 0 && accountVisibleCount.value < 1) {
+          accountVisibleCount.value = Math.min(ACCOUNT_PAGE, enrichedAccounts.value.length);
+        }
         nextTick(setupAccountInfiniteScroll);
         return;
       }
@@ -3176,15 +3228,21 @@ const vApp = createApp({
     function openProbeModal() {
       if (detecting.value) return;
       probeModel.value = '';
+      // 重开面板清掉上次逐行探测的状态
+      Object.keys(probeRowState).forEach(k => delete probeRowState[k]);
       activeModal.value = 'probeCooldown';
     }
     function confirmProbe() {
       activeModal.value = null;
       detectCooldown(probeModel.value);
     }
+    // 当前批量任务类型：'probe'（限流/耗尽探测）或 'enable'（验活），
+    // 决定完成时的提示文案（两套流程共用 detectProgress，统计字段语义不同）
+    let detectFlow = 'probe';
     async function detectCooldown(model) {
       if (detecting.value) return;
       detecting.value = true;
+      detectFlow = 'probe';
       detectProgress.done = 0; detectProgress.total = 0;
       detectProgress.enabled = 0; detectProgress.skipped = 0;
       detectProgress.banned = 0; detectProgress.limited = 0; detectProgress.checked = 0; detectProgress.failed = 0; detectProgress.summary = '';
@@ -3193,7 +3251,7 @@ const vApp = createApp({
         if (r.error) { showToast(r.error, 'error'); detecting.value = false; return; }
         if (!r.started) { showToast(r.message || '当前没有限流账号', 'info'); detecting.value = false; return; }
         detectProgress.total = r.total;
-        showToast(`开始探测 ${r.total} 个限流账号...`, 'info');
+        showToast(`开始探测 ${r.total} 个待恢复账号（限流/额度耗尽）...`, 'info');
         detectTimer = setInterval(pollDetectStatus, 600);
       } catch(e) { showToast('限流探测启动失败: '+e, 'error'); detecting.value = false; }
     }
@@ -3201,6 +3259,7 @@ const vApp = createApp({
     async function detectAndEnable() {
       if (detecting.value) return;
       detecting.value = true;
+      detectFlow = 'enable';
       detectProgress.done = 0; detectProgress.total = 0;
       detectProgress.enabled = 0; detectProgress.skipped = 0;
       detectProgress.banned = 0; detectProgress.limited = 0; detectProgress.checked = 0; detectProgress.failed = 0; detectProgress.summary = '';
@@ -3223,13 +3282,27 @@ const vApp = createApp({
           if (detectTimer) { clearInterval(detectTimer); detectTimer = null; }
           detecting.value = false;
           detectProgress.summary = s.summary || '';
-          if (detectProgress.enabled > 0) {
-            showToast(s.summary, 'success');
-          } else if ((detectProgress.failed || 0) > 0 && (detectProgress.enabled || 0) === 0 && (detectProgress.limited || 0) === 0) {
-            // 全部失败且无一解除、也无一「仍限流」：这才是真网络/上游整体故障
-            showToast(`探测完成：全部账号网络异常无响应。请先检查本机网络（能否打开网页），网络恢复后再探测`, 'warning');
+          const _e = detectProgress.enabled||0, _l = detectProgress.limited||0,
+                _f = detectProgress.failed||0, _b = detectProgress.banned||0;
+          if (detectFlow === 'probe') {
+            // 限流/耗尽探测：解除 X 已回池 / 仍限流 Y（带模型明细）/ 网络异常 Z / 封号特征
+            if (_e > 0) {
+              showToast(s.summary || `探测完成：解除 ${_e} 个已回池，${_l} 个仍限流，${_f} 个网络异常`, 'success');
+            } else if (_f > 0 && _l === 0 && _b === 0) {
+              // 全部失败且无一解除、也无一「仍限流」：这才是真网络/上游整体故障
+              showToast('探测完成：全部账号网络异常无响应。请先检查本机网络（能否打开网页），网络恢复后再探测', 'warning');
+            } else if (_l > 0) {
+              showToast(s.summary || `探测完成：${_l} 个账号仍被限流${_f ? `，${_f} 个网络异常` : ''}`, 'info');
+            } else if (_b > 0) {
+              showToast(`探测完成：${_b} 个账号被封禁（封号特征），限流保持`, 'error');
+            } else {
+              showToast('探测完成：没有可探测的账号', 'info');
+            }
           } else {
-            showToast(s.summary || '限流账号仍被限流，暂未恢复', 'info');
+            // 验活：启用/跳过/封禁/正常/失败，与限流探测语义不同，不套用限流文案
+            if (_e > 0) showToast(s.summary || `验活完成：启用 ${_e} 个账号`, 'success');
+            else if (_b > 0) showToast(s.summary || `验活完成：封禁 ${_b} 个账号`, 'warning');
+            else showToast(s.summary || '验活完成', 'info');
           }
           await loadAccounts();
           await refreshProxyStatus();
@@ -3320,6 +3393,10 @@ const vApp = createApp({
         const idx = accounts.value.findIndex(x => x.id === id);
         if (idx >= 0) accounts.value.splice(idx, 1, { ...accounts.value[idx], ...r });
         else accounts.value.push(r);
+        // 无排序时 splice 同 id 同顺序，watch 的 ID 序列不变 → 不会触发 → 标记会泄漏
+        // 到下一次筛选/新增账号，导致列表不回到第一屏甚至空白。下一帧强制清掉。
+        // （若 watch 已触发消费了标记，这里再置 false 是无害的幂等操作）
+        setTimeout(() => { _suppressListReset = false; }, 0);
         try {
           const sd = JSON.parse(await pywebview.api.get_all_stats(currentPlatform.value));
           const s = (sd.stats||[]).find(x => x.account_id === id);
@@ -4784,7 +4861,7 @@ const vApp = createApp({
       resultModalTitle, resultModalText, resultModalVariant, resultModalStats,
       logs, logEnabled, logEventFilter,
       // Computed
-      filteredAccounts, enrichedAccounts, visibleAccounts, cooldownProbeList, detailResourcesTotal,
+      filteredAccounts, enrichedAccounts, visibleAccounts, cooldownProbeList, cooldownProbeCooldown, cooldownProbeQuota, probeRowState, probeOne, detailResourcesTotal,
       // Methods
       fmt, fmtK, fmtL, _n, dateStr, friendlyDate, getHitRate,
       getStatusBadgeClass, getStatusText, getCooldownText, cooldownAtText, getPlanBadgeClass, getPlanText,

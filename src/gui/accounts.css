@@ -280,6 +280,8 @@ input[type="number"] { -moz-appearance: textfield; }
 .overview-label { font-size: 11px; color: var(--text-muted); line-height: 1; }
 /* 状态色点（::before 放数字前） */
 .overview-normal::before,
+.overview-cooldown::before,
+.overview-quota::before,
 .overview-disabled::before,
 .overview-banned::before,
 .overview-warn::before {
@@ -291,6 +293,8 @@ input[type="number"] { -moz-appearance: textfield; }
   flex-shrink: 0;
 }
 .overview-normal::before { background: #22c55e; }
+.overview-cooldown::before { background: #1976d2; }
+.overview-quota::before { background: #ef4444; }
 .overview-disabled::before { background: #94a3b8; }
 .overview-banned::before { background: #ef4444; }
 .overview-warn::before { background: #f59e0b; }
@@ -328,6 +332,8 @@ input[type="number"] { -moz-appearance: textfield; }
 }
 .probe-account-row:last-child { border-bottom: none; }
 .probe-account-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -339,6 +345,39 @@ input[type="number"] { -moz-appearance: textfield; }
 }
 .probe-account-model.probe-c { color: var(--warning); }
 .probe-account-model.probe-q { color: var(--danger); }
+/* 探测面板每行独立探测：小按钮 + 行内结果状态 */
+.probe-row-btn {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.probe-row-btn:hover:not(:disabled) { color: var(--primary); border-color: var(--primary); }
+.probe-row-btn:disabled { opacity: .55; cursor: not-allowed; }
+.probe-row-status {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+}
+.probe-row-status.ok { color: var(--success); }
+.probe-row-status.warn { color: var(--warning); }
+.probe-row-status.err { color: var(--danger); }
+.probe-row-status.info { color: var(--text-muted); }
+/* 探测面板分组头：限流 / 额度耗尽各一段，段内列出该分类账号 */
+.probe-group-head {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 7px 0 3px;
+}
+.probe-group-head:first-child { padding-top: 2px; }
 /* ── 模型降级配置面板 ── */
 .degrade-toggle-row {
   display: flex;

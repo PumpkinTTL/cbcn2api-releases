@@ -1543,11 +1543,13 @@ class GuiApi:
                 probe_models = [None]
             recovered = 0
             saw_limited = False
+            limited_labels = []
             for m in probe_models:
+                label = m or "默认模型(hy3/deepseek)"
                 try:
                     result = probe_chat_available(acc, fresh_token, model=m)
                 except Exception as e:
-                    return ("failed", name, f"探测异常: {e}")
+                    return ("failed", name, f"探测异常: {e}", limited_labels)
                 if result == "ok":
                     if m:
                         token_rotator.clear_model_disabled(acc.id, m)
@@ -1555,33 +1557,39 @@ class GuiApi:
                         token_rotator.clear_disabled(acc.id)
                     recovered += 1
                 elif result == "banned":
-                    return ("banned", name, "探测被拒（封号特征），限流保持")
+                    return ("banned", name, "探测被拒（封号特征），限流保持", limited_labels)
                 elif result == "limited":
                     # 上游给了真实响应但非 200（6004/14018/403 等）= 仍被限流。
                     # 这是正常结果，绝不能和网络故障（unknown）混成「无响应」。
                     saw_limited = True
+                    limited_labels.append(label)
                 # unknown → 该模型仍限流，继续下一个
             if recovered:
                 if recovered == len(probe_models):
                     return ("enabled", name, "已恢复（上游响应正常）")
                 return ("enabled", name, f"部分恢复 {recovered}/{len(probe_models)}")
             if saw_limited:
-                return ("limited", name, "仍被限流（上游有响应）")
-            return ("failed", name, "网络异常，未拿到上游响应")
+                return ("limited", name, "仍被限流（上游有响应）", limited_labels)
+            return ("failed", name, "网络异常，未拿到上游响应", limited_labels)
 
         def runner():
             released, kept = 0, 0
+            limited_details = []
             with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
                 futs = [ex.submit(worker, a) for a in targets]
                 for fut in concurrent.futures.as_completed(futs):
                     try:
-                        status, name, reason = fut.result()
+                        res = fut.result()
+                        status, name, reason = res[0], res[1], res[2]
+                        labels = res[3] if len(res) > 3 else []
                     except Exception:
-                        status, name, reason = "failed", "?", "未知错误"
+                        status, name, reason, labels = "failed", "?", "未知错误", []
                     if status == "enabled":
                         released += 1
                     else:
                         kept += 1
+                    if status == "limited" and labels:
+                        limited_details.append(f"{name}({', '.join(labels)})")
                     with self._detect_lock:
                         self._detect_state["done"] += 1
                         self._detect_state[status] = self._detect_state.get(status, 0) + 1
@@ -1591,8 +1599,13 @@ class GuiApi:
                 self._detect_state["finished"] = True
                 limited = self._detect_state.get("limited", 0)
                 failed = self._detect_state.get("failed", 0)
+                detail = ""
+                if limited_details:
+                    shown = limited_details[:3]
+                    more = len(limited_details) - len(shown)
+                    detail = f"（{'、'.join(shown)}{' 等' + str(more) + ' 个' if more > 0 else ''}）"
                 self._detect_state["summary"] = (
-                    f"限流探测完成：解除 {released} 个，仍限流 {limited} 个，网络异常 {failed} 个"
+                    f"限流探测完成：解除 {released} 个已回池，仍限流 {limited} 个{detail}，网络异常 {failed} 个"
                 )
 
         threading.Thread(target=runner, daemon=True).start()
