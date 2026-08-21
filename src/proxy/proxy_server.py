@@ -400,9 +400,12 @@ async def _stream_inner(
         tried_ids.add(acc.id)
 
         # ── 单个账号内的降级链循环：6004/6020 时同号换下一个模型，链尽才换号 ──
+        # 索引式 while：排队(6020)重试需要「原地重发同一模型」，用 continue 不递增索引实现；
+        # 走链降级时显式 chain_idx+=1。for-in 循环的 continue 会跳到下一个模型，无法原地重试。
         model = requested_model
-        for chain_model in degrade_chain:
-            model = chain_model
+        chain_idx = 0
+        while chain_idx < len(degrade_chain):
+            model = degrade_chain[chain_idx]
             payload["model"] = model
 
             # add_log 是同步 sqlite 写，GUI 线程并发写库时可能抛 "database is locked"。
@@ -472,6 +475,7 @@ async def _stream_inner(
                         last_msg = body[:300]
                         # 模型级限流（6004/6020）→ 同号降级继续走链；其余 → 换号
                         if kind in ("model", "queue"):
+                            chain_idx += 1
                             continue
                         break
                     _safe_log("error", platform, acc.id, acc.nickname, model, f"HTTP {resp.status_code} (不可重试)", body[:500])
@@ -541,6 +545,7 @@ async def _stream_inner(
                         last_msg = inline_err[:300]
                         # 模型级限流（6004/6020）→ 同号降级继续走链；其余 → 换号
                         if kind in ("model", "queue"):
+                            chain_idx += 1
                             continue
                         break
                     # 不可重试的内联错误：只在确认是 error 事件时才走到这里
