@@ -96,6 +96,13 @@ PEEK_BYTE_LIMIT = 32768  # peek 阶段最多缓冲字节数
 PEEK_TIMEOUT = 25.0        # peek 阶段最长等待：超过就当作正常数据放行，先让客户端见到响应
 STREAM_DEADLINE = 600.0    # 单次请求从建连到收尾的总时长上限
 
+# 排队（6020）快速重试：上游模型级队列瞬时拥堵时，等 1.5s 原模型重试最多 3 次，
+# 任一次通过即正常返回；3 次仍排队才标记 queue 进限流池（15 分钟探测制）+ 走降级链。
+# 重试计数按 (账号, 模型) 记在请求作用域 dict —— 生成器结束即丢弃，成功后无状态残留。
+QUEUE_RETRY_MAX = 3
+QUEUE_RETRY_DELAY = 1.5
+_queue_retry_counts: dict = {}
+
 
 def _get_http_client() -> httpx.AsyncClient:
     """获取与当前运行事件循环绑定的 httpx 异步客户端。
@@ -446,6 +453,20 @@ async def _stream_inner(
                     kind = _classify_upstream_error(resp.status_code, body)
                     logger.warning("[调度] 账号=%s 上游返回 %d, kind=%s, body=%s", acc.nickname, resp.status_code, kind, body[:200])
                     if kind:
+                        # 排队（6020）：上游队列瞬时拥堵，等 1.5s 原模型重试最多 3 次，
+                        # 任一次通过即继续正常流程；3 次仍排队才标记 queue 进池 + 走降级链。
+                        # 重试计数是请求作用域局部变量，成功后自然丢弃，无状态残留。
+                        if kind == "queue":
+                            retried = _queue_retry_counts.get((acc.id, model), 0)
+                            if retried < QUEUE_RETRY_MAX and time.monotonic() < deadline:
+                                _queue_retry_counts[(acc.id, model)] = retried + 1
+                                _safe_log("warning", platform, acc.id, acc.nickname, model,
+                                          f"排队(6020) 第{retried+1}/{QUEUE_RETRY_MAX}次重试（等待{QUEUE_RETRY_DELAY}s）",
+                                          body[:300])
+                                await asyncio.sleep(QUEUE_RETRY_DELAY)
+                                continue  # 同号同模型立即重试（不消耗降级链）
+                            _safe_log("error", platform, acc.id, acc.nickname, model,
+                                      f"排队重试{retried}次仍排队，进限流池并降级", body[:300])
                         token_rotator.mark_disabled(acc.id, kind, model=model)
                         _safe_log("error", platform, acc.id, acc.nickname, model, f"HTTP {resp.status_code} → {kind}", body[:500])
                         last_msg = body[:300]
@@ -503,6 +524,18 @@ async def _stream_inner(
                     kind = _classify_upstream_error(200, inline_err)
                     logger.warning("[调度] 账号=%s 200内联错误, kind=%s, err=%s", acc.nickname, kind, inline_err[:200])
                     if kind:
+                        # 排队（6020）内联错误：与 HTTP 层同策略——等 1.5s 原模型重试最多 3 次
+                        if kind == "queue":
+                            retried = _queue_retry_counts.get((acc.id, model), 0)
+                            if retried < QUEUE_RETRY_MAX and time.monotonic() < deadline:
+                                _queue_retry_counts[(acc.id, model)] = retried + 1
+                                _safe_log("warning", platform, acc.id, acc.nickname, model,
+                                          f"排队(6020·内联) 第{retried+1}/{QUEUE_RETRY_MAX}次重试（等待{QUEUE_RETRY_DELAY}s）",
+                                          inline_err[:300])
+                                await asyncio.sleep(QUEUE_RETRY_DELAY)
+                                continue  # 同号同模型立即重试（不消耗降级链）
+                            _safe_log("error", platform, acc.id, acc.nickname, model,
+                                      f"排队重试{retried}次仍排队，进限流池并降级", inline_err[:300])
                         token_rotator.mark_disabled(acc.id, kind, model=model)
                         _safe_log("error", platform, acc.id, acc.nickname, model, f"200内联错误 → {kind}", inline_err[:500])
                         last_msg = inline_err[:300]
@@ -531,6 +564,8 @@ async def _stream_inner(
                         yield c
 
                 logger.info("[调度] 账号=%s 请求成功 model=%s", acc.nickname, model)
+                # 排队重试成功：清掉该 (账号,模型) 的重试计数（下次排队重新从 0 计）
+                _queue_retry_counts.pop((acc.id, model), None)
                 # 限流探测成功：真实请求通了 = 上游已解除，逐模型清除限流标记
                 # （model 限流号只清本次请求的模型；transient/quota 号整体恢复）
                 try:
