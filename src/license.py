@@ -23,8 +23,11 @@ from .build_flags import INTERNAL_BUILD
 from .ed25519 import verify as _ed25519_verify
 
 # 产品标识 = lic-admin 后台的产品 ID（硬编码，查授权开关用，数字）
-# 必须与 lic-admin 的 products 表 id 一致（AI Gateway = 100）
-APP_ID = 100
+# 必须与 lic-admin 的 products 表 id 一致（线上 AI Gateway = 1）。
+# ★ 历史包袱：已发布的 v1.0.7~v1.1.2 全部上报 product_id=1，激活码都挂在
+# 产品 1 下——改别的 id 会让所有存量码「产品不匹配」全灭。开发库产品 1
+# 已配同一签名种子，与线上对齐。
+APP_ID = 1
 
 # 响应验签公钥（Ed25519，32 字节 hex）。对应 lic-admin 的私钥
 # data/signing_key.hex（或环境变量 LIC_ADMIN_SIGNING_KEY）。
