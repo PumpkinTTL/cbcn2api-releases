@@ -179,7 +179,11 @@ def _download_one(download_url: str, progress_callback=None, tag: Optional[str] 
             offset = os.path.getsize(tmp_path) if os.path.exists(tmp_path) else 0
         except OSError:
             offset = 0
-        headers = {"Range": f"bytes={offset}-"} if offset > 0 else {}
+        headers = {"User-Agent": f"AI-Gateway/{APP_VERSION}"}
+        # 自定义 UA：下载源含 Cloudflare 域名（R2 公开域名），默认 python-requests UA
+        # 在 CF bot 防护的黑名单边缘，规则一收紧全部下载源连坐失效
+        if offset > 0:
+            headers["Range"] = f"bytes={offset}-"
         resp = requests.get(download_url, stream=True, timeout=30, proxies=_proxy(), headers=headers)
         # 206=续传命中（从 offset 续写）；200=全新下载（服务器不支持 Range 或文件已变，回退重头）
         if resp.status_code == 206:
