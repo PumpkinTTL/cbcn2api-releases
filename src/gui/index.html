@@ -5003,10 +5003,14 @@ const vApp = createApp({
               hideLicenseOverlay();startApp();
               // 公告：config 启动第一跳已带回（不依赖 verify 成功），启动即弹
               if (r.announcement) showAnnouncement(r.announcement);
-              // 授权临期（3 天内到期）：启动警示续期
+              // 授权临期（3 天内到期）：启动警示续期。剩余不足 1 天时 expiry_days
+              // 整除为 0——按剩余小时提示，绝不能在授权仍有效时误报「已到期」
               if (r.expiry_soon) {
                 const d = r.expiry_days;
-                showToast(d <= 0 ? '授权已到期，请联系管理员续期' : `授权将在 ${d} 天后到期，请及时联系管理员续期`, d <= 1 ? 'error' : 'warning');
+                const hrs = r.expiry ? Math.max(1, Math.ceil((r.expiry * 1000 - Date.now()) / 3600000)) : 0;
+                showToast(d >= 1 ? `授权将在 ${d} 天后到期，请及时联系管理员续期`
+                                 : `授权将在约 ${hrs} 小时内到期，请及时联系管理员续期`,
+                          d <= 1 ? 'error' : 'warning');
               }
             } else if (r.version_blocked) {
               showVersionBlocked(r.message);
