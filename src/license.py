@@ -280,13 +280,15 @@ def _verify_online(code: str):
         nonce = secrets.token_hex(16)
         s, body = _http_json("POST", "/api/v1/verify",
                              {"code": code, "machine_code": machine_code(), "product_id": APP_ID,
-                              "app_version": _app_version(), "nonce": nonce})
+                              "app_version": _app_version(), "nonce": nonce,
+                              "device_info": _collect_device_info()})
         if s == 200 and isinstance(body, dict):
             body = _check_sig(body, nonce, expect_machine=machine_code())
             extras = {}
             if body.get("announcement"):
                 extras["announcement"] = body["announcement"]
             if body.get("ok"):
+                save_code(code)  # verify 通过回写：旧纯文本 dat 升级为本机绑定格式
                 exp = body.get("expires_at")
                 remain_days = None
                 if exp:
@@ -295,7 +297,8 @@ def _verify_online(code: str):
                     extras["expiry_days"] = remain_days
                 return True, int(exp) if exp else None, "授权有效", extras
             return False, None, "授权校验失败", extras
-        return False, None, body.get("message") or body.get("detail") or "授权校验失败", {}
+        _m = (body.get("message") or body.get("detail")) if isinstance(body, dict) else ""
+        return False, None, _m or "授权校验失败", {}
     except ConnectionError as e:
         # 区分真话：网络不通 vs 验签失败（服务器换密钥或连接被劫持）——
         # 提示混在一起会把人引去查网络，方向全错
@@ -326,7 +329,8 @@ def heartbeat(code: str):
             body = _check_sig(body, nonce, expect_machine=machine_code())
             if body.get("ok"):
                 return "ok", "OK", body.get("announcement") or None
-        return "rejected", body.get("message") or body.get("detail") or "授权已失效", None
+        _m = (body.get("message") or body.get("detail")) if isinstance(body, dict) else ""
+        return "rejected", _m or "授权已失效", None
     except ConnectionError as e:
         # 验签失败 ≠ 网络问题：服务端轮换了签名密钥（旧客户端验不过）——按明确拒绝
         # 处理并引导更新，否则永远 unreachable 重试，用户看着"网络正常却连不上"懵住
@@ -370,7 +374,8 @@ def _activate_online(code: str):
                 exp = body.get("expires_at")
                 save_code(code)
                 return True, int(exp) if exp else None, "激活成功"
-        return False, None, body.get("message") or body.get("detail") or "激活失败"
+        _m = (body.get("message") or body.get("detail")) if isinstance(body, dict) else ""
+        return False, None, _m or "激活失败"
     except ConnectionError as e:
         msg = str(e)
         if "设备不匹配" in msg:

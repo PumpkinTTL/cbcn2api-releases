@@ -14,6 +14,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 if getattr(sys, "frozen", False) or "__compiled__" in globals():
     sys.frozen = True
 
+# WebView2 loader 尊重该环境变量——启动前设 --remote-debugging-port 可绕过
+# debug=False 重开 devtools 直接调 pywebview.api。启动即剥除（授权裁决在
+# 后端 api 层有复检，这里纯收紧 UI 面）
+os.environ.pop("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", None)
+
 # Windows 任务栏图标：设置 AppUserModelID 让系统识别为独立应用，
 # 否则任务栏显示 python.exe 默认图标。必须在创建窗口前调用。
 if sys.platform == "win32":
