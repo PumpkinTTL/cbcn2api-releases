@@ -288,7 +288,10 @@ def _verify_online(code: str):
             if body.get("announcement"):
                 extras["announcement"] = body["announcement"]
             if body.get("ok"):
-                save_code(code)  # verify 通过回写：旧纯文本 dat 升级为本机绑定格式
+                try:
+                    save_code(code)  # verify 通过回写：旧纯文本 dat 升级为本机绑定格式
+                except OSError:
+                    pass  # dat 目录只读/杀软锁文件：跳过升级，不影响本次判定
                 exp = body.get("expires_at")
                 remain_days = None
                 if exp:

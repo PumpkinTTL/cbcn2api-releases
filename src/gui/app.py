@@ -61,54 +61,61 @@ def _push_license_event(window, payload: dict):
 def _heartbeat_loop(window, api=None):
     from src import license as lic
     from src.gui.log_setup import write_runtime_log
-
-    def _reject(msg):
-        """授权明确失效：停网关 → 锁前端 → 停心跳。只锁界面的网关还在跑，
-        授权就形同虚设；正在服务的请求由 uvicorn 优雅收尾。"""
-        write_runtime_log(f"[license] 心跳终止：{msg}", "WARN")
-        if api is not None:
+    global _hb_started
+    try:
+        _empty_dat = 0          # 连续读不到激活码（激活后 dat 被删/改名 = 篡改特征）
+        _unreachable_since = 0  # 连续联系不上服务端的起点（长断网降级锁定）
+        while True:
+            time.sleep(_HB_INTERVAL)
             try:
-                api.proxy_stop()
-                write_runtime_log("[license] 授权失效，网关已停止", "WARN")
-            except Exception:
-                pass
-        _push_license_event(window, {"type": "revoked", "message": msg})
+                code = lic.load_code()
+                if not code:
+                    # 未激活不会启动本线程；心跳已启动后 dat 消失 = 删文件逃逸吊销
+                    _empty_dat += 1
+                    if _empty_dat >= 2:
+                        _reject(msg="激活信息丢失，请重新激活", api=api, window=window)
+                        return
+                    continue
+                _empty_dat = 0
+                state, msg, announcement = lic.heartbeat(code)
+                if state == "rejected":
+                    # 服务端明确拒绝（吊销/过期/版本报废/设备不匹配）：停网关锁前端
+                    _reject(msg=msg, api=api, window=window)
+                    return
+                if state == "unreachable":
+                    # 断网不惩罚是可用性取舍，但网关连跑 24h 联系不上服务端 =
+                    # 单方面切断吊销通道（hosts 屏蔽/防火墙），降级锁定
+                    now = time.time()
+                    if not _unreachable_since:
+                        _unreachable_since = now
+                    elif now - _unreachable_since > 24 * 3600:
+                        _reject(msg="长时间无法连接授权服务器，请检查网络后重新启动", api=api, window=window)
+                        return
+                    continue
+                _unreachable_since = 0
+                if state == "ok" and announcement:
+                    _push_license_event(window, {"type": "announcement", "content": announcement})
+            except Exception as e:
+                # 单次异常吞掉继续跑，保活优先
+                write_runtime_log(f"[license] 心跳异常（已忽略继续）：{e}", "WARN")
+    finally:
+        # 线程任何退出路径（吊销/删dat/断网24h）都复位标志：重新激活后
+        # check_license → start_license_heartbeat 能重新拉起，吊销通道不失联
+        _hb_started = False
 
-    empty_dat = 0          # 连续读不到激活码（激活后 dat 被删/改名 = 篡改特征）
-    unreachable_since = 0  # 连续联系不上服务端的起点（长断网降级锁定）
-    while True:
-        time.sleep(_HB_INTERVAL)
+
+def _reject(msg, api, window):
+    """授权明确失效：停网关 → 锁前端。只锁界面的网关还在跑，授权就形同虚设；
+    正在服务的请求由 uvicorn 优雅收尾。"""
+    from src.gui.log_setup import write_runtime_log
+    write_runtime_log(f"[license] 心跳终止：{msg}", "WARN")
+    if api is not None:
         try:
-            code = lic.load_code()
-            if not code:
-                # 未激活不会启动本线程；心跳已启动后 dat 消失 = 删文件逃逸吊销
-                empty_dat += 1
-                if empty_dat >= 2:
-                    _reject("激活信息丢失，请重新激活")
-                    return
-                continue
-            empty_dat = 0
-            state, msg, announcement = lic.heartbeat(code)
-            if state == "rejected":
-                _reject(msg)
-                return  # 服务端明确拒绝（吊销/过期/版本报废/设备不匹配）
-            if state == "unreachable":
-                # 断网不惩罚是可用性取舍，但网关连跑 24h 联系不上服务端 =
-                # 单方面切断吊销通道（hosts 屏蔽/防火墙），降级锁定
-                now = time.time()
-                if not unreachable_since:
-                    unreachable_since = now
-                elif now - unreachable_since > 24 * 3600:
-                    _reject("长时间无法连接授权服务器，请检查网络后重新启动")
-                    return
-                continue
-            unreachable_since = 0
-            if state == "ok" and announcement:
-                _push_license_event(window, {"type": "announcement", "content": announcement})
-        except Exception as e:
-            # 心跳线程死亡 = 永久失去吊销通道且无法自愈（_hb_started 卡 True）。
-            # 单次异常吞掉继续跑，保活优先
-            write_runtime_log(f"[license] 心跳异常（已忽略继续）：{e}", "WARN")
+            api.proxy_stop()
+            write_runtime_log("[license] 授权失效，网关已停止", "WARN")
+        except Exception:
+            pass
+    _push_license_event(window, {"type": "revoked", "message": msg})
 
 
 def start_license_heartbeat(window, api=None):
