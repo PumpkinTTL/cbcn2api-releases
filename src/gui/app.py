@@ -58,7 +58,7 @@ def _push_license_event(window, payload: dict):
         pass  # 窗口关闭/JS 未就绪期间的事件直接丢弃
 
 
-def _heartbeat_loop(window):
+def _heartbeat_loop(window, api=None):
     from src import license as lic
     from src.gui.log_setup import write_runtime_log
     while True:
@@ -69,19 +69,27 @@ def _heartbeat_loop(window):
         state, msg, announcement = lic.heartbeat(code)
         if state == "rejected":
             write_runtime_log(f"[license] 心跳被拒：{msg}", "WARN")
+            # 授权被服务端明确拒绝：先停网关再锁前端——只锁界面的网关还在跑，
+            # 授权就形同虚设；正在服务的请求被 uvicorn 优雅收尾
+            if api is not None:
+                try:
+                    api.proxy_stop()
+                    write_runtime_log("[license] 授权失效，网关已停止", "WARN")
+                except Exception:
+                    pass
             _push_license_event(window, {"type": "revoked", "message": msg})
-            return  # 授权已被服务端明确拒绝：停止心跳，前端锁定
+            return  # 停止心跳，前端锁定
         if state == "ok" and announcement:
             _push_license_event(window, {"type": "announcement", "content": announcement})
 
 
-def start_license_heartbeat(window):
+def start_license_heartbeat(window, api=None):
     """授权有效后启动心跳线程（幂等；免授权/内部豁免不启动）。"""
     global _hb_started, _hb_thread
     if _hb_started:
         return
     _hb_started = True
-    _hb_thread = threading.Thread(target=_heartbeat_loop, args=(window,), daemon=True)
+    _hb_thread = threading.Thread(target=_heartbeat_loop, args=(window, api), daemon=True)
     _hb_thread.start()
 
 
@@ -1965,7 +1973,7 @@ class GuiApi:
         if announcement:
             st["announcement"] = announcement
         if st.get("licensed"):
-            start_license_heartbeat(self._window)  # 心跳：在线追踪 + 运行途中吊销即时生效
+            start_license_heartbeat(self._window, api=self)  # 心跳：在线追踪 + 吊销即时停网关锁前端
         else:
             # 版本被拦（服务端 min_version / 黑名单）→ 前端显示升级提示而非激活输入框
             msg = st.get("message") or ""

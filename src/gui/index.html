@@ -2321,6 +2321,14 @@ function showActivateError(message, code) {
     title = /上限/.test(m) ? '设备数已达上限' : '激活码已在其他设备使用';
     hint = m + '。换机或多设备请联系管理员解绑/调整';
     subText = '或使用其他激活码';
+  } else if (/设备不匹配/.test(m)) {
+    title = '设备不匹配';
+    hint = '激活信息与当前设备不符（激活文件不支持跨设备复制），请在本机重新激活';
+    subText = '输入激活码后点激活';
+  } else if (/完整性校验失败|调试环境/.test(m)) {
+    title = '客户端校验未通过';
+    hint = m + '。请从官方渠道重新下载安装包';
+    subText = '重新安装后重试';
   } else if (/禁用|吊销/.test(m)) {
     title = '激活码已被禁用'; hint = '该码已被管理员停用，请联系管理员';
   } else if (/过期/.test(m)) {

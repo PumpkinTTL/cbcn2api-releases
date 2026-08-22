@@ -144,12 +144,14 @@ def _canon_json(body: dict) -> bytes:
     return json.dumps(body, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
-def _check_sig(body, nonce: str) -> dict:
+def _check_sig(body, nonce: str, expect_machine: str = "") -> dict:
     """校验服务端响应签名（Ed25519）。失败抛 ConnectionError（调用方按不可达处理）。
 
-    防两种攻击：
+    防三种攻击：
       - 伪造响应（HTTPS MITM 改 body）：无私钥签不出有效签名
       - 重放旧响应：签名覆盖本次请求的随机 nonce，跨请求回放 nonce 不匹配
+      - 跨机器移植响应：带 expect_machine 时核对签名负载内的 machine_code
+        回显——A 机抓的有效响应搬到 B 机，签名虽真但机器码对不上，拒绝
     返回去掉 _sig/_nonce 装饰字段后的原始响应体。"""
     if not isinstance(body, dict):
         raise ConnectionError("响应验签失败：响应格式异常")
@@ -164,6 +166,8 @@ def _check_sig(body, nonce: str) -> dict:
         ok = False
     if not ok:
         raise ConnectionError("响应验签失败：签名无效")
+    if expect_machine and str(core.get("machine_code") or "") != expect_machine:
+        raise ConnectionError("响应验签失败：设备不匹配")
     return core
 
 
@@ -278,7 +282,7 @@ def _verify_online(code: str):
                              {"code": code, "machine_code": machine_code(), "product_id": APP_ID,
                               "app_version": _app_version(), "nonce": nonce})
         if s == 200 and isinstance(body, dict):
-            body = _check_sig(body, nonce)
+            body = _check_sig(body, nonce, expect_machine=machine_code())
             extras = {}
             if body.get("announcement"):
                 extras["announcement"] = body["announcement"]
@@ -296,6 +300,8 @@ def _verify_online(code: str):
         # 区分真话：网络不通 vs 验签失败（服务器换密钥或连接被劫持）——
         # 提示混在一起会把人引去查网络，方向全错
         msg = str(e)
+        if "设备不匹配" in msg:
+            return False, None, "激活信息与当前设备不匹配，请在本机重新激活", {}
         if "验签失败" in msg:
             return False, None, "签名异常，请更新到最新版本客户端", {}
         return False, None, "无法连接授权服务器，请检查网络后重试", {}
@@ -317,14 +323,17 @@ def heartbeat(code: str):
                              {"code": code, "machine_code": machine_code(),
                               "app_version": _app_version(), "nonce": nonce}, timeout=5)
         if s == 200 and isinstance(body, dict):
-            body = _check_sig(body, nonce)
+            body = _check_sig(body, nonce, expect_machine=machine_code())
             if body.get("ok"):
                 return "ok", "OK", body.get("announcement") or None
         return "rejected", body.get("message") or body.get("detail") or "授权已失效", None
     except ConnectionError as e:
         # 验签失败 ≠ 网络问题：服务端轮换了签名密钥（旧客户端验不过）——按明确拒绝
         # 处理并引导更新，否则永远 unreachable 重试，用户看着"网络正常却连不上"懵住
-        if "验签失败" in str(e):
+        es = str(e)
+        if "设备不匹配" in es:
+            return "rejected", "激活信息与当前设备不匹配，请在本机重新激活", None
+        if "验签失败" in es:
             return "rejected", "签名异常，请更新到最新版本客户端", None
         return "unreachable", "授权服务器不可达", None
 
@@ -356,7 +365,7 @@ def _activate_online(code: str):
                               "device_info": _collect_device_info(),
                               "app_version": _app_version(), "nonce": nonce})
         if s == 200 and isinstance(body, dict):
-            body = _check_sig(body, nonce)
+            body = _check_sig(body, nonce, expect_machine=machine_code())
             if body.get("ok"):
                 exp = body.get("expires_at")
                 save_code(code)
@@ -364,32 +373,84 @@ def _activate_online(code: str):
         return False, None, body.get("message") or body.get("detail") or "激活失败"
     except ConnectionError as e:
         msg = str(e)
+        if "设备不匹配" in msg:
+            return False, None, "激活信息与当前设备不匹配，请在本机重新激活"
         if "验签失败" in msg:
             return False, None, "签名异常，请更新到最新版本客户端"
         return False, None, "无法连接授权服务器，请检查网络后重试"
 
 
+def _machine_binding(code: str) -> str:
+    """license.dat 的本机绑定哈希：machine_code + 盐 + 码。
+    整个 dat 复制到别的机器 → 绑定哈希对不上 → 本地直接判未激活
+    （服务端 activations 表另有一层独立绑定，双层防线）。"""
+    raw = f"{machine_code()}|gw-bind-v1|{code.strip().upper()}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+
+
 def save_code(code: str):
     os.makedirs(_LICENSE_DIR, exist_ok=True)
+    code = code.strip()
+    import json as _json
     with open(_LICENSE_FILE, "w", encoding="utf-8") as f:
-        f.write(code.strip())
+        f.write(_json.dumps({"v": 1, "code": code, "mid": _machine_binding(code)},
+                            ensure_ascii=False))
+
+
+# load_code 本地判定的结果缓存（status/界面提示用）
+_dat_mismatch = False
 
 
 def load_code() -> str:
+    """读缓存的激活码。JSON v1 格式校验本机绑定；旧版纯文本格式原样读
+    （首次 verify 成功后自动升级为新格式）。绑定不匹配返回空 = 本地即判未激活。"""
+    global _dat_mismatch
+    _dat_mismatch = False
     try:
         with open(_LICENSE_FILE, "r", encoding="utf-8") as f:
-            return f.read().strip()
+            content = f.read().strip()
     except (OSError, IOError):
         return ""
+    if not content:
+        return ""
+    if content.startswith("{"):
+        try:
+            import json as _json
+            obj = _json.loads(content)
+            code = str(obj.get("code") or "").strip()
+            mid = str(obj.get("mid") or "")
+            if not code:
+                return ""
+            if mid and mid != _machine_binding(code):
+                _dat_mismatch = True  # dat 被整份复制到其他机器：本地立即拒绝
+                return ""
+            return code
+        except (ValueError, KeyError):
+            return ""
+    return content  # 旧格式（纯码文本）
+
+
+def dat_mismatch() -> bool:
+    """上次 load_code 是否检测到 dat 与本机不匹配（复制到别的机器的典型特征）。"""
+    return _dat_mismatch
 
 
 def status() -> dict:
     """当前授权状态（读 license.dat 缓存的在线码，联网校验）。
     附加字段（有才带）：announcement（服务端公告）、expiry_days（剩余天数）、
     expiry_soon（3 天内到期，前端启动警示）。"""
+    # 运行时防护一票否决：关键常量被改 / 挂着调试器 → 直接未授权
+    try:
+        from src.protection import tampered
+        bad, why = tampered()
+        if bad:
+            return {"licensed": False, "expiry": None, "message": why}
+    except Exception:
+        pass
     code = load_code()
     if not code:
-        return {"licensed": False, "expiry": None, "message": "未激活"}
+        msg = "激活信息与当前设备不匹配，请在本机重新激活" if dat_mismatch() else "未激活"
+        return {"licensed": False, "expiry": None, "message": msg}
     ok, exp, msg, extras = _verify_online(code)
     st = {"licensed": ok, "expiry": exp, "message": msg}
     st.update(extras)
